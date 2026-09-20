@@ -18,7 +18,7 @@
 | エッジキャッシュ | Cache API（`caches.default`） | 詳細ページ・ics・OGP の前段。カスタムドメイン配下でのみ有効 |
 | OGP 画像生成 | satori（`satori/wasm` エントリ）+ yoga の wasm + `@resvg/resvg-wasm` | 初回 GET 時に遅延生成 → R2 保存。失敗時は静的フォールバック PNG。wasm の初期化は初回 render 時（§2.5） |
 | クライアント JS | バニラ TypeScript（esbuild） | `core/` をそのままブラウザに同梱してライブプレビュー |
-| 静的ページのヘッダ | Static Assets の `_headers` ファイル | 静的ページは Worker を通らないので CSP 等はここで付ける（§9.1、要検証） |
+| 静的ページのヘッダ | Static Assets の `_headers` ファイル | 静的ページは Worker を通らないので CSP 等はここで付ける（§9.1。pool-workers・`wrangler dev` の両方で動作確認済み〈T1〉、§10.2） |
 | テスト | Vitest（unit）/ `@cloudflare/vitest-pool-workers`（integration）/ Playwright（e2e） | 3 層すべて足場 PR で疎通させる |
 | CI / デプロイ | GitHub Actions + `cloudflare/wrangler-action` | lint → typecheck → unit → integration → build → e2e → main のみ deploy |
 | 定期実行 | Cloudflare Cron Triggers | 保持期限切れの GC を日次 |
@@ -152,7 +152,7 @@ wrangler 設定（`wrangler.jsonc`）は次を明記する。
 
 **`dist/` の配置**（`assets.directory` が URL のルートになる）: HTML（`index.html` `new.html` `done.html` `history.html` `edit.html`）・`robots.txt`・`favicon.ico`・`_headers` は `dist/` 直下、esbuild の出力と CSS・画像は `dist/assets/{js,css,img}/` に置く。URL は `/` `/new` `/assets/js/create.js` `/assets/img/ogp-fallback.png` になり、HTML 内の参照規約（`/assets/...` の絶対パス、§11.6）と一致する。生成は `scripts/build-web.mjs`（§11.7）。
 
-**静的ページのレスポンスヘッダ**: 静的アセットに一致したリクエストは Worker に到達しないので、Worker のミドルウェアでは CSP 等を付けられない。Workers Static Assets が対応している `_headers` ファイル（`dist/_headers`。ソースは手書きの `src/web/_headers` で、`scripts/build-web.mjs` がそのままコピーする。内容は §11.7、`headers.ts` との一致検査は §9.1）に §9.1 のヘッダを宣言する。`_headers` の対応は wrangler のバージョンに依存する（要検証）。T1 で「`GET /done` のレスポンスに CSP が付く」を結合テストにし、動かなければ `assets.run_worker_first: true` にして Worker の `securityHeaders` を通してから `env.ASSETS.fetch()` で返す（Worker リクエスト数は増えるがヘッダを一元化できる）。
+**静的ページのレスポンスヘッダ**: 静的アセットに一致したリクエストは Worker に到達しないので、Worker のミドルウェアでは CSP 等を付けられない。Workers Static Assets が対応している `_headers` ファイル（`dist/_headers`。ソースは手書きの `src/web/_headers` で、`scripts/build-web.mjs` がそのままコピーする。内容は §11.7、`headers.ts` との一致検査は §9.1）に §9.1 のヘッダを宣言する。`_headers` の対応は wrangler のバージョンに依存するため、T1 で「`GET /done` のレスポンスに CSP が付く」を結合テストにして確認した（確認済み。§10.2）。効かなくなった場合は `assets.run_worker_first: true` にして Worker の `securityHeaders` を通してから `env.ASSETS.fetch()` で返す（Worker リクエスト数は増えるがヘッダを一元化できる）。
 
 ### 2.3 リクエストの流れ（作成〜共有〜閲覧）
 
@@ -991,7 +991,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 | パース結果の分類（`issues`）と入力文字数 | `raw_text` `title` `memo` `location` の内容 |
 | 作成の流入元 `source`（`direct` / `detail_cta` / `prefill`。`pages.source` にも保存） | クエリ文字列全体（パスのみ記録。`ref` は `source` に変換してから残す） |
 | 429 のときの `exceeded` のバケット種別（`ip` / `device`）と窓 | |
-| エラーの `name` と `message`（200 文字で切り詰め）。スタックトレースは `error` レベルのみ | 例外オブジェクトそのもの（satori 等の例外メッセージにはレイアウト対象の文字列が混ざる） |
+| エラーの `name` と `message`（200 文字で切り詰め） | 例外オブジェクトそのもの（satori 等の例外メッセージにはレイアウト対象の文字列が混ざる）。スタックトレースも同様に残さない：`consoleLogger` は level によらず `{ name, message }` にしか正規化しない（T1、下記） |
 | 大まかな UA 分類（LINE / iOS / Android / その他） | UA 文字列そのもの |
 | GC の処理件数・所要時間 | |
 
@@ -1034,11 +1034,11 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 ### 10.2 結合テストの書き方
 
 - ルートは `SELF.fetch()`（`wrangler.jsonc` の main を丸ごと起動）で叩く。`ctx.waitUntil` の完了を待つ必要がある経路（OGP の R2 put、通報の Webhook）は `createExecutionContext()` で ctx を作って `app.fetch(req, env, ctx)` を直接呼び、`waitOnExecutionContext(ctx)` で完了を待ってから R2 を検証する。
-- **Static Assets バインディングが pool-workers で動くかは要検証**（`vitest`・`wrangler`・pool-workers のバージョン組み合わせに依存する）。T1 の足場で「`SELF.fetch('/')` が静的 HTML を返す」結合テストを 1 本入れて確かめる。動かなければ `ASSETS` を `ports/staticAssets.ts` としてポート化し、テストでは Fake（固定 HTML を返す）に差し替える。使用する `vitest`・`wrangler`・`@cloudflare/vitest-pool-workers` のバージョンは `package-lock.json` で固定し（§11.7）、T1 の PR 説明に記録する。
+- **Static Assets バインディングが pool-workers で動くかは確認済み（T1）**（`vitest`・`wrangler`・pool-workers のバージョン組み合わせに依存するため実機で確認した）。実装時の実機確認（`@cloudflare/vitest-pool-workers@0.22.0`）: `env.ASSETS.fetch()` は `wrangler.jsonc` の `assets.directory` からビルド済みの HTML を正しく返し、`_headers` のヘッダ（CSP・`X-Content-Type-Options`・`X-Robots-Tag` 等）も付与された状態で返る（ポート化やヘッダの手動付与は不要）。**一方 `SELF.fetch()` は Worker の `fetch` ハンドラを直接呼ぶだけで、本番・`wrangler dev` で Worker の手前に立つ Static Assets のルーティング層（§2.2 の評価順序 1）を経由しない**ため、`SELF.fetch('/')` は（`/` に一致する Worker 側ルートを定義しない限り）404 になる。この構造は本番の Cloudflare エッジでも同じ（アセットに一致したリクエストはそもそも Worker に届かない）ため、Worker 側に `env.ASSETS.fetch()` へのフォールバックを実装する意味は無いと判断した。したがって結合テストでの Static Assets の検証は `env.ASSETS.fetch()` に対して直接行い（`test/integration/server/staticAssets.test.ts`）、アセット層 + Worker のフルスタックでの `/` のルーティングは e2e（`wrangler dev` は実際のルーティング層を経由する）の `test/e2e/smoke.spec.ts` に委ねる。`_headers` の適用も pool-workers 上で確認できたため、`assets.run_worker_first: true` への切り替えは不要だった。使用する `vitest`・`wrangler`・`@cloudflare/vitest-pool-workers` のバージョンは `package-lock.json` で固定し（§11.7）、T1 の PR 説明に記録する。
 - 状態変更 API を叩くテストは `Content-Type: application/json` と `Origin: http://localhost:8787`（`wrangler.jsonc` の `vars.PUBLIC_ORIGIN` と同じ値）を付ける（§9.8）。テストヘルパ `test/integration/helpers/jsonRequest.ts`（§11.7）に集約する。
-- D1 のマイグレーションは `vitest.config.ts` が `readD1Migrations('migrations')` の結果を `miniflare.bindings.TEST_MIGRATIONS` に渡し、`test/integration/setup.ts`（`setupFiles`）の `beforeEach` で `applyD1Migrations(env.DB, env.TEST_MIGRATIONS)` を適用する。各テストファイルには書かない。`isolatedStorage: true` でテストごとにストレージを分離する。`cloudflare:test` の `ProvidedEnv` を `Env` + `TEST_MIGRATIONS` に拡張する宣言は `test/integration/env.d.ts` に置く（§11.7）。
+- D1 のマイグレーションは `vitest.config.ts` が `readD1Migrations('migrations')` の結果を `miniflare.bindings.TEST_MIGRATIONS` に渡し、`test/integration/setup.ts`（`setupFiles`）の `beforeEach` で `applyD1Migrations(env.DB, env.TEST_MIGRATIONS)` を適用する。各テストファイルには書かない。テストごとのストレージ分離は `@cloudflare/vitest-pool-workers` の既定の挙動（実装時点のバージョンでは設定不要、§11.7）。テストだけが使うバインディング（`TEST_MIGRATIONS` 等）をグローバルな `Cloudflare.Env` に追記する宣言は `test/integration/env.d.ts` に置く（§11.7）。
 - 時刻と ID は `Clock` / `IdGenerator` のポート（§11.4）を Fake に差し替えて固定する。差し替えは `createApp(deps)` の引数で行い、`SELF.fetch` 用の既定 app は本物のアダプタを使う。
-- **e2e は時刻を固定する**（§10.3）。ブラウザは Playwright の `page.clock.setFixedTime`、Worker は `.dev.vars` の `E2E_FIXED_NOW` を `buildDeps` が読んで固定時計を配線する（§11.5）。結合テストは `.dev.vars` に依存せず、上記の Fake で固定する。
+- **e2e は時刻を固定する**（§10.3）。ブラウザは Playwright の `page.clock.setFixedTime`、Worker は `.dev.vars` の `E2E_FIXED_NOW` を `buildDeps` が読んで固定時計を配線する（§11.5）。結合テストは `.dev.vars` に依存せず、上記の Fake で固定する。実機確認済み: e2e 用に手元で `cp .dev.vars.example .dev.vars` した状態で `test:integration` を実行しても、実際に `env.RATE_LIMIT_PEPPER` として結合テストから見える値は `vitest.config.ts` の `miniflare.bindings` で明示した `'test-pepper'` の方（`.dev.vars` の値を上書きする）。`.dev.vars` の有無で結合テストの実行結果が変わらないことを確認済み。wrangler が読み込み時に出す `Using secrets defined in .dev.vars` ログは `vitest.config.ts` の `WRANGLER_LOG=warn`（§11.7）で抑止する。
 - OGP レンダラは `OgpRenderer` ポートを Fake（`fakeOgpRenderer`。1×1 の PNG をコード内の base64 定数で持ち、呼び出し回数を数える。fixtures は不要）に差し替えてルートを検証する。本物の satori + resvg は `test/integration/ogp/satoriOgpRenderer.test.ts` で「日本語を含む入力から PNG が返る」を検証する。**vitest-pool-workers 上で wasm import が動くことを T10 の最初に確認し、動かなければ `test/ogp-node/` の別 Vitest プロジェクト（Node、`fs.readFile` で wasm・フォントを注入）に切り出す**。レンダラは wasm とフォントを引数で受け取る作りにしてどちらでも動くようにする（§11.5）。
 - 代表例:
   - `POST /api/pages` → D1 に `pages` 1 行（`source` `creator_ip_hash` `creator_device_id` が入る）+ `events` 1 行、R2 に `ics/{id}.ics`、レスポンスに `editToken` と `url`、`Set-Cookie: cs_device`
@@ -1080,7 +1080,8 @@ cp .dev.vars.example .dev.vars   # 初回のみ。手元で実時計にしたい
 npm run dev               # npm run build && wrangler dev（ローカル D1/R2、.dev.vars 読み込み）
 npm run build             # node scripts/build-web.mjs（src/web → dist/）
 npm run test:unit         # vitest run --project unit
-npm run test:integration  # vitest run --project integration（vitest-pool-workers）
+npm run test:integration  # vitest run --project integration（vitest-pool-workers）。Static Assets（env.ASSETS.fetch）を
+                           # dist/ から検証するテストがあるため、先に npm run build が必要（確認済み・T1）
 npm run test:e2e          # playwright test（webServer で build → wrangler dev を自動起動）
 npm run test              # unit + integration
 npm run lint              # eslint . && prettier --check .
@@ -1091,13 +1092,14 @@ npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}
 
 ```
 ci.yml（pull_request / push main。ステップの詳細は §11.7）
-  npm ci → lint → typecheck → test:unit → test:integration → build → wrangler deploy --dry-run → playwright install → test:e2e
+  npm ci → lint → typecheck → test:unit → build → test:integration → wrangler deploy --dry-run → playwright install → test:e2e
+  （build は test:integration より前。test:integration が env.ASSETS.fetch() で dist/ を読むため。確認済み・T1）
 deploy.yml（push main、ci 成功後）
   cloudflare/wrangler-action で wrangler deploy（CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID は GitHub Secrets）
   wrangler d1 migrations apply --remote を deploy 前に実行
 ```
 
-`test:integration` はモック不要でネットワーク到達性も不要なので、GitHub Actions のホストランナー内で完結する。e2e は `npx playwright install --with-deps chromium` を含める。`wrangler deploy --dry-run` を build に含め、スクリプトサイズ上限（Paid 10MB gzip）を毎 PR で検出する。未ログイン・プレースホルダ `database_id` で通る前提（要検証: T1 で確認。通らなければ §11.7 の代替に置換）。ただし **`--dry-run` は Workers の起動時間制限（トップレベル評価 400ms）を検出しない**ので、wasm の初期化を遅延させる設計（§2.5）を守り、実機の確認は T19 の初回デプロイで行う。
+`test:integration` はモック不要でネットワーク到達性も不要なので、GitHub Actions のホストランナー内で完結する。e2e は `npx playwright install --with-deps chromium` を含める。`wrangler deploy --dry-run` を build に含め、スクリプトサイズ上限（Paid 10MB gzip）を毎 PR で検出する。未ログイン・プレースホルダ `database_id` で通ることは確認済み（T1、§11.7）。ただし **`--dry-run` は Workers の起動時間制限（トップレベル評価 400ms）を検出しない**ので、wasm の初期化を遅延させる設計（§2.5）を守り、実機の確認は T19 の初回デプロイで行う。
 
 `wrangler dev` はローカルの D1（`--local`）と R2 エミュレーションを使い、ネットワーク到達性を要しない。フォントはリポジトリ内の `test/fixtures/fonts/`（サブセット済み OTF と OFL のライセンスファイル。生成は `scripts/subset-font.mjs`）から `wrangler r2 object put` でローカル R2 に投入するスクリプト `scripts/seed-local-r2.mjs` を用意する。
 
@@ -1110,7 +1112,7 @@ deploy.yml（push main、ci 成功後）
 ```
 .
 ├── wrangler.jsonc                 # Workers 設定（assets / d1 / r2 / vars / crons。全文は §11.7）
-├── package.json  package-lock.json  .nvmrc（20）
+├── package.json  package-lock.json  .nvmrc（22）
 ├── tsconfig.json                  # base。tsconfig.{core,server,web}.json が継承する（§11.7）
 ├── eslint.config.js  .prettierrc  .prettierignore  .gitignore  .dev.vars.example
 ├── vitest.config.ts               # test.projects: unit（Node）/ integration（pool-workers）
@@ -1138,7 +1140,7 @@ deploy.yml（push main、ci 成功後）
 │   │   ├── retention/calculateExpiresAt.ts
 │   │   ├── ics/buildIcs.ts
 │   │   ├── google/buildGoogleCalendarUrl.ts
-│   │   ├── id/{types,crockford}.ts  # crockford.ts に isValidPageId（サーバ・クライアント共用）
+│   │   ├── id/{types,crockford}.ts  # crockford.ts に isValidPageId（サーバ・クライアント共用）。types.ts は足場 PR（T1）が置く（§12 T1、後述）
 │   │   └── token/{hashEditToken,verifyEditToken}.ts
 │   ├── ports/                     # サーバ側の境界（インターフェースのみ。足場 PR が所有）
 │   │   ├── clock.ts  idGenerator.ts  pageRepository.ts（InvariantViolation もここ）  reportRepository.ts
@@ -1240,6 +1242,8 @@ export const D1_MAX_BIND_PARAMS = 100
 export const GC_BATCH_SIZE = 100
 export const GC_MAX_BATCHES_PER_RUN = 20
 export const RATE_LIMIT_COUNTER_RETENTION_DAYS = 2
+/** ログの error.message を切り詰める長さ（§9.6） */
+export const MAX_LOG_ERROR_MESSAGE_LENGTH = 200
 ```
 
 ### 11.3 共有型（`src/core/types.ts`、足場 PR が所有）
@@ -1270,7 +1274,10 @@ export type Jsonified<T> = { [K in keyof T]: T[K] extends Date ? string : T[K] e
 export type EventFieldsJson = Jsonified<EventFields>
 export type PageSummaryJson = Omit<Jsonified<PageSummary>, 'fields'> & { fields: EventFieldsJson }
 export function toEventFieldsJson(fields: EventFields): EventFieldsJson
-export function fromEventFieldsJson(json: EventFieldsJson): EventFields   // 形式不正は例外（API 側で INVALID_REQUEST にする）
+// 形式不正は例外（API 側で INVALID_REQUEST にする）。ISO8601 は toISOString() の形式（UTC、Z 終端）だけを受け付ける。
+// 2/30 や 24:00 のような暦に存在しない日時は Date 化で別の日時に繰り上がるため、toISOString() に戻して先頭 19 文字が
+// 入力と一致するかで弾く
+export function fromEventFieldsJson(json: EventFieldsJson): EventFields
 
 /** 作成の流入元（§6.1）。pages.source に保存し転換率の集計に使う */
 export type CreateSource = 'direct' | 'detail_cta' | 'prefill'
@@ -1468,7 +1475,7 @@ export interface Deps {
   reports: ReportRepository
   storage: ObjectStorage
   rateLimiter: RateLimiter
-  ogpRenderer: OgpRenderer     // T10 までは fakeOgpRenderer（固定 PNG）を配線する
+  ogpRenderer: OgpRenderer     // T10 までは fakeOgpRenderer（固定 PNG）を使う
   notifier: Notifier           // T12 までは fakeNotifier（no-op）。T12 以降も REPORT_WEBHOOK_URL が無ければ fakeNotifier（§9.4）
   logger: Logger
   config: {
@@ -1478,11 +1485,11 @@ export interface Deps {
     ratePepper: string         // env.RATE_LIMIT_PEPPER
   }
 }
-/** Env → Deps。T1 時点の配線は §11.7。未実装のポート（ids / pages / storage / rateLimiter）は notWired() を配線し、T7 が本物に差し替える */
+/** Env → Deps。T1 時点の配線は §11.7。未実装のポート（ids / pages / storage / rateLimiter）は notWired() を登録し、T7 が本物に差し替える */
 export function buildDeps(env: Env): Deps
 
 // server/lib/notWired.ts（T1）
-/** どのメソッドを呼んでも Error(`not wired: ${name}`) を投げる Proxy。Deps の型を満たしつつ未配線を実行時に明示する */
+/** どのメソッドを呼んでも Error(`not wired: ${name}`) を投げる Proxy。Deps の型を満たしたまま、本物の実装が無いことを呼び出し時にわかるようにする */
 export function notWired<T extends object>(name: string): T
 
 // server/app.ts
@@ -1515,8 +1522,9 @@ export function verifyEditTokenHash(actual: string, expected: string): boolean /
 
 // core/time/jst.ts
 export function jstDate(y: number, m: number, d: number, h = 0, mi = 0): Date  // JST の壁時計 → Date(UTC)
-export function toJstParts(date: Date): { y: number; m: number; d: number; h: number; mi: number; weekday: number }
-export function formatDateLabel(fields: EventFields): string   // 「9月20日(日) 19:00〜21:00」等。詳細・OGP・タイトル代替で共用
+export interface JstParts { y: number; m: number; d: number; h: number; mi: number; weekday: number }   // weekday: 0 = 日曜〜6 = 土曜
+export function toJstParts(date: Date): JstParts
+export function formatDateLabel(fields: EventFields): string   // 「9月20日(日) 19:00〜21:00」等。詳細・OGP・タイトル代替で共用。start のみ（保存前の途中状態）のときは開始だけを返す
 export function formatBasicUtc(date: Date): string             // 20260920T100000Z
 export function formatBasicDateJst(date: Date): string         // 20260920
 export function addDays(date: Date, days: number): Date
@@ -1563,12 +1571,12 @@ export function updatePage(id: string, editToken: string, req: UpdatePageRequest
 
 ### 11.7 足場（T1）の構成ファイル
 
-T1 が置く設定ファイルと足場コードの確定値。後続 PR はここに書かれた値を前提にしてよい。「要検証: T1 で確認」と書いた項目は T1 の完了条件に検証結果の記録を含め、外れたら本節を直してから後続に進む。
+T1 が置く設定ファイルと足場コードの確定値。後続 PR はここに書かれた値を前提にしてよい。「要検証」と書いた項目は T1 の完了条件に検証結果の記録を含め、外れたら本節を直してから後続に進む（確認が済んだ項目は「確認済み（T1）」に書き換えてある）。
 
 **パッケージ管理と Node**
 
 - パッケージマネージャは npm。`package-lock.json` をコミットする。依存は caret（`^`）指定で、実際のバージョンは lockfile で固定する。
-- Node は `>=20`（`package.json` の `engines`）。`.nvmrc` = `20`。ローカルは v20.19、CI は `node-version-file: .nvmrc` で同じ 20 系を使う。
+- Node は `>=22`（`package.json` の `engines`）。`.nvmrc` = `22`。ローカルは v22.19、CI は `node-version-file: .nvmrc` で同じ 22 系を使う。（実装時の実測: `wrangler@4.133.0` は `package.json` の `engines.node` が `>=22.0.0` で、Node 20 では起動時に明示的に拒否される。設計時点の想定（Node 20 系）と `wrangler` 4.133 系の実際の要件が食い違ったため、実物を優先して 22 系に変更した。T1 の完了条件）
 
 **依存パッケージ**（T1 時点。satori / `yoga-wasm-web` / `@resvg/resvg-wasm` は T10 で追加する）
 
@@ -1583,8 +1591,9 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
 | | `esbuild` | web アセット専用。Worker 本体は wrangler がバンドルする |
 | | `eslint` `@eslint/js` `typescript-eslint` | eslint 10 系 flat config（typescript-eslint 8.70 が `^10.0.0` 対応）。9 系でも可 |
 | | `prettier` | |
+| | `@types/node` | `wrangler types` の「Install @types/node」案内を消すためだけに入れる。`tsconfig.core.json` `tsconfig.web.json` の `types: []` で core / web には漏れない |
 
-`@types/node` は入れない。設定ファイル（`*.config.ts` `scripts/*.mjs`）は tsc の対象外で、テストがファイルを読む箇所は Vite の `?raw` import（下記 `_headers` のテスト）で済ませる。
+`@types/node` は devDependencies に入れる（`wrangler types` が nodejs_compat を見て導入を促すメッセージを消すため。実機確認済み: 入れないと `npm run typecheck` の度に「Action required Install @types/node」が出る）。`tsconfig.core.json` `tsconfig.web.json` はどちらも `types: []` なので `@types/node` を入れても `src/core` `src/web` から `process` `Buffer` を参照すると TS2591 で `tsc` が落ち、「core / web は DOM にも Node にも依存しない」保証は変わらない（実機確認済み）。設定ファイル（`*.config.ts` `scripts/*.mjs`）は tsc の対象外で、テストがファイルを読む箇所は Vite の `?raw` import（下記 `_headers` のテスト）で済ませる。
 
 **`package.json` の scripts**
 
@@ -1609,8 +1618,15 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "calshare",
   "main": "src/server/index.ts",             // wrangler が直接バンドルする。esbuild は web アセットのみ
-  "compatibility_date": "<T1 実施日>",
-  "compatibility_flags": ["nodejs_compat"],  // 要検証: T1 で確認。satori の依存で不要なら外す（T10 で再確認）
+  "compatibility_date": "2026-08-22",         // 実装時の実機確認: T1 実施日（2026-09-17）そのままだと
+                                               // 「このワーカーは compatibility date "2026-09-17" を要求するが、
+                                               // このサーバのバイナリが対応する最新の日付は "2026-08-22"」で
+                                               // pool-workers（miniflare 同梱の workerd）が起動に失敗した。
+                                               // wrangler 4.133.0 に同梱の workerd が対応する最新日付を使う
+  "compatibility_flags": ["nodejs_compat"],  // 確認済み（T1）: T1 自体は nodejs_compat を必要としないが、
+                                              // wrangler.jsonc は crons（T13）以外での変更が §12 の規約で禁じられているため、
+                                              // T10（satori/resvg）で必要になることを見越して T1 の時点で付けておく。付けても
+                                              // T1 のテスト・dry-run・wrangler dev はすべて通ることを実機確認済み
   "workers_dev": true,                        // H3 でカスタムドメインを割り当てたら false（§9.9）
   "observability": { "enabled": true },
   "assets": {
@@ -1634,7 +1650,7 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
 ```
 
 - `vars` はローカル・CI の値。本番の `PUBLIC_ORIGIN`（H1 のドメイン）は `deploy.yml` の `wrangler deploy --var PUBLIC_ORIGIN:https://...` で上書きする（T19。`env.production` を作ると D1 / R2 のバインディングを環境ごとに再宣言する必要があり二重管理になる）。
-- 要検証: T1 で確認。`wrangler deploy --dry-run --outdir dist-worker` がプレースホルダの `database_id`・未ログインで通ること。通らなければ CI のそのステップを `npx wrangler check startup`（wrangler 4 の起動時間検査。ログイン不要）などに置き換え、サイズ計測は `dist-worker` のファイルサイズで代替する。
+- 確認済み（T1、wrangler 4.133.0、`CLOUDFLARE_API_TOKEN` 等を明示的に外した環境で実行）: `wrangler deploy --dry-run --outdir dist-worker` はプレースホルダの `database_id`・未ログインのまま通り、バインディング一覧（`DB` `BUCKET` `ASSETS` `PUBLIC_ORIGIN` `SERVICE_NAME`）と Upload サイズ（Total 66.51 KiB / gzip 16.79 KiB、T1 時点）が表示された。通らない場合に備えていた代替（CI のそのステップを `npx wrangler check startup` に置き換え、サイズ計測を `dist-worker` のファイルサイズで代替する案）への切り替えは不要だった。
 
 **`src/server/env.ts` と `.dev.vars.example`**
 
@@ -1647,7 +1663,7 @@ export interface Env {
   PUBLIC_ORIGIN: string        // vars
   SERVICE_NAME: string         // vars
   RATE_LIMIT_PEPPER: string    // secret（ローカルは .dev.vars）
-  REPORT_WEBHOOK_URL?: string  // secret。無い（または空文字）なら fakeNotifier を配線する（§9.4）
+  REPORT_WEBHOOK_URL?: string  // secret。無い（または空文字）なら fakeNotifier を使う（§9.4）
   E2E_FIXED_NOW?: string       // .dev.vars のみ。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
 }
 ```
@@ -1665,7 +1681,7 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 
 | Deps | T1 の配線 | 本物に差し替える PR |
 |---|---|---|
-| `clock` | `E2E_FIXED_NOW` があり `new URL(PUBLIC_ORIGIN).hostname === 'localhost'` なら `fakeClock(new Date(E2E_FIXED_NOW))`、それ以外は `systemClock`（`E2E_FIXED_NOW` があるのに localhost でなければ warn ログを出して無視） | —（T1 で確定） |
+| `clock` | `E2E_FIXED_NOW` があり `new URL(PUBLIC_ORIGIN).hostname === 'localhost'` なら `fakeClock(new Date(E2E_FIXED_NOW))`、それ以外は `systemClock`（`E2E_FIXED_NOW` があるのに localhost でなければ warn ログを出して無視。localhost でも `E2E_FIXED_NOW` が Invalid Date になる値なら `e2e_fixed_now_invalid` を warn して `systemClock` にする） | —（T1 で確定） |
 | `ids` `pages` `storage` `rateLimiter` | `notWired('ids')` 等（§11.5） | T7 |
 | `reports` | `memoryReportRepository` | T7（`d1ReportRepository`。実装は T5） |
 | `ogpRenderer` | `fakeOgpRenderer` | T10 |
@@ -1687,8 +1703,12 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 **`vitest.config.ts`**（Vitest 4 の `test.projects` を 1 ファイルに書く。`vitest.workspace.ts` は 4 系で廃止されているので作らない）
 
 ```typescript
+import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-workers'
 import { defineConfig } from 'vitest/config'
-import { defineWorkersProject, readD1Migrations } from '@cloudflare/vitest-pool-workers/config'
+
+// ローカルに .dev.vars があると wrangler が読み込みログ（"Using secrets defined in .dev.vars"）を出す。
+// 値は下記 miniflare.bindings が上書きするので実害は無いが、テスト出力を汚さないよう log レベルを warn に絞る
+process.env.WRANGLER_LOG ??= 'warn'
 
 export default defineConfig(async () => {
   const TEST_MIGRATIONS = await readD1Migrations('migrations')
@@ -1696,31 +1716,29 @@ export default defineConfig(async () => {
     test: {
       projects: [
         { test: { name: 'unit', environment: 'node', include: ['test/unit/**/*.test.ts'] } },
-        defineWorkersProject({
+        {
+          plugins: [
+            cloudflareTest({
+              wrangler: { configPath: './wrangler.jsonc' },
+              // .dev.vars に依存しないよう secrets はここで与える
+              miniflare: { bindings: { TEST_MIGRATIONS, RATE_LIMIT_PEPPER: 'test-pepper' } },
+            }),
+          ],
           test: {
             name: 'integration',
             include: ['test/integration/**/*.test.ts'],
             setupFiles: ['test/integration/setup.ts'],
-            poolOptions: {
-              workers: {
-                wrangler: { configPath: './wrangler.jsonc' },
-                isolatedStorage: true,
-                singleWorker: true,
-                // .dev.vars に依存しないよう secrets はここで与える
-                miniflare: { bindings: { TEST_MIGRATIONS, RATE_LIMIT_PEPPER: 'test-pepper' } },
-              },
-            },
           },
-        }),
+        },
       ],
     },
   }
 })
 ```
 
-- 要検証: T1 で確認。`test.projects` の要素として `defineWorkersProject` の戻り値をそのまま置けること。置けなければ integration を別の `vitest.integration.config.ts` に分け、`test:integration` はそれを `--config` で指す。
+- 確認済み（T1。設計時点の想定と食い違ったため記述を更新した）: `@cloudflare/vitest-pool-workers@0.22.0`（vitest 4.1 系に対応する現行バージョン）は `defineWorkersProject` も `/config` サブパスも提供しない。`readD1Migrations` はパッケージのルートエントリから export され、pool の指定は `cloudflareTest(options)` が返す **Vite プラグイン**を `test.projects` の各要素の `plugins` に渡す形に変わっている（`poolOptions.workers` の `isolatedStorage` / `singleWorker` に相当するオプションは無くなっており、テストごとのストレージ分離は既定の挙動になっている）。`test.projects` の要素は Vite の `UserConfig`（`plugins` を含む）に `test` を足した形をそのまま置けるため、`vitest.integration.config.ts` への分離は不要だった。`readD1Migrations('migrations')` は `migrations/` ディレクトリが無いと `ENOENT` で例外を投げるため、T5 で `migrations/0001_init.sql` が置かれるまでの間 T1 は空の `migrations/.gitkeep` を置く（git は空ディレクトリを追跡できないため）。
 - `test/integration/setup.ts`: `import { applyD1Migrations, env } from 'cloudflare:test'` と `import { beforeEach } from 'vitest'` で、`beforeEach(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS))`。`applyD1Migrations` は適用済みのマイグレーションを飛ばすので `beforeEach` でも二重適用にならない。
-- `test/integration/env.d.ts`: `import type { Env } from '../../src/server/env'` の上で `declare module 'cloudflare:test' { interface ProvidedEnv extends Env { TEST_MIGRATIONS: D1Migration[] } }`（`D1Migration` は pool-workers が提供する型）。
+- `test/integration/env.d.ts`: 実機確認済み。上記と同じバージョンの型定義（`cloudflare-test.d.ts`）には設計時点で想定していた `cloudflare:test` モジュールの `ProvidedEnv` インターフェースが無く、`env` エクスポートは `wrangler types` が生成するグローバルな `Cloudflare.Env`（`worker-configuration.d.ts`）の型を持つ。そのため `declare module 'cloudflare:test' { interface ProvidedEnv extends Env {...} }` ではなく、`declare global { namespace Cloudflare { interface Env { RATE_LIMIT_PEPPER: string; REPORT_WEBHOOK_URL?: string; E2E_FIXED_NOW?: string; TEST_MIGRATIONS: D1Migration[] } } }`（`D1Migration` は `@cloudflare/vitest-pool-workers` が提供する型）で不足分だけをグローバル宣言にマージする形にした。
 - `test/integration/helpers/jsonRequest.ts`: `export const TEST_ORIGIN = 'http://localhost:8787'`（`wrangler.jsonc` の `vars.PUBLIC_ORIGIN` と一致させる）と `jsonRequest(path, { method: 'POST' | 'PATCH', body: unknown, headers?: Record<string, string> }): Request`。`new URL(path, TEST_ORIGIN)` に `Origin: TEST_ORIGIN`・`Content-Type: application/json` を付け、`body` を `JSON.stringify` する。`headers` で上書きできる（`Origin` 不一致や `text/plain` のテスト用）。
 
 **tsconfig**（base を 3 つのプロジェクトが継承する。`npm run typecheck` は 3 つを順に `tsc -p`）
@@ -1739,7 +1757,9 @@ export default defineConfig(async () => {
 // tsconfig.server.json
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "types": ["@cloudflare/vitest-pool-workers"] },
+  // cloudflare:test の型宣言は 0.22 では `@cloudflare/vitest-pool-workers` のルートエントリではなく
+  // `/types` サブパス（types/cloudflare-test.d.ts）にある
+  "compilerOptions": { "types": ["@cloudflare/vitest-pool-workers/types"] },
   "include": ["src/core", "src/ports", "src/adapters", "src/server", "worker-configuration.d.ts",
               "test/unit/core", "test/unit/adapters", "test/unit/server", "test/integration"]
 }
@@ -1751,23 +1771,24 @@ export default defineConfig(async () => {
 }
 ```
 
-- `tsconfig.core.json` の `lib` に `WebWorker` を足すのは、core が使う `URL` `URLSearchParams` `TextEncoder` `crypto.subtle`（`core/google`・`core/token`）が `ES2022` の lib に無いため。`WebWorker` は `document` `window` を含まず、Workers 固有の型（`D1Database` 等）も含まないので「DOM にも Workers にも依存しない」保証は保たれる。要検証: T1 で確認。`tsc -p tsconfig.core.json` が通り、`src/core` に `document` や `hono` の参照を足すとエラーになること。
+- `tsconfig.core.json` の `lib` に `WebWorker` を足すのは、core が使う `URL` `URLSearchParams` `TextEncoder` `crypto.subtle`（`core/google`・`core/token`）が `ES2022` の lib に無いため。`WebWorker` は `document` `window` を含まず、Workers 固有の型（`D1Database` 等）も含まないので「DOM にも Workers にも依存しない」保証は保たれる。確認済み（T1）: `tsc -p tsconfig.core.json` は通り、`src/core` に `document` や `process` `Buffer`（`@types/node` を入れた後も `types: []` のため）の参照を足すとエラーになる。`hono` の import は `tsc` ではなく ESLint の `no-restricted-imports` が検出する。
 - `test/unit` は `web` 以下だけ `tsconfig.web.json`（DOM）側に入れる。`src/web/lib/*` の unit テストは DOM の型が要り、それ以外の unit テストは Workers の型で足りるため。
 - `worker-configuration.d.ts` が無いと `tsconfig.server.json` が通らないので、`typecheck` は必ず `wrangler types` を先に走らせる。
 
 **ESLint / Prettier**
 
-- `eslint.config.js` は flat config。`@eslint/js` の `recommended` と `typescript-eslint` の `recommended`（`recommendedTypeChecked` は使わない。速度優先）。`ignores`: `dist/` `dist-worker/` `.wrangler/` `worker-configuration.d.ts`。
+- `eslint.config.js` は flat config。`@eslint/js` の `recommended` と `typescript-eslint` の `recommended`（`recommendedTypeChecked` は使わない。速度優先）。`ignores`: `dist/` `dist-worker/` `.wrangler/` `worker-configuration.d.ts` `.claude/`（作業用の一時ファイル置き場。`.claude/skills/` 以外は gitignore 済みだが、lint の対象探索からは `.claude/` ごと外す）。
 - 全ファイルに `no-restricted-syntax` で次を禁止する（§9.1）: `MemberExpression[property.name='innerHTML']`、`MemberExpression[property.name='outerHTML']`、`CallExpression[callee.property.name='insertAdjacentHTML']`、`JSXAttribute[name.name='dangerouslySetInnerHTML']`、`Property[key.name='dangerouslySetInnerHTML']`。
-- `src/core/**` に対して `no-restricted-imports` で相対パス以外の import を禁止する（`patterns: [{ group: ['**', '!./**', '!../**'], message: 'core は相対 import のみ' }]` 相当。要検証: T1 で `hono` の import がエラーになり `./x` `../x/y` が通ることを確認し、パターンを調整する）。
-- `.prettierrc`: `{ "semi": false, "singleQuote": true, "printWidth": 100, "trailingComma": "all" }`。`.prettierignore`: `dist/` `dist-worker/` `.wrangler/` `worker-configuration.d.ts` `package-lock.json`。
+- `@typescript-eslint/no-unused-vars` は `argsIgnorePattern: '^_'` にする。`routes/*.ts` は `Deps` を型で揃えるため使わない引数も受け取る規約（§11.5）があり、先頭 `_` の引数を未使用エラーの対象外にする。
+- `src/core/**` に対して `no-restricted-imports` で相対パス以外の import を禁止する。確認済み（T1）: `group`（`ignore` パッケージ = gitignore 相当のグロブ）を使う `patterns: [{ group: ['**', '!./**', '!../**'] }]` は実装できなかった: `ignore` パッケージは `./x` のような相対パス文字列の否定パターン（`!./**`）を意図通りに除外せず、`./x` `../x/y` も一律に「制限対象」と判定してしまう（ESLint 10.10.0 + eslint 内蔵 `ignore` で実機確認）。代わりに `regex: '^(?!\\.\\.?/)'`（`./` `../` で始まらない import 指定子にだけマッチする正規表現）を使う `patterns: [{ regex: '^(?!\\.\\.?/)', message: 'core は相対 import のみ' }]` に変更した。`hono` の import はエラーになり、`./x` `../x/y` は通ることを確認済み。
+- `.prettierrc`: `{ "semi": false, "singleQuote": true, "printWidth": 100, "trailingComma": "all" }`。`.prettierignore`: `dist/` `dist-worker/` `.wrangler/` `worker-configuration.d.ts` `package-lock.json` `docs/`（実装時に追加。`docs/design.md` は手書きの日本語 Markdown で Prettier の整形結果と一致せず `prettier --check .` が赤くなるため。設計書自体を Prettier 対象にする意図は無かったと判断し除外した）。
 
-**`scripts/build-web.mjs`**（T1 所有。後続 PR は触らない）
+**`scripts/build-web.mjs`**（後続 PR はこのファイルを変更しない）
 
 1. `dist/` を空にする。
 2. `src/web/*/main.ts` を glob してエントリにし、esbuild で `bundle: true, format: 'esm', target: 'es2020', minify: true, outdir: 'dist/assets/js', outbase: 'src/web', entryNames: '[dir]'` でビルドする（`src/web/create/main.ts` → `dist/assets/js/create.js`）。ファイル名にハッシュは付けない（`/assets/*` は `_headers` で `Cache-Control: public, max-age=300`）。エントリが 0 件（T1 時点）なら esbuild を呼ばない。
-3. `src/web/styles/*.css` → `dist/assets/css/`、`src/web/img/ogp-fallback.png` → `dist/assets/img/` にコピーする。
-4. `src/web/pages/*.html` と `src/web/{robots.txt,favicon.ico,_headers}` を `dist/` 直下にコピーする。
+3. `src/web/styles/*.css` → `dist/assets/css/`、`src/web/img/*` → `dist/assets/img/` にコピーする。
+4. `src/web/pages/*.html` と `src/web/{robots.txt,favicon.ico,_headers}` を `dist/` 直下にコピーする。ルートファイルは存在チェックをせず、欠けていれば `copyFile` の `ENOENT` でビルドが落ちる（`_headers` を静かに欠落させて CSP の無い `dist/` を作らないため）。
 
 **`src/web` の雛形（T1）**
 
@@ -1829,16 +1850,18 @@ export default defineConfig({
 - run: npm run lint
 - run: npm run typecheck
 - run: npm run test:unit
-- run: npm run test:integration
 - run: npm run build
-- run: npx wrangler deploy --dry-run --outdir dist-worker   # 未ログインで通る前提（要検証: T1 で確認。通らなければ上記の代替に置換）
+- run: npm run test:integration
+- run: npx wrangler deploy --dry-run --outdir dist-worker   # 未ログインで通る（T1 で確認済み）
 - run: npx playwright install --with-deps chromium
 - run: cp .dev.vars.example .dev.vars
 - run: npm run test:e2e
   timeout-minutes: 15
 ```
 
-**`.gitignore`**（T1 で Next.js テンプレートから書き換える）: `node_modules/` `dist/` `dist-worker/` `.wrangler/` `.dev.vars` `worker-configuration.d.ts` `test-results/` `playwright-report/` `coverage/` `.DS_Store` `/.claude/`。
+確認済み（T1。設計時点の順序と食い違ったため入れ替えた）: `test:integration` は `env.ASSETS.fetch()` で Static Assets（`wrangler.jsonc` の `assets.directory: ./dist`）を検証するため、`dist/` がビルド済みであることに依存する。クリーンチェックアウト直後（`npm run build` 未実行）に `test:integration` を先に走らせると `dist/` が空で 404 になることを実機確認したため、`npm run build` を `test:integration` より前に実行する順序に変更した。
+
+**`.gitignore`**（T1 で Next.js テンプレートから書き換える）: `node_modules/` `dist/` `dist-worker/` `.wrangler/` `.dev.vars` `worker-configuration.d.ts` `test-results/` `playwright-report/` `coverage/` `.DS_Store`。`.claude/` は `/.claude/*` + `!/.claude/skills/` にし、プロジェクトスキル（`.claude/skills/`）だけリポジトリで共有する。
 
 ---
 
@@ -1852,9 +1875,9 @@ export default defineConfig({
 
 | ID | ブランチ | タイトル | 依存 | 主なファイル | テスト観点 | 完了条件 |
 |---|---|---|---|---|---|---|
-| T1 | `feat/scaffold` | chore: 足場（wrangler / Hono / テスト 3 層 / CI / 共有型・定数・ポート・Fake。構成は §11.7） | — | `wrangler.jsonc` `package.json` `package-lock.json` `.nvmrc` `.gitignore` `.dev.vars.example` `tsconfig.json` `tsconfig.{core,server,web}.json` `eslint.config.js` `.prettierrc` `.prettierignore` `vitest.config.ts` `playwright.config.ts`（`chromium` + `line-ios` の 2 プロジェクト）`.github/workflows/ci.yml` `scripts/build-web.mjs` `src/core/config/*` `src/core/types.ts` `src/core/api/types.ts` `src/core/time/jst.ts` `src/ports/*`（`reportRepository.ts` を含む）`src/server/{index,app,env,deps}.ts` `src/server/routes/health.ts` `src/server/lib/notWired.ts` `src/adapters/clock/*` `src/adapters/logger/consoleLogger.ts` `src/adapters/ogp/fakeOgpRenderer.ts` `src/adapters/notifier/fakeNotifier.ts` `src/adapters/memory/memoryReportRepository.ts` `src/web/pages/*.html`（§11.7 の最小雛形）`src/web/_headers` `src/web/styles/base.css` `src/web/{robots.txt,favicon.ico}` `src/web/img/ogp-fallback.png` `test/unit/core/time/*` `test/unit/core/types.test.ts` `test/unit/adapters/logger/*` `test/unit/web/headers.test.ts` `test/integration/{setup.ts,env.d.ts}` `test/integration/helpers/jsonRequest.ts` `test/integration/server/{health,staticAssets}.test.ts` `test/e2e/fixtures.ts` `test/e2e/smoke.spec.ts` | unit: `jst.ts` の変換・整形（`formatDateLabel` が「19:00〜20:00」形式）・`addMonths` の月末境界。`toEventFieldsJson` / `fromEventFieldsJson` の往復と不正入力。`consoleLogger` が `Error` を `{ name, message }` に正規化し message を 200 文字で切る。`_headers` に §11.7 の各パス・各ヘッダが載っている。`memoryReportRepository` の `'inserted'` / `'duplicate'`。integration: `GET /api/health` が 200 で `{ ok: true }`・`Cache-Control: no-store`。**`SELF.fetch('/')` が静的 HTML を返す（pool-workers の Static Assets 対応、要検証）**。`GET /done` のレスポンスに CSP・`X-Content-Type-Options`・`X-Robots-Tag` が付く（`_headers`、要検証）。`jsonRequest` が `Origin` と `Content-Type` を付ける。e2e: 固定時刻（§10.3）の下で `/` が 200 で `textarea` がある（`chromium` `line-ios` の両方） | `npm run lint/typecheck/test:unit/test:integration/test:e2e` が全部通り、CI が green。`tsc -p tsconfig.core.json` が通り、`src/core` に `document` や `hono` の参照を足すとエラーになる（要検証）。`wrangler deploy --dry-run --outdir dist-worker` が未ログイン・プレースホルダ `database_id` で通る（要検証。通らなければ §11.7 の代替に置換して設計書を更新）。`compatibility_flags` の `nodejs_compat` の要否と、`test.projects` 内の `defineWorkersProject` が動くかを記録（要検証）。ESLint で `innerHTML` / `outerHTML` / `insertAdjacentHTML` / `dangerouslySetInnerHTML` と、`src/core` からの相対パス以外の import が禁止されている。`vitest` `wrangler` `@cloudflare/vitest-pool-workers` `hono` `typescript` `esbuild` の解決済みバージョンを PR 説明に記録。`_headers` か Static Assets が pool-workers で動かなければ §2.2 / §10.2 の代替（`run_worker_first` / `ASSETS` のポート化）に切り替えて設計書を更新 |
+| T1 | `feat/scaffold` | chore: 足場（wrangler / Hono / テスト 3 層 / CI / 共有型・定数・ポート・Fake。構成は §11.7） | — | `wrangler.jsonc` `package.json` `package-lock.json` `.nvmrc` `.gitignore` `.dev.vars.example` `tsconfig.json` `tsconfig.{core,server,web}.json` `eslint.config.js` `.prettierrc` `.prettierignore` `migrations/.gitkeep`（`readD1Migrations('migrations')` が存在しないディレクトリで例外を投げるため。`migrations/0001_init.sql` 自体は T5 が置く） `vitest.config.ts` `playwright.config.ts`（`chromium` + `line-ios` の 2 プロジェクト）`.github/workflows/ci.yml` `scripts/build-web.mjs` `src/core/config/*` `src/core/types.ts` `src/core/api/types.ts` `src/core/time/jst.ts` `src/core/id/types.ts`（`ports/idGenerator.ts` の re-export 先。§11.4 の時点で `core/id/types.ts` への依存が生じるが、`crockford.ts` は T3 の担当のままなので `types.ts` だけ先に置く。実装時に判明した §11.1 / §12 の食い違いの是正） `src/ports/*`（`reportRepository.ts` を含む）`src/server/{index,app,env,deps}.ts` `src/server/routes/health.ts` `src/server/lib/notWired.ts` `src/adapters/clock/*` `src/adapters/logger/consoleLogger.ts` `src/adapters/ogp/fakeOgpRenderer.ts` `src/adapters/notifier/fakeNotifier.ts` `src/adapters/memory/memoryReportRepository.ts` `src/web/pages/*.html`（§11.7 の最小雛形）`src/web/_headers` `src/web/styles/base.css` `src/web/{robots.txt,favicon.ico}` `src/web/img/ogp-fallback.png` `test/unit/core/time/*` `test/unit/core/types.test.ts` `test/unit/adapters/logger/*` `test/unit/adapters/memory/memoryReportRepository.test.ts`（テスト観点に `memoryReportRepository` の `'inserted'`/`'duplicate'` が挙げられているにもかかわらず本節のファイル一覧に無かったため追加） `test/unit/web/headers.test.ts` `test/integration/{setup.ts,env.d.ts}` `test/integration/helpers/jsonRequest.ts` `test/integration/helpers/jsonRequest.test.ts` `test/integration/server/{health,staticAssets}.test.ts` `test/unit/server/deps.test.ts` `test/unit/server/lib/notWired.test.ts` `test/e2e/fixtures.ts` `test/e2e/smoke.spec.ts` | unit: `jst.ts` の変換・整形（`formatDateLabel` が「19:00〜20:00」形式）・`addMonths` の月末境界。`toEventFieldsJson` / `fromEventFieldsJson` の往復と不正入力。`consoleLogger` が `Error` を `{ name, message }` に正規化し message を 200 文字で切る。`_headers` に §11.7 の各パス・各ヘッダが載っている。`memoryReportRepository` の `'inserted'` / `'duplicate'`。`buildDeps` の `clock`（`E2E_FIXED_NOW` なし・`localhost` + `E2E_FIXED_NOW`・非 `localhost` + `E2E_FIXED_NOW` で warn）。`notWired` がどのメソッド呼び出しでも `not wired: <name>` を投げる。integration: `GET /api/health` が 200 で `{ ok: true }`・`Cache-Control: no-store`。**`env.ASSETS.fetch('/')` が静的 HTML を返す（pool-workers の Static Assets 対応。`SELF.fetch` は Worker の手前の Static Assets ルーティング層を経由しないため使わない。確認済み〈T1〉、詳細は §10.2）**。`env.ASSETS.fetch('/done')` のレスポンスに CSP・`X-Content-Type-Options`・`X-Robots-Tag` が付く（`_headers`。確認済み〈T1〉）。`jsonRequest` が `Origin` と `Content-Type` を付ける。e2e: 固定時刻（§10.3）の下で `/` が 200 で `textarea` がある（`chromium` `line-ios` の両方） | `npm run lint/typecheck/test:unit/test:integration/test:e2e` が全部通り、CI が green。`tsc -p tsconfig.core.json` が通り、`src/core` に `document` の参照を足すとエラーになる（確認済み〈T1〉。`hono` の import は tsc ではなく ESLint の `no-restricted-imports` が検出する。§11.7 の ESLint の項を参照）。`wrangler deploy --dry-run --outdir dist-worker` が未ログイン・プレースホルダ `database_id` で通る（確認済み〈T1〉、§11.7 参照）。`compatibility_flags` の `nodejs_compat` の要否と、`test.projects` 内で pool-workers の Vite プラグイン（`cloudflareTest`）が動くかを記録（確認済み〈T1〉。§11.7 参照）。ESLint で `innerHTML` / `outerHTML` / `insertAdjacentHTML` / `dangerouslySetInnerHTML` と、`src/core` からの相対パス以外の import が禁止されている。`vitest` `wrangler` `@cloudflare/vitest-pool-workers` `hono` `typescript` `esbuild` の解決済みバージョンを PR 説明に記録。`_headers` と Static Assets はいずれも pool-workers で動作確認済み（§10.2）|
 | T2 | `feat/core-parse` | feat: 日時パーサ（1 行目の解釈）と URL 判定 | T1 | `src/core/text/urlPattern.ts` `src/core/parse/*` `test/unit/core/{text,parse}/*` | §5.6 の全 71 ケースを `test.each` で。正規化（`．` を含む）・ストップリスト・URL 分離の個別テスト。`URL_PATTERN` の 3 形式（scheme / `www.` / ベアドメイン）と非該当（`9.20`、`hxxps://`）。ベアドメインの末尾ラベル条件（§5.2）: `Node.js 勉強会` は URL 0 本、`example.com` `example.co.jp` `example.xyz/path` は 1 本。**2,000 文字の繰り返し入力（`9/` × 1000、`〜` × 2000、`http://` × 200）が 50ms 以内に返る** | 表が全部 green。`parseEventText` が同期・純粋で `core/` 外を import しない |
-| T3 | `feat/core-rules` | feat: 保持期限・ID・トークン・検証・プリフィル・インタープリタ境界 | T2 | `src/core/retention/*` `src/core/id/*` `src/core/token/*` `src/core/validate/*` `src/core/prefill/*` `src/core/interpret/*` `src/core/change/*` `src/adapters/id/*` `test/unit/core/{retention,id,token,validate,prefill,interpret,change}/*` | 13 ヶ月ちょうど／+1 秒、下書き（`baseDate` 基準）。ID が 12 文字・許可文字のみ・予約パスと不一致（1 万件生成）。`isValidPageId` が `//example.com` `%2F%2F` 11 文字・13 文字・大文字を拒否。トークン 43 文字。§5.7 の各エラーコード（`mode: 'update'` で日時不変なら終了後でも ok、日時を過去に変えると `PAST_EVENT`）。`countUrls` が `URL_PATTERN` と一致。§5.8 の優先順位。`buildChangeSnapshot`: メモだけの変更は null、日時だけの変更は変更前の日時 + `titleChanged = locationChanged = false`、タイトルだけの変更は `titleChanged = true` で日時は変更前の値（§3.5） | 全 unit green。`calculateExpiresAt` の戻り値が非 null の `Date` |
+| T3 | `feat/core-rules` | feat: 保持期限・ID・トークン・検証・プリフィル・インタープリタ境界 | T2 | `src/core/retention/*` `src/core/id/crockford.ts`（`id/types.ts` は T1 が置く済み） `src/core/token/*` `src/core/validate/*` `src/core/prefill/*` `src/core/interpret/*` `src/core/change/*` `src/adapters/id/*` `test/unit/core/{retention,id,token,validate,prefill,interpret,change}/*` | 13 ヶ月ちょうど／+1 秒、下書き（`baseDate` 基準）。ID が 12 文字・許可文字のみ・予約パスと不一致（1 万件生成）。`isValidPageId` が `//example.com` `%2F%2F` 11 文字・13 文字・大文字を拒否。トークン 43 文字。§5.7 の各エラーコード（`mode: 'update'` で日時不変なら終了後でも ok、日時を過去に変えると `PAST_EVENT`）。`countUrls` が `URL_PATTERN` と一致。§5.8 の優先順位。`buildChangeSnapshot`: メモだけの変更は null、日時だけの変更は変更前の日時 + `titleChanged = locationChanged = false`、タイトルだけの変更は `titleChanged = true` で日時は変更前の値（§3.5） | 全 unit green。`calculateExpiresAt` の戻り値が非 null の `Date` |
 | T4 | `feat/core-calendar` | feat: ics ビルダーと Google カレンダー URL | T3 | `src/core/ics/*` `src/core/google/*` `test/unit/core/{ics,google}/*` | 終日／時刻あり／年またぎ、エスケープ（`\r\n` 正規化、`\rATTACH:` を含む title が 1 行のまま、C0 制御文字の除去）、日本語混在の 75 オクテット折り返し（継続行のスペース込み）、`sanitizeIcsText` が SUMMARY / LOCATION / DESCRIPTION の URL を「[リンク]」に置換し自ドメイン 1 本だけ残る、`ORGANIZER` `ATTENDEE` `ATTACH` `X-ALT-DESC` が出力に無い、`PRODID` の形式、`SEQUENCE`。Google: `ctz`、`dates` を URL パースで検証、`details` の 500 文字切り詰めと末尾の詳細 URL | §7.1 / §7.2 の表を満たす。折り返しがマルチバイト境界で切れない |
 | T5 | `feat/d1-repository` | feat: D1 スキーマと PageRepository（本物 + インメモリ） | T4 | `migrations/0001_init.sql` `src/adapters/d1/{d1PageRepository,d1ReportRepository}.ts` `src/adapters/memory/memoryPageRepository.ts` `test/integration/adapters/{pageRepository,reportRepository}.test.ts` | create（`source` `creator_*` が入る、`events` の INSERT 失敗で `pages` も残らない）/ findById / update（`status` `report_count` 不変、`previousSnapshot` に日時のみ）/ incrementReportCount / countActiveByCreator / listExpired / deleteByIds（CASCADE、**101 件以上**）/ clearExpiredSnapshots。`events` 2 行で InvariantViolation。`ReportRepository.insertIfNotDuplicate`: 初回は `'inserted'`、同一 `ip_hash`・同一ページで `dedupeSince` 以降に既にあれば `'duplicate'` で行が増えない、別ページ・`dedupeSince` より前なら `'inserted'`。同じスイートを D1 と memory（`memoryReportRepository` は T1 のもの）の両方に流す | integration green。`wrangler d1 migrations apply --local` が通る（`window_kind` 列名で構文エラーが出ない） |
 | T6 | `feat/adapters-storage-ratelimit` | feat: R2 ObjectStorage とレート制限（本物 + インメモリ） | T5 | `src/adapters/r2/r2ObjectStorage.ts` `src/adapters/memory/{memoryObjectStorage,memoryRateLimiter}.ts` `src/adapters/d1/d1RateLimiter.ts` `src/server/lib/{ipHash,deviceCookie}.ts` `test/integration/adapters/{objectStorage,rateLimiter}.test.ts` `test/unit/server/lib/*` | put/get ics（`ics/{id}.ics` の上書き）・ogp・失敗マーカー（TTL 経過で false）・deleteAllForPage・getFont。固定窓の境界（時／日の切り替わり）、ip と device の独立、**上限超過後は行が増えない**、`deleteExpired`。`ipHash`: HMAC で決定的、IPv6 の /64 丸め（同一 /64 は同じ、別 /64 は異なる）、IPv4-mapped、IP 無しで `ip:unknown`。Cookie 属性 | integration green（両実装） |
@@ -1905,8 +1928,8 @@ export default defineConfig({
 |---|---|---|
 | OGP 生成の CPU 時間と wasm 初期化 | satori + resvg の実測が無い。isolate のコールドスタートで初回生成が 500ms を超える可能性。satori がフォントを呼び出しごとにパースするコストも未計上 | T10 で実測し PR 説明に記録。Cache API・R2・ネガティブキャッシュで再生成を防ぐ。超過が常態化したら OGP 生成専用 Worker（Service Binding）へ分離 |
 | Workers の起動時間制限（要検証） | satori の既定エントリ（asm.js 版 yoga）はトップレベル評価が 400ms を超えてデプロイが失敗しうる。`wrangler deploy --dry-run` では検出できない | `satori/wasm` + wasm import + 遅延 init（§2.5）。T19 の初回デプロイで確認 |
-| vitest-pool-workers での wasm import と Static Assets（要検証） | 動かない可能性がある | wasm は T10 の最初に検証し、動かなければ Node 側の別プロジェクトに切り出す（§10.2）。Static Assets は T1 で検証し、動かなければ `ASSETS` をポート化する。バージョンを固定する |
-| `_headers` ファイルの対応（要検証） | wrangler のバージョンによっては Static Assets で `_headers` が効かない | T1 で `GET /done` の CSP を検証。効かなければ `run_worker_first` で Worker を通す（§2.2） |
+| vitest-pool-workers での wasm import（要検証。Static Assets は確認済み〈T1〉、§10.2） | wasm import が動かない可能性がある | T10 の最初に検証し、動かなければ Node 側の別プロジェクトに切り出す（§10.2）。バージョンを固定する |
+| `_headers` ファイルの対応 → 確認済み（T1、§10.2） | wrangler のバージョンによっては Static Assets で `_headers` が効かない懸念だったが、pool-workers・`wrangler dev` のいずれでも効くことを確認した | 対応不要。効かなくなった場合の代替は `run_worker_first` で Worker を通す案（§2.2、§14.3） |
 | CPU-ms が Paid の込み枠上限近傍 | 月 10 万作成規模で 1,500〜3,000 万 CPU-ms | 超過分は月数十円。H12 の監視ルール |
 | 日時パースの精度 | 「8 割当たる」は仮説。特に T2（1〜7 時は午後）は `7時集合` を壊す | 外れたケースを §5.6 の表に足す運用。T2 は実データで外れが多ければリテラル解釈に戻す（定数 1 つで切替できるよう `PM_HEURISTIC_MAX_HOUR = 7` を `limits.ts` に置く） |
 | 場所抽出のストップリスト | 未知のパターンで誤検出しうる（例: `車で移動` → 場所 = 車） | タップ編集で空にすれば「使わない」になる（§6.1）。外れたケースをストップリストとテスト表に足す継続メンテ |

@@ -1,0 +1,36 @@
+{
+  "name": "calshare",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run build && wrangler dev",
+    "build": "node scripts/build-web.mjs",
+    "typecheck": "wrangler types && tsc -p tsconfig.core.json && tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "hono": "^4.13.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@types/node": "^22.20.0",
+    "@eslint/js": "^10.0.0",
+    "@playwright/test": "^1.63.0",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.0.0",
+    "prettier": "^3.9.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.133.0"
+  }
+}
