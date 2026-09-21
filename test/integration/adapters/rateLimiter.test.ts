@@ -123,6 +123,19 @@ describe.each([
     expect(await limiter.consume([rule], afterBoundary)).toEqual({ allowed: true, exceeded: [] })
   })
 
+  it('同時に大量のリクエストが来ても、許可される件数は上限を超えない', async () => {
+    const now = new Date('2026-09-16T01:00:00.000Z')
+    const rule = ipRule({ bucketKey: 'ip:concurrent', limit: 3 })
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => limiter.consume([rule], now)),
+    )
+
+    const allowedCount = results.filter((r) => r.allowed).length
+    expect(allowedCount).toBeGreaterThan(0)
+    expect(allowedCount).toBeLessThanOrEqual(3)
+  })
+
   describe('deleteExpired', () => {
     it('指定時刻より前の窓の行だけを消す。以降の窓は残る', async () => {
       const rule = ipRule({ window: 'hour', limit: 1 })

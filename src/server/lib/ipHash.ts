@@ -7,13 +7,13 @@ const IPV6_GROUP_BITS = 16
 /**
  * CF-Connecting-IP の値から HMAC-SHA256（hex 先頭 32 文字）の決定的なハッシュを作る（§9.3）。
  * 生 IP は保存もログもしないため、この戻り値だけが creator_ip_hash やレート制限のバケットキーに使われる。
- * IP が取れないとき（wrangler dev・CI）は 'unknown' を返す。呼び出し側が `ip:${ipHash(...)}` の形で
- * バケットキーを組むと、フォールバック時は単一バケット `ip:unknown` になる。
+ * IP が取れないとき（wrangler dev・CI）や空白のみのときは 'unknown' を返す。
  */
 export async function ipHash(rawIp: string | null, pepper: string): Promise<string> {
-  if (!rawIp) return 'unknown'
+  const ip = rawIp?.trim()
+  if (!ip) return 'unknown'
 
-  const normalized = normalizeIp(rawIp.trim())
+  const normalized = normalizeIp(ip)
   const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(pepper),
@@ -68,7 +68,10 @@ function normalizeHextet(group: string): string {
   return group.toLowerCase().replace(/^0+(?=.)/, '')
 }
 
-/** 末尾の a.b.c.d（IPv4-mapped の表記）を 2 つの 16 進グループに変換する。含まなければ入力をそのまま返す */
+/**
+ * 末尾の a.b.c.d（IPv4-mapped の表記）を 2 つの 16 進グループに変換する。含まなければ入力をそのまま返す。
+ * オクテットが 0〜255 の整数でなければ null を返す。
+ */
 function embedTrailingIpv4(ip: string): string | null {
   const lastColon = ip.lastIndexOf(':')
   const lastSegment = ip.slice(lastColon + 1)

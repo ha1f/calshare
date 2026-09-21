@@ -63,6 +63,23 @@ describe.each([
     expect(await fixture.storage.getOgpImage('page-1', 1)).toEqual(png)
   })
 
+  it('putOgpImage 後に渡した配列を書き換えても保存内容は変わらない', async () => {
+    const png = new Uint8Array([9, 9])
+    await fixture.storage.putOgpImage('alias-page', 1, png)
+    png[0] = 0
+
+    expect(await fixture.storage.getOgpImage('alias-page', 1)).toEqual(new Uint8Array([9, 9]))
+  })
+
+  it('getOgpImage の戻り値を書き換えても保存内容は変わらない', async () => {
+    await fixture.storage.putOgpImage('alias-page', 1, new Uint8Array([9, 9]))
+    const first = await fixture.storage.getOgpImage('alias-page', 1)
+    expect(first).not.toBeNull()
+    ;(first as Uint8Array)[0] = 0
+
+    expect(await fixture.storage.getOgpImage('alias-page', 1)).toEqual(new Uint8Array([9, 9]))
+  })
+
   it('ogp 画像が無ければ null。version が違えば別物として扱う', async () => {
     expect(await fixture.storage.getOgpImage('missing', 1)).toBeNull()
 
@@ -86,6 +103,13 @@ describe.each([
       expect(await fixture.storage.getOgpFailureMarker('page-1', 1)).toBe(true)
     })
 
+    it('TTL ちょうど経過した時刻では false になる', async () => {
+      await fixture.storage.putOgpFailureMarker('ttl-boundary-page', 1, 300)
+      fixture.clock.set(new Date(NOW.getTime() + 300 * 1000))
+
+      expect(await fixture.storage.getOgpFailureMarker('ttl-boundary-page', 1)).toBe(false)
+    })
+
     it('置いていなければ false', async () => {
       expect(await fixture.storage.getOgpFailureMarker('missing', 1)).toBe(false)
     })
@@ -107,6 +131,20 @@ describe.each([
     expect(await fixture.storage.getOgpImage('page-2', 1)).toEqual(new Uint8Array([2]))
   })
 
+  it('deleteAllForPage は前方一致で他ページを巻き込まない（page-1 と page-10）', async () => {
+    await fixture.storage.putIcs('page-1', 'ics-1')
+    await fixture.storage.putOgpImage('page-1', 1, new Uint8Array([1]))
+    await fixture.storage.putIcs('page-10', 'ics-10')
+    await fixture.storage.putOgpImage('page-10', 1, new Uint8Array([10]))
+
+    await fixture.storage.deleteAllForPage('page-1')
+
+    expect(await fixture.storage.getIcs('page-1')).toBeNull()
+    expect(await fixture.storage.getOgpImage('page-1', 1)).toBeNull()
+    expect(await fixture.storage.getIcs('page-10')).toBe('ics-10')
+    expect(await fixture.storage.getOgpImage('page-10', 1)).toEqual(new Uint8Array([10]))
+  })
+
   it('deleteAllForPage は対象が何も無くても失敗しない', async () => {
     await expect(fixture.storage.deleteAllForPage('missing')).resolves.toBeUndefined()
   })
@@ -119,5 +157,28 @@ describe.each([
     expect(found).not.toBeNull()
     expect(new Uint8Array(found as ArrayBuffer)).toEqual(new Uint8Array(data))
     expect(await fixture.storage.getFont('fonts/missing.otf')).toBeNull()
+  })
+})
+
+describe('R2ObjectStorage（R2 のキー設計そのものを検証する）', () => {
+  it('put したオブジェクトが設計どおりのキーに置かれる（§2.5・§2.6）', async () => {
+    const clock = fakeClock(NOW)
+    const storage = createR2ObjectStorage(env.BUCKET, clock)
+
+    await storage.putIcs('page-1', 'ics-1')
+    await storage.putOgpImage('page-1', 1, new Uint8Array([1]))
+    await storage.putOgpFailureMarker('page-1', 1, 300)
+
+    expect(await env.BUCKET.head('ics/page-1.ics')).not.toBeNull()
+    expect(await env.BUCKET.head('ogp/page-1/1.png')).not.toBeNull()
+    expect(await env.BUCKET.head('ogp/page-1/1.failed')).not.toBeNull()
+  })
+
+  it('失敗マーカーの本文が壊れていても getOgpFailureMarker は例外を投げず false を返す', async () => {
+    const clock = fakeClock(NOW)
+    const storage = createR2ObjectStorage(env.BUCKET, clock)
+    await env.BUCKET.put('ogp/page-1/1.failed', 'not json')
+
+    await expect(storage.getOgpFailureMarker('page-1', 1)).resolves.toBe(false)
   })
 })

@@ -1,7 +1,13 @@
+import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { ipHash } from '../../../../src/server/lib/ipHash'
 
 const PEPPER = 'test-pepper'
+
+/** ipHash の正規化後の文字列に対する HMAC-SHA256 の hex 先頭 32 文字（実装と同じ組み立て） */
+function expectedHash(normalized: string): string {
+  return createHmac('sha256', PEPPER).update(normalized).digest('hex').slice(0, 32)
+}
 
 describe('ipHash', () => {
   it('同じ IP・同じ pepper なら常に同じ値を返す', async () => {
@@ -32,6 +38,20 @@ describe('ipHash', () => {
 
   it('空文字も unknown を返す', async () => {
     expect(await ipHash('', PEPPER)).toBe('unknown')
+  })
+
+  it('空白だけの IP も unknown を返す', async () => {
+    expect(await ipHash('   ', PEPPER)).toBe('unknown')
+  })
+
+  it('既知の IPv4 で HMAC-SHA256 の計算結果と一致する', async () => {
+    expect(await ipHash('203.0.113.1', PEPPER)).toBe(expectedHash('203.0.113.1'))
+  })
+
+  it('既知の IPv6 で、/64 に丸めた文字列への HMAC-SHA256 の計算結果と一致する', async () => {
+    expect(await ipHash('2402:6b0:1234:5678:1111:2222:3333:4444', PEPPER)).toBe(
+      expectedHash('2402:6b0:1234:5678'),
+    )
   })
 
   describe('IPv6 は /64 に丸める', () => {

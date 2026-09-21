@@ -1,13 +1,5 @@
-import type { RateLimiter, RateLimitRule, RateLimitWindow } from '../../ports/rateLimiter'
-
-/** 窓の開始時刻を UTC で切り捨てる（§9.3）。d1RateLimiter と同じ規則 */
-function windowStart(now: Date, window: RateLimitWindow): string {
-  const truncated =
-    window === 'hour'
-      ? Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours())
-      : Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  return new Date(truncated).toISOString()
-}
+import { windowStart } from '../d1/d1RateLimiter'
+import type { RateLimiter, RateLimitRule } from '../../ports/rateLimiter'
 
 interface CounterEntry {
   windowStart: string

@@ -1,18 +1,6 @@
+import { icsKey, ogpFailureKey, ogpImageKey, ogpPrefix } from '../r2/r2ObjectStorage'
 import type { Clock } from '../../ports/clock'
 import type { ObjectStorage } from '../../ports/objectStorage'
-
-function icsKey(pageId: string): string {
-  return `ics/${pageId}.ics`
-}
-function ogpImageKey(pageId: string, version: number): string {
-  return `ogp/${pageId}/${version}.png`
-}
-function ogpFailureKey(pageId: string, version: number): string {
-  return `ogp/${pageId}/${version}.failed`
-}
-function ogpPrefix(pageId: string): string {
-  return `ogp/${pageId}/`
-}
 
 interface FailureMarker {
   expiresAt: number
@@ -32,16 +20,17 @@ export function createMemoryObjectStorage(
 
   return {
     seedFont: (key, data) => {
-      fonts.set(key, data)
+      fonts.set(key, data.slice(0))
     },
     putIcs: async (pageId, body) => {
       texts.set(icsKey(pageId), body)
     },
     getIcs: async (pageId) => texts.get(icsKey(pageId)) ?? null,
     putOgpImage: async (pageId, version, png) => {
-      images.set(ogpImageKey(pageId, version), png)
+      images.set(ogpImageKey(pageId, version), png.slice())
     },
-    getOgpImage: async (pageId, version) => images.get(ogpImageKey(pageId, version)) ?? null,
+    getOgpImage: async (pageId, version) =>
+      images.get(ogpImageKey(pageId, version))?.slice() ?? null,
     putOgpFailureMarker: async (pageId, version, ttlSeconds) => {
       failures.set(ogpFailureKey(pageId, version), {
         expiresAt: clock.now().getTime() + ttlSeconds * 1000,
@@ -52,7 +41,7 @@ export function createMemoryObjectStorage(
       if (!marker) return false
       return clock.now().getTime() < marker.expiresAt
     },
-    getFont: async (key) => fonts.get(key) ?? null,
+    getFont: async (key) => fonts.get(key)?.slice(0) ?? null,
     deleteAllForPage: async (pageId) => {
       texts.delete(icsKey(pageId))
       const prefix = ogpPrefix(pageId)
