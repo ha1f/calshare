@@ -1,0 +1,118 @@
+# OGP 用フォントの取得・サブセット化・配置（H8）
+
+## 目的
+
+OGP 画像生成（design.md §2.5）で使う Noto Sans JP のサブセットフォントを、
+取得 → サブセット化 → R2 配置まで自動化し、オーナーに残る作業をライセンス確認だけにする。
+
+## SIL OFL 1.1 の要点（オーナーが確認する範囲）
+
+Noto Sans JP は SIL Open Font License 1.1（`.claude/tmp/fonts/LICENSE.txt` に実物がある）。
+このプロジェクトでの使い方に関係する要点は次の 4 点。
+
+1. **フォント単体を販売してはいけない**。ソフトウェアに同梱・組み込んで配布・販売するのは可。
+   このプロジェクトはフォントをアプリ内部の OGP 画像生成にのみ使い、フォント自体を配布・
+   販売しないので抵触しない。
+2. **Reserved Font Name（RFN）が指定されている場合、改変版にその名前を使えない**。
+   RFN は著作権表示の後に明記される（OFL 本文の定義）。取得した
+   `.claude/tmp/fonts/LICENSE.txt` の著作権表示にはこのプロジェクトの確認時点で明示的な
+   RFN の指定が見当たらなかったが、サブセット化はフォントの改変にあたるため、
+   フォント取得のたびに著作権表示を再確認すること。
+3. **ライセンスファイルの同梱が必須**。フォント（オリジナル・改変版のどちらでも）を配布する
+   ときは OFL のライセンス全文を一緒に配布する。
+4. **改変版（サブセットも含む）も OFL のままでなければならない**。別のライセンスに変更しては
+   いけない。
+
+サブセット化（文字を間引く）は OFL の定義上「改変」にあたるため、上記 3・4 が直接関係する。
+ライセンス遵守の最終的な責任はオーナーが持つ（design.md H8）。**このライセンス審査そのものは
+`.claude/skills/license-review` があればそれを使うこと**。オーナーが確認するのは
+「ライセンスファイルが同梱されているか」の 1 点で足りる（下記の流れが確認しているため）。
+
+## 自動化されていること
+
+1. `node scripts/fonts/download-noto-sans-jp.mjs` — Noto Sans JP Regular（SIL OFL 1.1）を
+   公式リリース（notofonts/noto-cjk）から取得し、`.claude/tmp/fonts/NotoSansJP-Regular.otf`
+   と `.claude/tmp/fonts/LICENSE.txt` を保存する。
+2. `bash scripts/fonts/subset.sh` — 上記フォントを「JIS 第 1 水準漢字（2965 文字。
+   `scripts/fonts/generate-jis-level1.mjs` で生成）+ ひらがな + カタカナ + 半角英数記号 +
+   一般的な約物」にサブセット化し、`dist/fonts/NotoSansJP-Regular.subset.otf` に出力する
+   （fonttools の `pyftsubset` を使う）。
+3. `.github/workflows/provision.yml` の `font` ジョブが、venv に `fonttools` を入れて
+   `pyftsubset` を PATH に通したうえで上記 2 スクリプトを引数なしで順に呼び、生成した OTF を
+   `wrangler r2 object put calshare/fonts/NotoSansJP-Regular.subset.otf` で本番 R2 に配置する
+   （`with_font` 入力が既定 true。`scripts/fonts/` 一式が無い間は自動でスキップ）。
+
+**第 1 水準漢字の一覧をファイルにコミットしない理由**: `generate-jis-level1.mjs` は区点から
+EUC-JP 変換で一覧を導出する純粋関数で、ネットワークも乱数も使わないため実行するたびに
+同じ 2965 文字が出る。`scripts/fonts/jis-level1.txt` のような生成物をコミットすると、
+生成ロジックを直しても実際のファイルを更新し忘れる形で古くなりうる（DRY 原則にも反する）。
+再現性は関数自体の決定性で担保されており、差分の読みやすさより「生成物と生成ロジックが
+ずれない」ことを優先し、実行時生成のみにした。
+
+## オーナーが行う最小の作業
+
+1. GitHub Actions で `Provision Cloudflare resources` を実行する（`with_font` は既定 true の
+   ままでよい）。手順は `docs/runbooks/provisioning.md` を参照。
+2. `font` ジョブの Step Summary で配置が完了したことを確認する。
+3. **ライセンス同梱の確認**: `.claude/tmp/fonts/LICENSE.txt`（`download-noto-sans-jp.mjs` が
+   毎回取得し直す）が OFL 1.1 の全文であることを確認する。現時点では R2 にはサブセット OTF
+   のみを置き、リポジトリ側のライセンス同梱はソース（このドキュメントと取得スクリプトの
+   コメント）で足りるという判断にしている。R2 のフォントを外部に再配布する用途ができた
+   場合は、その配布物にもライセンスを同梱する必要がある点に注意する。
+
+## ローカルでの実行方法（動作確認済み）
+
+依存を用意する（プロジェクトの npm 依存には含めない。fonttools は Python パッケージ）。
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install fonttools
+```
+
+実行:
+
+```sh
+node scripts/fonts/download-noto-sans-jp.mjs
+PATH=".venv/bin:$PATH" bash scripts/fonts/subset.sh
+```
+
+`pyftsubset` が見つからない場合、`subset.sh` は上記のインストール方法を表示して終了コード 1 で
+終わる。
+
+**実測記録（2026-09-21、`.claude/tmp/venv-fonttools` で実行）**:
+
+- 対象文字数: 3,248（第 1 水準漢字 2,965 + ひらがな・カタカナ・半角英数記号・約物 283）
+- 元フォント: 4,533,028 bytes
+- サブセット後: 783,296 bytes（約 765 KiB）
+
+## 設計との既知の差分（要確認）
+
+design.md §2.5 は OGP 用フォントの対象文字を「**JIS 第 1 水準 + 第 2 水準** + かな + 英数記号」
+としている（第 2 水準を含める理由は「麹町」「髙」のような人名・地名の字が第 1 水準だけでは
+豆腐（表示不可の四角）になるため）。一方、本ランブックのパイプライン（`generate-jis-level1.mjs`
+と `subset.sh`）は**第 1 水準のみ**を対象にしている。このため、第 2 水準の字を含むタイトル・
+場所は OGP 画像上で豆腐になる（詳細ページ自体の表示には影響しない。design.md §14.1 の
+「OGP のフォント未収録文字」と同じ扱いになる）。
+
+また design.md §11.1・§11.7 はサブセット生成スクリプトを `scripts/subset-font.mjs`
+（OGP 画像生成を実装する PR が持つ想定）としているが、本ランブックは provisioning
+自動化用に `scripts/fonts/subset.sh` を別途用意した（npm 依存を持たない運用スクリプト群
+という、このリポジトリの運用スクリプト全般の方針に合わせるため）。OGP 画像生成の実装に
+着手する際、どちらか一方に統合するか、用途が異なるまま両方残すかを判断する。
+
+**オーナー判断が必要な事項**: 第 2 水準まで含めるかどうか（含める場合、`generate-jis-level1.mjs`
+に相当する「第 2 水準」区点 48〜84 区の生成関数を追加し、`subset.sh` の対象に加える。
+出力サイズは design.md の目安で 3〜4MB 程度に増える見込み）。
+
+## 失敗したときの見方
+
+- `pyftsubset（fonttools）が見つかりません` → 上記「ローカルでの実行方法」のとおり
+  インストールする。CI（`provision.yml`）の `font` ジョブは venv に `fonttools` を入れて
+  `pyftsubset` を `GITHUB_PATH` に通すステップを持つので、通常はここで発生しない
+  （ubuntu-latest の system Python に直接 `pip install` しないのは PEP 668 の
+  externally-managed-environment 制限を避けるため）。発生した場合は
+  `python3 -m venv .venv-fonttools && .venv-fonttools/bin/pip install fonttools` が
+  ジョブの中で成功しているかをログで確認する。
+- `入力フォントが見つかりません` → 先に `download-noto-sans-jp.mjs` を実行する。
+- R2 への配置（`wrangler r2 object put ... --remote`）が失敗する場合は
+  `docs/runbooks/cloudflare-api-token.md` の権限（R2 の編集権限）を確認する。

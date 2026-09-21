@@ -227,7 +227,7 @@ async function handleOgp(id: string, request: Request, env: Env, ctx: ExecutionC
 - **フォールバック画像**: `dist/assets/img/ogp-fallback.png`（ソースは `src/web/img/ogp-fallback.png`。サービス名だけを描いた静的 PNG）を `env.ASSETS.fetch(new URL('/assets/img/ogp-fallback.png', request.url))` で取得し、`new Response(res.body, res)` で包み直して `Cache-Control` を付けて返す（§2.2 の規約）。wasm 例外・フォント取得失敗・タイムアウトのいずれでもカードが壊れない。
 - **ネガティブキャッシュ**: 生成に失敗し続けるページで毎回 CPU を消費しないよう、失敗マーカー（R2 の `ogp/{id}/{version}.failed`、`OGP_FAILURE_CACHE_SECONDS = 300` 秒で無効）を置く。同じ入力は同じ結果になるので、失敗マーカーが切れても同じ version では再び失敗する。これを「そのページの OGP は恒久的にフォールバック」として受け入れる代わりに、失敗の主因になるフォント未収録文字を描画前に落とす（下記「入力の前処理」）。
 - **satori の読み込み方（要検証）**: satori の既定エントリはレイアウトエンジン yoga の asm.js 版をモジュール読み込み時に初期化する。Workers には「スクリプトのトップレベル評価は 400ms 以内」という起動時間制限があり、これに掛かるとデプロイ自体が失敗し、`wrangler deploy --dry-run` では検出できない。そのため **`satori/wasm` エントリを使い、yoga（`yoga-wasm-web`）と resvg の wasm は `import` で束ね、`init` は初回 render 時に遅延実行する。トップレベルで重い初期化は行わない。** 初期化結果と `R2` から読んだフォントはモジュールスコープでメモ化する。T10 の完了条件に「`wrangler dev` の起動と初回リクエストが通る」「1 回の render に要する CPU 時間（フォントパース込み）の実測」を含め、実機の起動制限は T19 の初回デプロイで確認する。
-- **フォント**: satori はデフォルトフォントを持たず `fonts` オプションが必須。Noto Sans JP のサブセット（**JIS 第 1 水準 + 第 2 水準** + かな + 英数記号。第 2 水準を含めるのは「麹町」「髙」のような人名・地名の字が第 1 水準だけでは豆腐になるため。OTF で 3〜4MB 目安、要実測）を **R2 の `fonts/NotoSansJP-Regular.subset.otf` に置き**、isolate 内でモジュールスコープにメモ化して読み込む。スクリプトに同梱しないのは Paid でも 10MB（gzip 後）の上限があるため。サブセット生成スクリプト `scripts/subset-font.mjs`（pyftsubset を呼ぶ手順書付き）と OFL のライセンスファイルを T10 に含める。satori はフォントを呼び出しごとにパースする可能性があり（要検証）、パース済みフォントをメモ化できるかを T10 の確認項目に入れる。
+- **フォント**: satori はデフォルトフォントを持たず `fonts` オプションが必須。Noto Sans JP のサブセット（**JIS 第 1 水準 + 第 2 水準** + かな + 英数記号。第 2 水準を含めるのは「麹町」「髙」のような人名・地名の字が第 1 水準だけでは豆腐になるため。OTF で 3〜4MB 目安、要実測）を **R2 の `fonts/NotoSansJP-Regular.subset.otf` に置き**、isolate 内でモジュールスコープにメモ化して読み込む。スクリプトに同梱しないのは Paid でも 10MB（gzip 後）の上限があるため。サブセット生成スクリプト `scripts/subset-font.mjs`（pyftsubset を呼ぶ手順書付き）と OFL のライセンスファイルを T10 に含める（運用基盤の PR が provisioning 用に `scripts/fonts/subset.sh` を別途用意済み。第 1 水準のみで第 2 水準を含まない既知の差分があり、T10 でどちらに統合するかを判断する。docs/runbooks/fonts.md 参照）。satori はフォントを呼び出しごとにパースする可能性があり（要検証）、パース済みフォントをメモ化できるかを T10 の確認項目に入れる。
 - **入力の前処理（`toOgpInput`）**: サブセットに無い文字（絵文字・第 2 水準外の漢字・記号）は描画前に除去する。タイトルは詳細ページで正しく見えるので、OGP から落としても価値は失われない。絵文字を画像で描く `graphemeImages` は外部取得が要るので採らない。ユーザーテキストは 2 行までに切り詰める。
 - **satori への入力**: satori は React 要素形状（`{ type, props: { style, children } }`）を要求し、`hono/jsx` の JSXNode はそのまま渡せない。`OgpRenderer` の実装は素のオブジェクトツリーを組む。ユーザー入力は**テキストノードとしてのみ**渡し、文字列連結で SVG や CSS を組まない。satori はテキストを SVG のパスに変換するので、`<` `&` を含む入力でも SVG/HTML 注入にはならない（この不変条件を T10 のテストで固定する）。
 - **なりすまし対策**: OGP テンプレートには固定文言「予定の共有」とサービス名を必ず含める。「【○○銀行】…のお知らせ」のようなタイトルがサービスのブランドで描かれても公式通知に見えないようにする。デザインの未決事項（§14.2）にこの制約を添える。
@@ -1094,12 +1094,22 @@ npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}
 ci.yml（pull_request / push main。ステップの詳細は §11.7）
   npm ci → lint → typecheck → test:unit → build → test:integration → wrangler deploy --dry-run → playwright install → test:e2e
   （build は test:integration より前。test:integration が env.ASSETS.fetch() で dist/ を読むため。確認済み・T1）
-deploy.yml（push main、ci 成功後）
-  cloudflare/wrangler-action で wrangler deploy（CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID は GitHub Secrets）
-  wrangler d1 migrations apply --remote を deploy 前に実行
+deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§13 H9・§12 T19 を参照）
+  gate ジョブ: リポジトリ変数 DEPLOY_ENABLED が true でなければここで終了する（H9 の公開承認そのもの）
+  deploy ジョブ: 変数 PUBLIC_DOMAIN が未設定なら失敗させて止める（sameOrigin の検証が本番 Origin
+    と一致しなくなるため。マイグレーション適用より前に確認する）
+    → npm ci → npm run build → `npx wrangler@4 d1 migrations apply calshare --remote`
+    → `npx wrangler@4 deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"`
+    → デプロイ直後に RATE_LIMIT_PEPPER が未登録なら生成して登録する（H6 をここで完結させる。§13）
+    → GitHub Secret REPORT_WEBHOOK_URL があれば同じ値で Worker のシークレットに登録する
+      （H7、任意。§13）
+  サードパーティ action は使わない（actions/checkout@v4・actions/setup-node@v4 のみ。wrangler は npx wrangler@4 で都度呼ぶ）。
+  CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID は GitHub Secrets。手順は docs/runbooks/deploy.md。
 ```
 
 `test:integration` はモック不要でネットワーク到達性も不要なので、GitHub Actions のホストランナー内で完結する。e2e は `npx playwright install --with-deps chromium` を含める。`wrangler deploy --dry-run` を build に含め、スクリプトサイズ上限（Paid 10MB gzip）を毎 PR で検出する。未ログイン・プレースホルダ `database_id` で通ることは確認済み（T1、§11.7）。ただし **`--dry-run` は Workers の起動時間制限（トップレベル評価 400ms）を検出しない**ので、wasm の初期化を遅延させる設計（§2.5）を守り、実機の確認は T19 の初回デプロイで行う。
+
+`deploy.yml` は `ci.yml` の成功を GitHub Actions の機能（`workflow_run` 等）で待ち合わせていない。`main` への push はブランチ保護で ci.yml の必須チェックを通過した PR のマージに限られる前提で、デプロイ自体のゲートは `DEPLOY_ENABLED` の 1 点に絞っている（docs/runbooks/deploy.md）。
 
 `wrangler dev` はローカルの D1（`--local`）と R2 エミュレーションを使い、ネットワーク到達性を要しない。フォントはリポジトリ内の `test/fixtures/fonts/`（サブセット済み OTF と OFL のライセンスファイル。生成は `scripts/subset-font.mjs`）から `wrangler r2 object put` でローカル R2 に投入するスクリプト `scripts/seed-local-r2.mjs` を用意する。
 
@@ -1893,7 +1903,7 @@ export default defineConfig({
 | T16 | `feat/web-edit` | feat: 編集画面（localStorage のトークンで編集） | T15 | `src/web/pages/edit.html` `src/web/edit/main.ts` `test/e2e/edit.spec.ts` | e2e §10.3 の 7・8。保存後に `/done` 再掲、履歴の `fields` `updatedAt` の更新。`pathname` の `id` が不正なら `/` へ | e2e green |
 | T17 | `feat/web-history` | feat: 作成履歴画面 | T16 | `src/web/pages/history.html` `src/web/history/main.ts` `test/e2e/history.spec.ts` | 作成後に一覧に出る、期限切れのグレー表示、空状態の文言、localStorage に不正な `id` を仕込んでもリンクが生成されない | e2e green |
 | T18 | `feat/observability` | feat: 構造化ログとリクエストログミドルウェア | T17 | `src/server/lib/logger.ts` `src/server/middleware/requestLog.ts` `src/server/app.ts`（1 行）`test/integration/server/requestLog.test.ts` | §9.6 の表: ログに生 IP・トークン・クエリ・本文が出ない（`console.log` をスパイ）、ルート名と所要時間が出る、作成ログに `source` が出る、429 のログに `exceeded` のバケット種別が出る、例外 message に入力文字列が含まれていてもログには pageId と name だけが出る | integration green |
-| T19 | `feat/e2e-and-deploy` | ci: e2e 一式の仕上げと自動デプロイ | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ）`.github/workflows/deploy.yml` | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない） | CI green。main マージで `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
+| T19 | `feat/e2e-and-deploy` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ） | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない） | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
 
 並列に着手したい場合: T2〜T4（core）は互いにファイルが重ならないので、同時に着手して T2 → T3 → T4 の順にスタックできる。T14〜T17（web）も同様。ただし base は常に直前の PR にし、ダイヤモンドを作らない。
 
@@ -1901,22 +1911,27 @@ export default defineConfig({
 
 ## 13. 人間（リポジトリオーナー）にしかできない作業
 
-| # | 作業 | なぜ人間が必要か | ブロックするタスク |
-|---|---|---|---|
-| H1 | サービス名と独自ドメインの決定・取得 | ブランディング判断（concept §10）であり支払いを伴う契約行為。`PUBLIC_ORIGIN`・ics の UID ドメイン・OGP のサービス名表記に使う | T19（本番デプロイ）。開発中は `calshare.example` の仮値で進める |
-| H2 | Cloudflare アカウント作成と **Workers Paid（$5/月）** の契約。承認後に concept §09 へ「Phase 1 の固定費は Workers Paid $5/月のみ（OGP 生成のため）」を追記 | 決済情報の入力。OGP 生成は Paid が前提（§1.2）。concept の「無料枠のまま放置できる」との食い違いをオーナーが承認する必要がある | T19 |
-| H3 | ドメインの DNS を Cloudflare に移管（ゾーン作成）し Worker にカスタムドメインを割り当てる。割り当て後に `wrangler.jsonc` の `workers_dev: false` を有効にする | レジストラ側の操作は本人認証が要る。Cache API はカスタムドメイン配下でのみ効く（§1.2）。`*.workers.dev` を閉じるのは §9.9 | T19 |
-| H4 | `wrangler login` と D1 データベース・R2 バケットの本番作成、`wrangler.jsonc` のプレースホルダ `database_id`（§11.7）の置換 | 課金主体のリソース発行は運用者の承認の下で行う。`d1 create` の出力 ID をリポジトリに入れる判断も含む | T19 |
-| H5 | Cloudflare API トークン（Workers / D1 / R2 の編集権限）の発行と GitHub Secrets（`CLOUDFLARE_API_TOKEN` `CLOUDFLARE_ACCOUNT_ID`）への登録 | 最小権限スコープの判断と登録はオーナー権限が必要 | T19 |
-| H6 | `RATE_LIMIT_PEPPER` の生成と `wrangler secret put` | シークレットの生成・登録は権限分離のため人間が行う | T19（ローカルは `.dev.vars` で任意の値） |
-| H7 | Discord または Slack の通報通知チャンネル作成と Incoming Webhook URL の発行、`REPORT_WEBHOOK_URL` の登録 | 通知先ワークスペースの管理権限が要る | T19（T12 は Fake で完結） |
-| H8 | OGP 用フォント（Noto Sans JP、SIL OFL）のライセンス確認と、`scripts/subset-font.mjs`（T10）で生成したサブセットフォントの本番 R2 への配置 | ライセンス遵守の責任は人間が持つ。サブセット化スクリプトと OFL のライセンスファイル同梱は T10 が用意する | T19（ローカルは `scripts/seed-local-r2.mjs`） |
-| H9 | 初回の本番デプロイ承認と公開判断 | 公開はプロダクトオーナーの意思決定 | — |
-| H10 | 利用規約・プライバシーポリシー・通報ポリシーの文言承認と `/` への掲載 | 法的文言の責任は運用者本人に帰属する | — |
-| H11 | 通報の一次対応（通知を見て `status='hidden'` にする。スパム波は §9.4 の SQL で同一送信元を一括非表示）の運用 | 自動非表示を持たない設計（§9.4）なので継続的な人間の判断が要る | — |
-| H12 | Cloudflare ダッシュボードで Usage を定期確認し、CPU-ms・D1 書き込みが込み枠の 8 割に達したら §14 の対応を判断 | 課金に関わる判断 | — |
-| H13 | Cloudflare WAF のレート制限ルール（`/api/*` へのエッジ側制限。例: 同一 IP から 1 分に 60 リクエスト超で 429）の作成 | ダッシュボード操作でありコードに乗らない。D1 のカウンタに到達する前の保険（§9.3） | —（公開前に設定するのが望ましい） |
-| H14 | iOS / Android の LINE 実機で、詳細ページのカレンダーボタン（`openExternalBrowser=1`）と ics の取り込みが動くことの確認 | 実機と LINE アカウントが要る。パラメータの挙動はバージョン依存（§6.6、要検証） | —（公開前と LINE のメジャー更新時） |
+H1〜H14 の運用手順は docs/runbooks/README.md にまとめてある。各項目の手順書・スクリプト・
+ワークフロー名は「自動化」列を参照。方針は「エージェントが土台を作り、オーナーは承認と判断
+だけを行う。同じ作業が再発してもスクリプト・ワークフロー・スキルのいずれかが先に動く」
+（docs/runbooks/README.md の方針をそのまま踏襲する）。
+
+| # | 作業 | なぜ人間が必要か | 自動化（準備済みの土台 / オーナーに残る最小の作業） | ブロックするタスク |
+|---|---|---|---|---|
+| H1 | サービス名と独自ドメインの決定・取得 | ブランディング判断（concept §10）であり支払いを伴う契約行為。`PUBLIC_ORIGIN`・ics の UID ドメイン・OGP のサービス名表記に使う | 土台: `docs/runbooks/naming.md`（候補17件の比較・ドメイン確認・J-PlatPat 手順）、`scripts/check-domain.mjs`、`docs/runbooks/rename.md` + `scripts/apply-service-name.mjs`（反映を自動化）。残る作業: 候補の絞り込み、商標検索、ドメインの購入（本人認証・支払い）、`apply-service-name.mjs` の実行と PR マージ | T19（本番デプロイ）。開発中は `calshare.example` の仮値で進める |
+| H2 | Cloudflare アカウント作成と **Workers Paid（$5/月）** の契約 | 決済情報の入力はレジストラ・アカウント登録と同様に本人認証を伴う契約行為 | 土台: concept.md §09 への「Phase 1 の固定費は Workers Paid $5/月のみ」の追記は反映済み。`docs/runbooks/provisioning.md` が契約後の手順を全部引き継ぐ。残る作業: アカウント作成と Paid プランへの契約そのもの（1 回） | T19 |
+| H3 | ドメインの DNS を Cloudflare に移管（ゾーン作成）し Worker にカスタムドメインを割り当てる | レジストラ側のネームサーバー変更は本人認証が要る。Cache API はカスタムドメイン配下でのみ効く（§1.2）。`*.workers.dev` を閉じるのは §9.9 | 土台: `scripts/cf/ensure-zone.mjs`（ゾーン作成）・`scripts/cf/ensure-waf-rate-limit.mjs`（H13 も同時に自動実行）・`scripts/cf/write-wrangler-domain.mjs`（`routes`・`workers_dev: false` を書き換える PR を自動作成）、`.github/workflows/provision.yml` の `zone_and_waf` ジョブ、`docs/runbooks/custom-domain.md`。残る作業: レジストラでのネームサーバー設定、ゾーンが `active` になるまでの再実行、自動作成された PR のレビューとマージ | T19 |
+| H4 | `wrangler login` と D1 データベース・R2 バケットの本番作成、`wrangler.jsonc` のプレースホルダ `database_id`（§11.7）の置換 | 課金主体のリソース発行は運用者の承認の下で行う | 土台: `scripts/cf/ensure-resources.mjs`（作成 or 流用し `wrangler.jsonc` を書き換える PR を自動作成）、`.github/workflows/provision.yml` の `resources` ジョブ。残る作業: 自動作成された PR（`chore/provision-ids`）のレビューとマージ、初回のみ「Allow GitHub Actions to create and approve pull requests」の設定 | T19 |
+| H5 | Cloudflare API トークン（Workers / D1 / R2 の編集権限）の発行と GitHub Secrets（`CLOUDFLARE_API_TOKEN` `CLOUDFLARE_ACCOUNT_ID`）への登録 | トークン発行はダッシュボード操作で本人認証が要り、最小権限スコープの選定はオーナー権限が必要 | 土台: `docs/runbooks/cloudflare-api-token.md`（権限テンプレート）、`scripts/cf/set-github-secrets.sh`（対話的に 1 回登録）、`scripts/cf/check-token.mjs`（`provision.yml` の `preflight` が実行のたびに自動検証）。残る作業: トークンの発行そのもの、`set-github-secrets.sh` の実行（1 回） | T19 |
+| H6 | `RATE_LIMIT_PEPPER` の生成と `wrangler secret put` | シークレットの生成・登録は権限分離のため人間の承認下で行う | 土台: `scripts/cf/ensure-secret.mjs`。`deploy.yml` が初回デプロイ直後に自動登録し、`provision.yml` の `secrets` ジョブが再実行時に登録済みであることを確認する。残る作業: なし（完全自動化。H9 のデプロイ承認に含まれる） | T19（ローカルは `.dev.vars` で任意の値） |
+| H7 | Discord または Slack の通報通知チャンネル作成と Incoming Webhook URL の発行、`REPORT_WEBHOOK_URL` の登録 | 通知先ワークスペースの管理権限が要る | 土台: `scripts/cf/ensure-secret.mjs --force`（`provision.yml` の `secrets` ジョブと `deploy.yml` の両方から登録できる）。残る作業: Webhook URL の発行そのもの（管理者権限操作）と GitHub Secrets への登録（1 回、任意） | T19（T12 は Fake で完結） |
+| H8 | OGP 用フォント（Noto Sans JP、SIL OFL）のライセンス確認と、サブセットフォントの本番 R2 への配置 | ライセンス遵守の責任は人間が持つ | 土台: `scripts/fonts/{download-noto-sans-jp,generate-jis-level1}.mjs` + `scripts/fonts/subset.sh`、`.github/workflows/provision.yml` の `font` ジョブ（取得・サブセット化・R2 配置と fonttools のインストールまで自動）、`docs/runbooks/fonts.md`、`docs/licenses/noto-sans-jp.md`（ライセンス審査記録）。残る作業: `docs/licenses/noto-sans-jp.md` に残る条件（フォント本体の `name` テーブルから著作権表示・RFN 宣言の有無を確認し `OFL.txt` を同梱する）の消化と承認。**判断が必要**: JIS 第 2 水準まで含めるか（fonts.md の「設計との既知の差分」参照） | T19（ローカルは `scripts/seed-local-r2.mjs`） |
+| H9 | 初回の本番デプロイ承認と公開判断 | 公開はプロダクトオーナーの意思決定そのもの | 土台: `.github/workflows/deploy.yml` の `gate` ジョブ（`DEPLOY_ENABLED` の確認のみ）、`docs/runbooks/deploy.md`。承認後は build・マイグレーション・デプロイ・`RATE_LIMIT_PEPPER` 登録まで全自動。残る作業: `PUBLIC_DOMAIN` の設定と `DEPLOY_ENABLED=true` にする決定（1 回の変数設定 2 つ） | — |
+| H10 | 利用規約・プライバシーポリシー・通報ポリシーの文言承認と `/` への掲載 | 法的文言の責任は運用者本人に帰属する | 土台: `docs/legal/{terms,privacy,report-policy}.md`（実装仕様に基づくドラフト）、`scripts/legal/apply-legal-values.mjs`（施行日・運営者・管轄裁判所を一括反映）、`scripts/legal/checkLegalDocs.mjs --strict`（掲載可否の機械検査）、`docs/runbooks/legal.md`。残る作業: 施行日・運営者表記・管轄裁判所の決定、`.claude/skills/legal-review` の指摘を読んだ上での内容承認（掲載 HTML 化は実装 PR 側の作業） | — |
+| H11 | 通報の一次対応（通知を見て `status='hidden'` にする。スパム波は同一送信元を一括非表示）の運用 | 自動非表示を持たない設計（§9.4）なので、通報 1 件ごとの継続的な人間の判断が要る | 土台: `.github/workflows/moderation.yml`（`hide` / `unhide` / `hide-by-creator` を 1 回の実行で処理し、対象件数・id 一覧を Issue に記録）、`scripts/cf/moderation-sql.mjs`、`docs/runbooks/moderation.md`、`.claude/skills/moderation-triage`（判定の下書き）。残る作業: 通報ごとの hide / unhide / 維持の判断そのもの（設計上、自動化しない） | — |
+| H12 | Cloudflare の Usage を定期確認し、込み枠の 8 割に達したら §14 の対応を判断 | 課金に関わる判断 | 土台: `.github/workflows/usage-report.yml`（毎週自動実行し、しきい値超過時だけ Issue を作成）、`scripts/cf/usage-report.mjs`、`docs/runbooks/usage.md`。残る作業: 通常は無し。しきい値超過の Issue が来たときだけ対応方針を判断する | — |
+| H13 | Cloudflare WAF のレート制限ルール（`/api/*` へのエッジ側制限）の作成 | Free プランの制約（period は 10 秒単位）に合わせた値をどこまで許容するかの判断（§9.3 の保険） | 土台: `scripts/cf/ensure-waf-rate-limit.mjs`、`.github/workflows/provision.yml` の `zone_and_waf` ジョブ（H3 のドメイン確定時に自動実行）。残る作業: なし（H3 の provision 実行に含まれる。個別の操作は不要） | —（公開前に設定するのが望ましい） |
+| H14 | iOS / Android の LINE 実機で、詳細ページのカレンダーボタン（`openExternalBrowser=1`）と ics の取り込みが動くことの確認 | 実機と LINE アカウントが要る。パラメータの挙動はバージョン依存（§6.6、要検証） | 土台: `docs/runbooks/line-device-test.md`（チェックリストと結果記録欄）。残る作業: 実機での目視確認そのもの（自動化不可）。公開前と LINE のメジャー更新時に実施 | —（公開前と LINE のメジャー更新時） |
 
 ---
 

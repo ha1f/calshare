@@ -43,6 +43,27 @@ export default tseslint.config(
     },
   },
   {
+    // scripts/ は Node で直接実行する。ブラウザや Workers と違い Node のグローバルが使える
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: Object.fromEntries(
+        [
+          'process',
+          'console',
+          'fetch',
+          'URL',
+          'URLSearchParams',
+          'TextDecoder',
+          'TextEncoder',
+          'Buffer',
+          'AbortController',
+          'setTimeout',
+          'clearTimeout',
+        ].map((name) => [name, 'readonly']),
+      ),
+    },
+  },
+  {
     // core は外部依存ゼロを保証するため相対 import のみ許可する（§11.1）。
     // group（gitignore 形式）は import 指定子の `./x` のような相対パスを除外できないため、
     // 非相対パスにだけマッチする正規表現で判定する。

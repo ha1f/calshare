@@ -1,0 +1,176 @@
+name: moderation
+
+# H11: 通報の一次対応。通知を見たオーナーがこの workflow を手動実行して非表示 / 解除する
+# （docs/runbooks/moderation.md）。SQL の組み立ては scripts/cf/moderation-sql.mjs で行い、
+# ここでは page_id・ハッシュ値を絶対に run: のコマンド文字列へ直接埋め込まない
+# （workflow_dispatch の入力はユーザ由来なのでシェルインジェクションの経路になる）。
+#
+# gh --jq に渡す Issue タイトルはこのファイル内の固定文字列のみで、ユーザ入力は含まない
+# （note / page_id は --jq のフィルタ式には使わない）。
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '操作'
+        required: true
+        type: choice
+        options:
+          - hide
+          - unhide
+          - hide-by-creator
+      page_id:
+        description: '対象ページ ID（12文字。hide-by-creator でも同じ送信元を特定するために使う）'
+        required: true
+        type: string
+      note:
+        description: '記録用のメモ（任意）'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: moderation
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  moderate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node のバージョンを決める
+        id: node-version
+        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      # wrangler.jsonc の d1_databases から DB 名を解決するため、無いと分かりにくい
+      # wrangler のエラーで落ちる。理由を出して早期に止める。
+      - name: wrangler.jsonc の有無を確認する
+        run: |
+          if [ ! -f wrangler.jsonc ]; then
+            echo "wrangler.jsonc が無いため実行できません（足場と provision の PR をマージ後に実行してください）" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: SQL を組み立てる
+        id: build-sql
+        env:
+          ACTION: ${{ inputs.action }}
+          PAGE_ID: ${{ inputs.page_id }}
+        run: |
+          if [ "$ACTION" = "hide-by-creator" ]; then
+            LOOKUP_SQL=$(node scripts/cf/moderation-sql.mjs --lookup --page-id "$PAGE_ID")
+            npx wrangler@4 d1 execute calshare --remote --json --command "$LOOKUP_SQL" > lookup.json
+            IP_HASH=$(node scripts/cf/moderation-sql.mjs --extract-field creator_ip_hash < lookup.json)
+            DEVICE_ID=$(node scripts/cf/moderation-sql.mjs --extract-field creator_device_id < lookup.json)
+            # design.md §9.5/§9.6 のとおり、これらの値は Actions のログに残さない。
+            echo "::add-mask::$IP_HASH"
+            echo "::add-mask::$DEVICE_ID"
+            node scripts/cf/moderation-sql.mjs --action hide-by-creator --creator-ip-hash "$IP_HASH" --creator-device-id "$DEVICE_ID" --json > sql.json
+          else
+            node scripts/cf/moderation-sql.mjs --action "$ACTION" --page-id "$PAGE_ID" --json > sql.json
+          fi
+
+      - name: 対象件数を確認する
+        id: count
+        run: |
+          COUNT_SQL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('sql.json','utf8')).countSql)")
+          npx wrangler@4 d1 execute calshare --remote --json --command "$COUNT_SQL" > count.json
+          COUNT=$(node scripts/cf/moderation-sql.mjs --extract-field count < count.json)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      # 対象0件のまま更新に進むと「成功」で終わってしまい、page_id 間違いや二重実行に
+      # 気づけない。ここで止めて、更新は実行しない。
+      - name: 対象件数が0でないことを確認する
+        if: steps.count.outputs.count == '0'
+        run: |
+          echo "対象件数が0件のため、更新を実行せずに終了します。page_id や action を確認してください。" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      # 更新前に対象 id を記録する。hide-by-creator は同一 IP・同一 device の active なページを
+      # まとめて更新するため、誤って巻き込んだページを後から特定して unhide で戻せるようにする。
+      - name: 対象 id を記録する
+        id: list
+        run: |
+          LIST_SQL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('sql.json','utf8')).listSql)")
+          npx wrangler@4 d1 execute calshare --remote --json --command "$LIST_SQL" > list.json
+          node scripts/cf/moderation-sql.mjs --extract-ids < list.json > target-ids.json
+          {
+            echo "### 対象ページ id"
+            echo '```json'
+            cat target-ids.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 更新を実行する
+        run: |
+          UPDATE_SQL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('sql.json','utf8')).sql)")
+          npx wrangler@4 d1 execute calshare --remote --yes --command "$UPDATE_SQL"
+
+      - name: サマリに記録する
+        env:
+          ACTION: ${{ inputs.action }}
+          PAGE_ID: ${{ inputs.page_id }}
+          NOTE: ${{ inputs.note }}
+          COUNT: ${{ steps.count.outputs.count }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          {
+            echo "## moderation: $ACTION"
+            echo ""
+            echo "- page_id: \`$PAGE_ID\`"
+            echo "- 対象件数: $COUNT"
+            echo "- note: ${NOTE:-(なし)}"
+            echo "- 実行者: @$ACTOR"
+            echo "- 実行時刻: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ログ Issue を用意する
+        id: log-issue
+        run: |
+          gh label create "moderation-log" --color "5319E7" --description "通報対応の実行記録" 2>/dev/null || true
+          TITLE="[運用] 通報対応ログ"
+          NUMBER=$(gh issue list --label "moderation-log" --state open --json number,title --jq "map(select(.title==\"$TITLE\")) | .[0].number // empty")
+          if [ -z "$NUMBER" ]; then
+            gh issue create --title "$TITLE" --label "moderation-log" --body "moderation ワークフローの実行記録をここに追記していきます。"
+            NUMBER=$(gh issue list --label "moderation-log" --state open --json number,title --jq "map(select(.title==\"$TITLE\")) | .[0].number // empty")
+          fi
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      # D1 の更新は既に完了しているので、ログ Issue へのコメントが失敗してもジョブ全体は
+      # 失敗させない（作成直後の一覧取得の遅延で NUMBER が空になる場合がある）。
+      # 記録が漏れた場合はサマリ（前のステップ）の内容を手で Issue に転記する。
+      - name: 実行記録をコメントする
+        env:
+          ACTION: ${{ inputs.action }}
+          PAGE_ID: ${{ inputs.page_id }}
+          NOTE: ${{ inputs.note }}
+          COUNT: ${{ steps.count.outputs.count }}
+          ACTOR: ${{ github.actor }}
+          ISSUE_NUMBER: ${{ steps.log-issue.outputs.number }}
+        run: |
+          {
+            echo "### $ACTION - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "- page_id: \`$PAGE_ID\`"
+            echo "- 対象件数: $COUNT"
+            echo "- 実行者: @$ACTOR"
+            echo "- note: ${NOTE:-(なし)}"
+            echo "- 対象 id: $(cat target-ids.json)"
+          } > comment.md
+          if [ -n "$ISSUE_NUMBER" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body-file comment.md \
+              || echo "Issue #$ISSUE_NUMBER へのコメントに失敗しました。上のサマリの内容を手で転記してください。" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ログ Issue の特定に失敗しました。上のサマリの内容を手で Issue「[運用] 通報対応ログ」に転記してください。" >> "$GITHUB_STEP_SUMMARY"
+          fi

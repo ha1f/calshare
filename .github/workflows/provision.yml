@@ -1,0 +1,329 @@
+name: Provision Cloudflare resources
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: '独自ドメイン（未定なら空のまま。指定しない場合は変数 PUBLIC_DOMAIN を使う。どちらも無ければゾーン作成と WAF レート制限をスキップ）'
+        required: false
+        type: string
+      with_font:
+        description: 'Noto Sans JP のサブセットフォントを R2 に配置する'
+        required: false
+        type: boolean
+        default: true
+
+# 同時に走らせると D1/R2 の作成やゾーンの作成が競合しうるので直列化する。
+concurrency:
+  group: provision-cloudflare
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  # (1) トークンが provisioning に必要な権限を持っているかを確認する。
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      domain: ${{ steps.resolve-domain.outputs.domain }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node のバージョンを決める
+        id: node-version
+        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      # inputs / vars の式はシェル実行前にテキスト置換されるため、run: に直接展開すると
+      # 値に "; ..." や $(...) を混ぜたシェル注入の経路になる。env 経由で受け取り、
+      # ドメイン形式を検証してから outputs に載せる（以降のジョブはこの検証済みの値だけを使う）。
+      - name: Resolve domain input
+        id: resolve-domain
+        env:
+          INPUT_DOMAIN: ${{ inputs.domain }}
+          VAR_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
+        run: |
+          domain="${INPUT_DOMAIN:-$VAR_DOMAIN}"
+          # PUBLIC_DOMAIN は「公開ホスト名」（docs/runbooks/deploy.md）、この domain は
+          # 「ゾーンとして作成する対象」で意味が違う。workers.dev のサブドメインは
+          # Cloudflare 管理のドメインでゾーンとして作成できないため、ここで空扱いにして
+          # zone_and_waf をスキップする（docs/runbooks/custom-domain.md）。
+          if [[ "$domain" == *.workers.dev ]]; then
+            echo "PUBLIC_DOMAIN が workers.dev のホスト名（$domain）のため、ゾーン作成をスキップします。" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "実際のドメインを取得したら、\`domain\` 入力（または \`gh variable set PUBLIC_DOMAIN\` の更新）を付けて再実行してください。" | tee -a "$GITHUB_STEP_SUMMARY"
+            domain=""
+          fi
+          if [ -n "$domain" ] && ! [[ "$domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]]; then
+            echo "domain の形式が不正です（ホスト名のみ指定できます）: $domain" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "domain=$domain" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Cloudflare API token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/cf/check-token.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # (2) D1 データベースと R2 バケットを用意する。wrangler.jsonc の database_id が
+  #     プレースホルダのままなら実 ID に書き換え、chore/provision-ids ブランチで PR を出す。
+  resources:
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node のバージョンを決める
+        id: node-version
+        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      - name: Ensure D1 / R2 resources
+        id: ensure
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ ! -f wrangler.jsonc ]; then
+            echo "wrangler.jsonc が無いためスキップします（wrangler.jsonc が main に入る前）" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node scripts/cf/ensure-resources.mjs --write-wrangler wrangler.jsonc | tee -a "$GITHUB_STEP_SUMMARY"
+          if git diff --quiet -- wrangler.jsonc; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open PR for wrangler.jsonc changes
+        if: steps.ensure.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="chore/provision-ids"
+          git switch -c "$branch"
+          git add wrangler.jsonc
+          git commit -m "chore: wrangler.jsonc の database_id を実 ID に更新"
+          git push -u origin "$branch" --force
+          # 既に同じブランチの PR があれば作り直さない（要 "Allow GitHub Actions to create and
+          # approve pull requests" 設定。docs/runbooks/provisioning.md 参照）。
+          existing=$(gh pr list --head "$branch" --state open --json number --jq 'length')
+          if [ "$existing" != "0" ]; then
+            echo "PR は既に存在します（$branch）。新規作成はスキップしました。" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr create --draft --base main --head "$branch" \
+              --title "chore: wrangler.jsonc の database_id を実 ID に更新" \
+              --body "provision workflow が自動生成しました。内容を確認してマージしてください。GITHUB_TOKEN で作成した PR のため CI（pull_request トリガー）は自動で走りません（docs/runbooks/provisioning.md）。"
+          fi
+
+  # (3) RATE_LIMIT_PEPPER を生成して Worker のシークレットに登録し、
+  #     REPORT_WEBHOOK_URL が GitHub Secrets にあれば同様に登録する（H6・H7 の自動化）。
+  #     Worker が一度もデプロイされていない場合はスキップする（deploy.yml が同じ処理を
+  #     デプロイ直後に行うため、ここでは既に登録済みであることの確認になる）。
+  secrets:
+    needs: resources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node のバージョンを決める
+        id: node-version
+        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      - name: wrangler.jsonc の有無を確認する
+        id: scaffold
+        run: |
+          if [ -f wrangler.jsonc ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "wrangler.jsonc が無いためスキップします（wrangler.jsonc が main に入る前）" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # wrangler.jsonc の name は apply-service-name.mjs（H1）でサービス名とともに変わるため、
+      # ここで固定値にすると改名後は常にスキップになる（docs/runbooks/rename.md）。
+      - name: Worker 名を決める
+        id: worker-name
+        if: steps.scaffold.outputs.present == 'true'
+        run: |
+          name=$(node -e "
+            const text = require('node:fs').readFileSync('wrangler.jsonc', 'utf8');
+            const m = text.match(/\"name\"\s*:\s*\"([^\"]+)\"/);
+            if (!m) { console.error('wrangler.jsonc に \"name\" が見つかりません'); process.exit(1); }
+            console.log(m[1]);
+          ")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Worker 名: $name" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: RATE_LIMIT_PEPPER を確認・登録する
+        if: steps.scaffold.outputs.present == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME: ${{ steps.worker-name.outputs.name }}
+        run: node scripts/cf/ensure-secret.mjs --name RATE_LIMIT_PEPPER --require-deployed --worker-name "$WORKER_NAME" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: REPORT_WEBHOOK_URL を確認・登録する
+        if: steps.scaffold.outputs.present == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          REPORT_WEBHOOK_URL: ${{ secrets.REPORT_WEBHOOK_URL }}
+          WORKER_NAME: ${{ steps.worker-name.outputs.name }}
+        run: |
+          if [ -z "${REPORT_WEBHOOK_URL:-}" ]; then
+            echo "REPORT_WEBHOOK_URL の GitHub Secret が未設定のためスキップしました（H7 は任意）" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node scripts/cf/ensure-secret.mjs --name REPORT_WEBHOOK_URL --value "$REPORT_WEBHOOK_URL" --force \
+            --require-deployed --worker-name "$WORKER_NAME" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # (4) ドメインが決まっていればゾーンを作り、/api/* の WAF レート制限ルールを設定する（H3・H13）。
+  #     ゾーンが active になっていれば、routes・workers_dev を書き換える PR も自動作成する
+  #     （docs/runbooks/custom-domain.md の手順 3。オーナーに残るのはこの PR の確認だけにする）。
+  zone_and_waf:
+    needs: preflight
+    if: needs.preflight.outputs.domain != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node のバージョンを決める
+        id: node-version
+        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      - name: Ensure zone
+        id: zone
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DOMAIN: ${{ needs.preflight.outputs.domain }}
+        run: |
+          node scripts/cf/ensure-zone.mjs --domain "$DOMAIN" --json > zone.json
+          cat zone.json | tee -a "$GITHUB_STEP_SUMMARY"
+          status=$(node -e "console.log(JSON.parse(require('fs').readFileSync('zone.json','utf8')).status)")
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure WAF rate limit rule
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DOMAIN: ${{ needs.preflight.outputs.domain }}
+        run: node scripts/cf/ensure-waf-rate-limit.mjs --domain "$DOMAIN" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Open PR for wrangler.jsonc domain routing
+        if: steps.zone.outputs.status == 'active'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOMAIN: ${{ needs.preflight.outputs.domain }}
+        run: |
+          if [ ! -f wrangler.jsonc ]; then
+            echo "wrangler.jsonc が無いためスキップします（wrangler.jsonc が main に入る前）" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node scripts/cf/write-wrangler-domain.mjs --domain "$DOMAIN" --json > write-domain.json
+          cat write-domain.json
+          applied=$(node -e "console.log(JSON.parse(require('fs').readFileSync('write-domain.json','utf8')).applied)")
+          if [ "$applied" != "true" ]; then
+            echo "wrangler.jsonc は変更しませんでした（routes が既に設定済み、または想定と違う形式）。" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="chore/wrangler-domain"
+          git switch -c "$branch"
+          git add wrangler.jsonc
+          git commit -m "chore: wrangler.jsonc に $DOMAIN の routes を設定"
+          git push -u origin "$branch" --force
+          existing=$(gh pr list --head "$branch" --state open --json number --jq 'length')
+          if [ "$existing" != "0" ]; then
+            echo "PR は既に存在します（$branch）。新規作成はスキップしました。" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr create --draft --base main --head "$branch" \
+              --title "chore: wrangler.jsonc に $DOMAIN の routes を設定" \
+              --body "provision workflow が自動生成しました。マージすると workers_dev が false になり *.workers.dev が閉じます。GITHUB_TOKEN で作成した PR のため CI（pull_request トリガー）は自動で走りません（docs/runbooks/provisioning.md）。"
+          fi
+
+  # (5) OGP 用フォントのサブセットを R2 に配置する（H8 のアップロード作業の自動化）。
+  #     scripts/fonts/ 一式が無ければスキップする。
+  font:
+    needs: preflight
+    if: inputs.with_font
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node のバージョンを決める
+        id: node-version
+        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      - name: wrangler.jsonc とフォントスクリプトの有無を確認する
+        id: font-scaffold
+        run: |
+          if [ ! -f wrangler.jsonc ]; then
+            echo "wrangler.jsonc が無いためスキップします（wrangler.jsonc が main に入る前）" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ! -f scripts/fonts/download-noto-sans-jp.mjs ] || [ ! -f scripts/fonts/subset.sh ]; then
+            echo "scripts/fonts/download-noto-sans-jp.mjs または scripts/fonts/subset.sh が無いためスキップします" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      # scripts/fonts/subset.sh が呼ぶ pyftsubset は fonttools（Python パッケージ）が提供する。
+      # ubuntu-latest の system Python は PEP 668（externally-managed-environment）で
+      # 素の pip install を拒むため、venv に入れて PATH に足す（docs/runbooks/fonts.md の
+      # ローカル手順と同じ方法）。
+      - name: Install fonttools
+        if: steps.font-scaffold.outputs.present == 'true'
+        run: |
+          python3 -m venv .venv-fonttools
+          .venv-fonttools/bin/pip install --quiet fonttools
+          echo "$PWD/.venv-fonttools/bin" >> "$GITHUB_PATH"
+
+      - name: Download, subset and upload Noto Sans JP
+        if: steps.font-scaffold.outputs.present == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node scripts/fonts/download-noto-sans-jp.mjs
+          bash scripts/fonts/subset.sh
+          # --remote を付けないとローカルシミュレータ向けになり本番 R2 に届かない（要検証）。
+          npx wrangler@4 r2 object put calshare/fonts/NotoSansJP-Regular.subset.otf \
+            --file dist/fonts/NotoSansJP-Regular.subset.otf --remote
+          echo "フォントを R2 (fonts/NotoSansJP-Regular.subset.otf) に配置しました" | tee -a "$GITHUB_STEP_SUMMARY"
