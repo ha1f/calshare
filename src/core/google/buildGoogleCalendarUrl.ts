@@ -11,15 +11,17 @@ export interface CalendarEventInput {
   detailUrl: string // 詳細ページの絶対 URL
 }
 
-/** メモを上限文字数で切り詰め、末尾に詳細ページ URL の行を連結する。URL 自体は切り詰めの対象にしない（§7.1） */
+/** サロゲートペアの途中で切らないよう、コードポイント単位で上限文字数まで切り詰める */
+function truncateMemo(memo: string): string {
+  const codePoints = Array.from(memo)
+  if (codePoints.length <= MAX_CALENDAR_DETAILS_LENGTH) return memo
+  return `${codePoints.slice(0, MAX_CALENDAR_DETAILS_LENGTH).join('')}…`
+}
+
+/** メモを上限文字数で切り詰め、末尾に詳細ページ URL の行を連結する。URL 自体は切り詰めの対象にしない */
 function buildCalendarDetails(memo: string | null, detailUrl: string): string {
   const detailLine = `詳細: ${detailUrl}`
-  if (memo === null) return detailLine
-  const truncated =
-    memo.length > MAX_CALENDAR_DETAILS_LENGTH
-      ? `${memo.slice(0, MAX_CALENDAR_DETAILS_LENGTH)}…`
-      : memo
-  return `${truncated}\n${detailLine}`
+  return memo ? `${truncateMemo(memo)}\n${detailLine}` : detailLine
 }
 
 export function buildGoogleCalendarUrl(event: CalendarEventInput): string {

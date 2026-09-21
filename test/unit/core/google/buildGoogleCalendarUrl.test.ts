@@ -61,6 +61,16 @@ describe('buildGoogleCalendarUrl', () => {
     expect(params.has('location')).toBe(false)
   })
 
+  it('location が空文字でも location パラメータを付けない（null と同じ扱い）', () => {
+    const params = parseParams(buildGoogleCalendarUrl(baseInput({ location: '' })))
+    expect(params.has('location')).toBe(false)
+  })
+
+  it('memo が空文字なら details は詳細ページ URL の行だけになる（null と同じ扱い）', () => {
+    const params = parseParams(buildGoogleCalendarUrl(baseInput({ memo: '' })))
+    expect(params.get('details')).toBe('詳細: https://calshare.example/abc123def456')
+  })
+
   it('details はメモの後ろに詳細ページ URL の行を連結する', () => {
     const params = parseParams(buildGoogleCalendarUrl(baseInput({ memo: 'メモ本文' })))
     expect(params.get('details')).toBe('メモ本文\n詳細: https://calshare.example/abc123def456')
@@ -82,5 +92,14 @@ describe('buildGoogleCalendarUrl', () => {
     const params = parseParams(buildGoogleCalendarUrl(baseInput({ memo })))
     const truncated = 'あ'.repeat(MAX_CALENDAR_DETAILS_LENGTH) + '…'
     expect(params.get('details')).toBe(`${truncated}\n詳細: https://calshare.example/abc123def456`)
+  })
+
+  it('サロゲートペアの境界で切り詰めても文字化けしない', () => {
+    // 上限ちょうどの位置に絵文字（サロゲートペア）を置き、コードユニット単位で切ると孤立サロゲートになる
+    const memo = 'a'.repeat(MAX_CALENDAR_DETAILS_LENGTH - 1) + '😀' + 'b'.repeat(10)
+    const params = parseParams(buildGoogleCalendarUrl(baseInput({ memo })))
+    const truncated = 'a'.repeat(MAX_CALENDAR_DETAILS_LENGTH - 1) + '😀…'
+    expect(params.get('details')).toBe(`${truncated}\n詳細: https://calshare.example/abc123def456`)
+    expect(params.get('details')).not.toContain('�')
   })
 })

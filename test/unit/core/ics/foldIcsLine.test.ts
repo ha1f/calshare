@@ -41,7 +41,7 @@ describe('foldIcsLine', () => {
   })
 
   it('日本語（3 オクテット文字）の途中で切らない', () => {
-    // 「あ」は UTF-8 で 3 オクテット。72 文字なら 216 オクテットになり複数回折り返される
+    // 「あ」は UTF-8 で 3 オクテット
     const line = `SUMMARY:${'あ'.repeat(30)}` // 8 + 90 = 98 octets
     const folded = foldIcsLine(line)
     for (const seg of folded.split('\r\n')) {

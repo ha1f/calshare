@@ -19,7 +19,7 @@ function baseInput(overrides: Partial<IcsInput> = {}): IcsInput {
   }
 }
 
-// CRLF で折り返した行以外に裸の \n が無いことを検証する（改行は \r\n、§7.2）
+// CRLF で折り返した行以外に裸の \n が無いことを検証する（改行は \r\n）
 function expectNoLoneLineFeed(ics: string): void {
   expect(/(?<!\r)\n/.test(ics)).toBe(false)
 }
@@ -106,6 +106,22 @@ describe('buildIcs', () => {
     expect(ics).not.toMatch(/^LOCATION:/m)
   })
 
+  it('location が空文字でも LOCATION 行を出さない（null と同じ扱い）', () => {
+    const ics = buildIcs(baseInput({ location: '' }))
+    expect(ics).not.toMatch(/^LOCATION:/m)
+  })
+
+  it('memo が空文字なら DESCRIPTION は詳細 URL の行だけになる（null と同じ扱い）', () => {
+    const ics = buildIcs(baseInput({ memo: '', detailUrl: 'https://calshare.example/xyz' }))
+    expect(ics).toContain('DESCRIPTION:詳細はこちら: https://calshare.example/xyz')
+  })
+
+  it('title 中の URL に制御文字が挟まっていても、制御文字除去後の文字列を URL として検出し置換する', () => {
+    const ics = buildIcs(baseInput({ title: `FREE http:${String.fromCharCode(1)}//evil.xyz` }))
+    expect(ics).toContain('SUMMARY:FREE [リンク]')
+    expect(ics).not.toContain('evil.xyz')
+  })
+
   it('DESCRIPTION はメモを sanitize した後に詳細 URL を連結し、自ドメインの URL は 1 本だけ残る', () => {
     const ics = buildIcs(
       baseInput({
@@ -169,14 +185,26 @@ describe('buildIcs', () => {
   })
 
   it('75 オクテットを超える SUMMARY はマルチバイト境界で切らずに折り返す', () => {
-    const ics = buildIcs(baseInput({ title: '懇親会のご案内'.repeat(10) }))
+    const title = '懇親会のご案内'.repeat(10)
+    const ics = buildIcs(baseInput({ title }))
     const summaryLineIndex = ics.split('\r\n').findIndex((l) => l.startsWith('SUMMARY:'))
     expect(summaryLineIndex).toBeGreaterThanOrEqual(0)
     for (const line of ics.split('\r\n')) {
+      expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75)
       const bytes = new TextEncoder().encode(line.startsWith(' ') ? line.slice(1) : line)
       expect(() =>
         new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes),
       ).not.toThrow()
     }
+    expect(ics.replace(/\r\n /g, '')).toContain(`SUMMARY:${title}`)
+  })
+
+  it('絵文字（4 オクテット文字）を含む SUMMARY も文字の途中で切らずに折り返す', () => {
+    const title = '😀'.repeat(40)
+    const ics = buildIcs(baseInput({ title }))
+    for (const line of ics.split('\r\n')) {
+      expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75)
+    }
+    expect(ics.replace(/\r\n /g, '')).toContain(`SUMMARY:${title}`)
   })
 })
