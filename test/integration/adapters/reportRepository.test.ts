@@ -16,7 +16,7 @@ function buildReport(overrides: Partial<NewReportInput> = {}): NewReportInput {
   }
 }
 
-/** reports.page_id は pages(id) の FK（§3.1）。D1 は外部キー制約が有効なので先にページ行を用意する */
+/** reports.page_id は pages(id) の FK。D1 は外部キー制約が有効なので先にページ行を用意する */
 async function seedD1Page(id: string): Promise<void> {
   const now = new Date('2026-09-01T00:00:00.000Z').toISOString()
   await env.DB.prepare(
@@ -86,6 +86,31 @@ function runReportRepositoryTests(
     )
     expect(result).toBe('inserted')
   })
+
+  it('dedupeSince と同じ created_at は duplicate 扱い', async () => {
+    const repo = createRepo()
+    const dedupeSince = new Date('2026-09-15T00:00:00.000Z')
+    await repo.insertIfNotDuplicate(buildReport({ id: 'report-a', now: dedupeSince }), dedupeSince)
+
+    const result = await repo.insertIfNotDuplicate(
+      buildReport({ id: 'report-b', now: new Date('2026-09-16T00:00:00.000Z') }),
+      dedupeSince,
+    )
+    expect(result).toBe('duplicate')
+  })
+
+  it('同一キーで並行に呼んでも inserted は 1 件だけ', async () => {
+    const repo = createRepo()
+    const dedupeSince = new Date('2026-09-15T00:00:00.000Z')
+
+    const results = await Promise.all(
+      Array.from({ length: 3 }, (_, i) =>
+        repo.insertIfNotDuplicate(buildReport({ id: `report-concurrent-${i}` }), dedupeSince),
+      ),
+    )
+
+    expect(results.filter((r) => r === 'inserted')).toHaveLength(1)
+  })
 }
 
 describe('D1ReportRepository', () => {
@@ -104,6 +129,22 @@ describe('D1ReportRepository', () => {
     await repo.insertIfNotDuplicate(
       buildReport({ id: 'report-count-2', now: new Date('2026-09-16T02:00:00.000Z') }),
       dedupeSince,
+    )
+
+    const row = await env.DB.prepare('SELECT COUNT(*) as count FROM reports WHERE page_id = ?')
+      .bind('page-1')
+      .first<{ count: number }>()
+    expect(row?.count).toBe(1)
+  })
+
+  it('同一キーの並行 3 本でも reports の行数は 1', async () => {
+    const repo = createD1ReportRepository(env.DB)
+    const dedupeSince = new Date('2026-09-15T00:00:00.000Z')
+
+    await Promise.all(
+      Array.from({ length: 3 }, (_, i) =>
+        repo.insertIfNotDuplicate(buildReport({ id: `report-row-count-${i}` }), dedupeSince),
+      ),
     )
 
     const row = await env.DB.prepare('SELECT COUNT(*) as count FROM reports WHERE page_id = ?')

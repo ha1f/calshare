@@ -7,15 +7,46 @@ import type {
   PageRepository,
 } from '../../ports/pageRepository'
 
-function cloneChangeSnapshot(snapshot: ChangeSnapshot | null): ChangeSnapshot | null {
-  return snapshot ? { ...snapshot } : null
+function cloneNullableDate(date: Date | null): Date | null {
+  return date ? new Date(date) : null
 }
 
+// D1 実装は previous_snapshot を JSON 経由で 5 フィールドだけ保存する。
+// スプレッドで丸ごとコピーすると、呼び出し側が余分なプロパティを持つ値を渡したときに
+// メモリ実装だけそれを保持してしまい、D1 実装との差異を結合テストで検出できなくなる
+function cloneChangeSnapshot(snapshot: ChangeSnapshot | null): ChangeSnapshot | null {
+  if (!snapshot) return null
+  return {
+    start: cloneNullableDate(snapshot.start),
+    end: cloneNullableDate(snapshot.end),
+    isAllDay: snapshot.isAllDay,
+    titleChanged: snapshot.titleChanged,
+    locationChanged: snapshot.locationChanged,
+  }
+}
+
+function cloneEvent(event: EventRecord): EventRecord {
+  return {
+    ...event,
+    start: cloneNullableDate(event.start),
+    end: cloneNullableDate(event.end),
+    createdAt: new Date(event.createdAt),
+    updatedAt: new Date(event.updatedAt),
+  }
+}
+
+// D1 実装は ISO 文字列を経由するので毎回新しい Date になる。ここで複製しないと、
+// 呼び出し側が create/update に渡した Date や findById が返した Date を後から書き換えたときに
+// ストアの中身までつられて変わってしまう
 function clonePage(page: PageRecord): PageRecord {
   return {
     ...page,
     previousSnapshot: cloneChangeSnapshot(page.previousSnapshot),
-    event: { ...page.event },
+    changedAt: cloneNullableDate(page.changedAt),
+    createdAt: new Date(page.createdAt),
+    updatedAt: new Date(page.updatedAt),
+    expiresAt: new Date(page.expiresAt),
+    event: cloneEvent(page.event),
   }
 }
 
@@ -28,7 +59,7 @@ export function createMemoryPageRepository(): PageRepository {
     async create(input: NewPageInput) {
       if (pages.has(input.id)) return 'id_conflict'
       if (eventIds.has(input.event.id)) {
-        // D1 は events.id の UNIQUE 制約違反でバッチ全体を失敗させ pages も残らない（§3.1）。同じ挙動にする
+        // D1 は events.id の UNIQUE 制約違反でバッチ全体を失敗させ pages も残らない。同じ挙動にする
         throw new Error(`event id already exists: ${input.event.id}`)
       }
 
@@ -40,10 +71,10 @@ export function createMemoryPageRepository(): PageRepository {
         location: input.event.location,
         memo: input.event.memo,
         isAllDay: input.event.isAllDay,
-        start: input.event.start,
-        end: input.event.end,
-        createdAt: input.now,
-        updatedAt: input.now,
+        start: cloneNullableDate(input.event.start),
+        end: cloneNullableDate(input.event.end),
+        createdAt: new Date(input.now),
+        updatedAt: new Date(input.now),
       }
       pages.set(input.id, {
         id: input.id,
@@ -60,9 +91,9 @@ export function createMemoryPageRepository(): PageRepository {
         source: input.source,
         creatorIpHash: input.creatorIpHash,
         creatorDeviceId: input.creatorDeviceId,
-        createdAt: input.now,
-        updatedAt: input.now,
-        expiresAt: input.expiresAt,
+        createdAt: new Date(input.now),
+        updatedAt: new Date(input.now),
+        expiresAt: new Date(input.expiresAt),
         event,
       })
       eventIds.add(input.event.id)
@@ -81,23 +112,23 @@ export function createMemoryPageRepository(): PageRepository {
       pages.set(id, {
         ...current,
         rawText: patch.rawText,
-        expiresAt: patch.expiresAt,
+        expiresAt: new Date(patch.expiresAt),
         version: current.version + 1,
         // previousSnapshot が null（変更バナー対象の変更が無い）なら既存値を維持する
         previousSnapshot: patch.previousSnapshot
           ? cloneChangeSnapshot(patch.previousSnapshot)
           : current.previousSnapshot,
-        changedAt: patch.previousSnapshot ? patch.now : current.changedAt,
-        updatedAt: patch.now,
+        changedAt: patch.previousSnapshot ? new Date(patch.now) : current.changedAt,
+        updatedAt: new Date(patch.now),
         event: {
           ...current.event,
           title: patch.event.title,
           location: patch.event.location,
           memo: patch.event.memo,
           isAllDay: patch.event.isAllDay,
-          start: patch.event.start,
-          end: patch.event.end,
-          updatedAt: patch.now,
+          start: cloneNullableDate(patch.event.start),
+          end: cloneNullableDate(patch.event.end),
+          updatedAt: new Date(patch.now),
         },
       })
       return 'ok'
@@ -123,7 +154,7 @@ export function createMemoryPageRepository(): PageRepository {
     async listExpired(before: Date, limit: number) {
       return [...pages.values()]
         .filter((page) => page.expiresAt < before)
-        .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime())
+        .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime() || (a.id < b.id ? -1 : 1))
         .slice(0, limit)
         .map((page) => page.id)
     },

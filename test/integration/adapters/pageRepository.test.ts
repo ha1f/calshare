@@ -65,6 +65,20 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     expect(page?.event.start).toEqual(input.event.start)
   })
 
+  it('create: 日時未確定の下書きも作成できる', async () => {
+    const repo = createRepo()
+    const input = buildInput({
+      id: 'page-draft',
+      event: { id: 'page-draft-event', ...eventFields({ start: null, end: null }) },
+    })
+
+    expect(await repo.create(input)).toBe('ok')
+
+    const page = await repo.findById('page-draft')
+    expect(page?.event.start).toBeNull()
+    expect(page?.event.end).toBeNull()
+  })
+
   it('同じ id で create すると id_conflict を返し、既存のページは変わらない', async () => {
     const repo = createRepo()
     await repo.create(buildInput({ id: 'page-dup' }))
@@ -74,6 +88,9 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     )
 
     expect(result).toBe('id_conflict')
+    const page = await repo.findById('page-dup')
+    expect(page?.event.id).toBe('page-dup-event')
+    expect(page?.rawText).toBe(buildInput({ id: 'page-dup' }).rawText)
   })
 
   it('events の INSERT が失敗すると pages も残らない（event id の使い回し）', async () => {
@@ -125,6 +142,82 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     expect(page?.rawText).toBe('9/21 20時 新宿で飲み会')
     expect(page?.event.title).toBe('飲み会（変更後）')
     expect(page?.event.location).toBe('新宿')
+    expect(page?.event.id).toBe('page-update-event')
+    expect(page?.createdAt).toEqual(NOW)
+    expect(page?.updatedAt).toEqual(new Date('2026-09-17T00:00:00.000Z'))
+  })
+
+  it('update: メモ・終日・日時未確定への変更が往復する', async () => {
+    const repo = createRepo()
+    await repo.create(buildInput({ id: 'page-update-null-dates' }))
+
+    const result = await repo.update('page-update-null-dates', {
+      rawText: '9/21 未定',
+      event: eventFields({ memo: 'あとで決める', isAllDay: true, start: null, end: null }),
+      expiresAt: new Date('2026-09-28T00:00:00.000Z'),
+      previousSnapshot: null,
+      now: new Date('2026-09-17T00:00:00.000Z'),
+    })
+    expect(result).toBe('ok')
+
+    const page = await repo.findById('page-update-null-dates')
+    expect(page?.event.memo).toBe('あとで決める')
+    expect(page?.event.isAllDay).toBe(true)
+    expect(page?.event.start).toBeNull()
+    expect(page?.event.end).toBeNull()
+  })
+
+  it('update: 並行呼び出しでも version が呼んだ回数だけ増える', async () => {
+    const repo = createRepo()
+    await repo.create(buildInput({ id: 'page-concurrent-version' }))
+
+    const concurrency = 5
+    await Promise.all(
+      Array.from({ length: concurrency }, (_, i) =>
+        repo.update('page-concurrent-version', {
+          rawText: `update-${i}`,
+          event: eventFields(),
+          expiresAt: NOW,
+          previousSnapshot: null,
+          now: NOW,
+        }),
+      ),
+    )
+
+    const page = await repo.findById('page-concurrent-version')
+    expect(page?.version).toBe(1 + concurrency)
+  })
+
+  it('update: previousSnapshot 指定と null を並行実行しても、指定した値が失われない', async () => {
+    const repo = createRepo()
+    await repo.create(buildInput({ id: 'page-concurrent-snapshot' }))
+    const snapshot: ChangeSnapshot = {
+      start: new Date('2026-09-20T10:00:00.000Z'),
+      end: new Date('2026-09-20T11:00:00.000Z'),
+      isAllDay: false,
+      titleChanged: false,
+      locationChanged: false,
+    }
+
+    await Promise.all([
+      repo.update('page-concurrent-snapshot', {
+        rawText: 'with-snapshot',
+        event: eventFields(),
+        expiresAt: NOW,
+        previousSnapshot: snapshot,
+        now: NOW,
+      }),
+      repo.update('page-concurrent-snapshot', {
+        rawText: 'without-snapshot',
+        event: eventFields(),
+        expiresAt: NOW,
+        previousSnapshot: null,
+        now: NOW,
+      }),
+    ])
+
+    const page = await repo.findById('page-concurrent-snapshot')
+    expect(page?.previousSnapshot).toEqual(snapshot)
   })
 
   it('update: previousSnapshot が null の更新は既存の previousSnapshot・changedAt を維持する', async () => {
@@ -225,6 +318,24 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     expect(limited).toEqual(['page-exp-1'])
   })
 
+  it('listExpired: expires_at が before と同じものは含まない', async () => {
+    const repo = createRepo()
+    const before = new Date('2026-09-15T00:00:00.000Z')
+    await repo.create(buildInput({ id: 'page-exp-boundary', expiresAt: before }))
+
+    expect(await repo.listExpired(before, 10)).toEqual([])
+  })
+
+  it('listExpired: expires_at が同値のときは id 順で安定する', async () => {
+    const repo = createRepo()
+    const expiresAt = new Date('2026-09-10T00:00:00.000Z')
+    await repo.create(buildInput({ id: 'page-exp-tie-b', expiresAt }))
+    await repo.create(buildInput({ id: 'page-exp-tie-a', expiresAt }))
+
+    const expired = await repo.listExpired(new Date('2026-09-15T00:00:00.000Z'), 10)
+    expect(expired).toEqual(['page-exp-tie-a', 'page-exp-tie-b'])
+  })
+
   it('deleteByIds: 指定した id だけが消え、他は残る', async () => {
     const repo = createRepo()
     await repo.create(buildInput({ id: 'page-del-1' }))
@@ -260,9 +371,7 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
 
     await repo.deleteByIds(ids)
 
-    for (const id of [ids[0], ids[Math.floor(count / 2)], ids[count - 1]]) {
-      expect(await repo.findById(id)).toBeNull()
-    }
+    expect(await repo.listExpired(new Date('2099-01-01T00:00:00.000Z'), count + 1)).toEqual([])
   })
 
   it('clearExpiredSnapshots: changedAt が before より古い行だけ previousSnapshot・changedAt を NULL にする', async () => {
@@ -301,6 +410,32 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     const recent = await repo.findById('page-new-snapshot')
     expect(recent?.previousSnapshot).toEqual(snapshot)
   })
+
+  it('clearExpiredSnapshots: changedAt が before と同じ行は消さない', async () => {
+    const repo = createRepo()
+    await repo.create(buildInput({ id: 'page-snapshot-boundary' }))
+    const snapshot: ChangeSnapshot = {
+      start: NOW,
+      end: NOW,
+      isAllDay: false,
+      titleChanged: false,
+      locationChanged: false,
+    }
+    const before = new Date('2026-09-15T00:00:00.000Z')
+    await repo.update('page-snapshot-boundary', {
+      rawText: 'x',
+      event: eventFields(),
+      expiresAt: NOW,
+      previousSnapshot: snapshot,
+      now: before,
+    })
+
+    const clearedCount = await repo.clearExpiredSnapshots(before)
+    expect(clearedCount).toBe(0)
+
+    const page = await repo.findById('page-snapshot-boundary')
+    expect(page?.previousSnapshot).toEqual(snapshot)
+  })
 }
 
 describe('D1PageRepository', () => {
@@ -330,6 +465,90 @@ describe('D1PageRepository', () => {
       .run()
 
     await expect(repo.findById('page-invariant')).rejects.toThrow(InvariantViolation)
+  })
+
+  it('events が 2 行あるページを update すると InvariantViolation を投げる', async () => {
+    const repo = createD1PageRepository(env.DB)
+    await repo.create(
+      buildInput({
+        id: 'page-invariant-update',
+        event: { id: 'evt-invariant-update-1', ...eventFields() },
+      }),
+    )
+    await env.DB.prepare(
+      `INSERT INTO events (id, page_id, title, is_all_day, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`,
+    )
+      .bind(
+        'evt-invariant-update-2',
+        'page-invariant-update',
+        '重複イベント',
+        NOW.toISOString(),
+        NOW.toISOString(),
+      )
+      .run()
+
+    await expect(
+      repo.update('page-invariant-update', {
+        rawText: 'x',
+        event: eventFields(),
+        expiresAt: NOW,
+        previousSnapshot: null,
+        now: NOW,
+      }),
+    ).rejects.toThrow(InvariantViolation)
+  })
+
+  it('events が 0 行のページを読むと InvariantViolation を投げる', async () => {
+    const repo = createD1PageRepository(env.DB)
+    await repo.create(
+      buildInput({
+        id: 'page-invariant-empty',
+        event: { id: 'evt-invariant-empty', ...eventFields() },
+      }),
+    )
+    await env.DB.prepare('DELETE FROM events WHERE page_id = ?').bind('page-invariant-empty').run()
+
+    await expect(repo.findById('page-invariant-empty')).rejects.toThrow(InvariantViolation)
+  })
+
+  it('events が 0 行のページを update すると InvariantViolation を投げる', async () => {
+    const repo = createD1PageRepository(env.DB)
+    await repo.create(
+      buildInput({
+        id: 'page-invariant-empty-update',
+        event: { id: 'evt-invariant-empty-update', ...eventFields() },
+      }),
+    )
+    await env.DB.prepare('DELETE FROM events WHERE page_id = ?')
+      .bind('page-invariant-empty-update')
+      .run()
+
+    await expect(
+      repo.update('page-invariant-empty-update', {
+        rawText: 'x',
+        event: eventFields(),
+        expiresAt: NOW,
+        previousSnapshot: null,
+        now: NOW,
+      }),
+    ).rejects.toThrow(InvariantViolation)
+  })
+
+  it('countActiveByCreator: hidden なページは数えない', async () => {
+    const repo = createD1PageRepository(env.DB)
+    await repo.create(
+      buildInput({
+        id: 'page-hidden',
+        creatorIpHash: 'ip-hidden',
+        creatorDeviceId: 'device-hidden',
+      }),
+    )
+    await env.DB.prepare(`UPDATE pages SET status = 'hidden' WHERE id = ?`)
+      .bind('page-hidden')
+      .run()
+
+    const count = await repo.countActiveByCreator('ip-hidden', 'device-hidden')
+    expect(count).toBe(0)
   })
 })
 

@@ -1,5 +1,5 @@
 import { D1_MAX_BIND_PARAMS } from '../../core/config/limits'
-import type { ChangeSnapshot, CreateSource } from '../../core/types'
+import type { ChangeSnapshot, CreateSource, Jsonified } from '../../core/types'
 import {
   InvariantViolation,
   type EventRecord,
@@ -43,13 +43,7 @@ interface EventRow {
   updated_at: string
 }
 
-interface ChangeSnapshotJson {
-  start: string | null
-  end: string | null
-  isAllDay: boolean
-  titleChanged: boolean
-  locationChanged: boolean
-}
+type ChangeSnapshotJson = Jsonified<ChangeSnapshot>
 
 function serializeChangeSnapshot(snapshot: ChangeSnapshot): string {
   const json: ChangeSnapshotJson = {
@@ -113,35 +107,31 @@ function toPageRecord(row: PageRow, event: EventRecord): PageRecord {
   }
 }
 
-/** D1 が投げる UNIQUE 制約違反が、指定した列（例: 'pages.id'）によるものかを判定する */
-function isUniqueConstraintFailureOn(error: unknown, column: string): boolean {
+/** D1 が投げる UNIQUE 制約違反が、指定したテーブルによるものかを判定する。列名まで見ないのは、本番の D1 が返すエラーメッセージの列名表記を未確認のため */
+function isUniqueConstraintFailureOnTable(error: unknown, table: string): boolean {
   return (
     error instanceof Error &&
     error.message.includes('UNIQUE constraint failed') &&
-    error.message.includes(column)
+    error.message.includes(table)
   )
 }
 
 export function createD1PageRepository(db: D1Database): PageRepository {
-  async function countEvents(pageId: string): Promise<number> {
-    const row = await db
-      .prepare('SELECT COUNT(*) as count FROM events WHERE page_id = ?')
+  // LIMIT 2 で十分（1 件かどうかだけ見る）。COUNT(*) との 2 往復を避ける
+  async function fetchEventRows(pageId: string): Promise<EventRow[]> {
+    const result = await db
+      .prepare('SELECT * FROM events WHERE page_id = ? LIMIT 2')
       .bind(pageId)
-      .first<{ count: number }>()
-    return row?.count ?? 0
+      .all<EventRow>()
+    return result.results
   }
 
-  /** Phase 1 の不変条件（events は 1 ページ 1 行）を検査してから、その 1 件を返す */
-  async function loadEvent(pageId: string): Promise<EventRecord> {
-    const count = await countEvents(pageId)
-    if (count !== 1) {
-      throw new InvariantViolation(`page ${pageId} has ${count} events`)
+  /** 不変条件（events は 1 ページ 1 行）を検査してから、その 1 件を返す */
+  function assertSingleEvent(pageId: string, rows: EventRow[]): EventRow {
+    if (rows.length !== 1) {
+      throw new InvariantViolation(`page ${pageId} does not have exactly 1 event`)
     }
-    const row = await db
-      .prepare('SELECT * FROM events WHERE page_id = ?')
-      .bind(pageId)
-      .first<EventRow>()
-    return toEventRecord(row as EventRow)
+    return rows[0]
   }
 
   return {
@@ -182,10 +172,10 @@ export function createD1PageRepository(db: D1Database): PageRepository {
         )
 
       try {
-        // 2 つの INSERT を 1 トランザクションにする。events 側が失敗しても pages を残さない（§3.1）
+        // events 側が失敗したとき pages だけが残らないよう、2 つの INSERT を 1 トランザクションにする
         await db.batch([pagesStmt, eventsStmt])
       } catch (error) {
-        if (isUniqueConstraintFailureOn(error, 'pages.id')) return 'id_conflict'
+        if (isUniqueConstraintFailureOnTable(error, 'pages')) return 'id_conflict'
         throw error
       }
       return 'ok'
@@ -194,38 +184,33 @@ export function createD1PageRepository(db: D1Database): PageRepository {
     async findById(id: string) {
       const pageRow = await db.prepare('SELECT * FROM pages WHERE id = ?').bind(id).first<PageRow>()
       if (!pageRow) return null
-      const event = await loadEvent(id)
-      return toPageRecord(pageRow, event)
+      const eventRow = assertSingleEvent(id, await fetchEventRows(id))
+      return toPageRecord(pageRow, toEventRecord(eventRow))
     },
 
     async update(id: string, patch: PagePatch) {
-      const current = await db
-        .prepare('SELECT version, previous_snapshot, changed_at FROM pages WHERE id = ?')
-        .bind(id)
-        .first<Pick<PageRow, 'version' | 'previous_snapshot' | 'changed_at'>>()
-      if (!current) return 'not_found'
-
-      const eventCount = await countEvents(id)
-      if (eventCount !== 1) {
-        throw new InvariantViolation(`page ${id} has ${eventCount} events`)
-      }
+      const pageExists = await db.prepare('SELECT 1 FROM pages WHERE id = ?').bind(id).first()
+      if (!pageExists) return 'not_found'
+      assertSingleEvent(id, await fetchEventRows(id))
 
       const nowIso = patch.now.toISOString()
-      // previousSnapshot が null（変更バナー対象の変更が無い）なら既存値を維持する
+      // previousSnapshot が null（変更バナー対象の変更が無い）なら既存値を維持する。
+      // version・previous_snapshot・changed_at の計算を SQL 側（COALESCE と version + 1）に任せることで、
+      // 同一ページへの並行 update でも先に SELECT した値を書き戻して巻き戻ることがないようにする
       const previousSnapshotJson = patch.previousSnapshot
         ? serializeChangeSnapshot(patch.previousSnapshot)
-        : current.previous_snapshot
-      const changedAt = patch.previousSnapshot ? nowIso : current.changed_at
+        : null
+      const changedAt = patch.previousSnapshot ? nowIso : null
 
       const pagesStmt = db
         .prepare(
-          `UPDATE pages SET raw_text = ?, expires_at = ?, version = ?, previous_snapshot = ?, changed_at = ?, updated_at = ?
+          `UPDATE pages SET raw_text = ?, expires_at = ?, version = version + 1,
+           previous_snapshot = COALESCE(?, previous_snapshot), changed_at = COALESCE(?, changed_at), updated_at = ?
            WHERE id = ?`,
         )
         .bind(
           patch.rawText,
           patch.expiresAt.toISOString(),
-          current.version + 1,
           previousSnapshotJson,
           changedAt,
           nowIso,
@@ -273,7 +258,7 @@ export function createD1PageRepository(db: D1Database): PageRepository {
 
     async listExpired(before: Date, limit: number) {
       const result = await db
-        .prepare('SELECT id FROM pages WHERE expires_at < ? ORDER BY expires_at LIMIT ?')
+        .prepare('SELECT id FROM pages WHERE expires_at < ? ORDER BY expires_at, id LIMIT ?')
         .bind(before.toISOString(), limit)
         .all<{ id: string }>()
       return result.results.map((row) => row.id)
