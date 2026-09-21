@@ -19,6 +19,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:unit
+      - run: npm run test:scripts
       - run: npm run build
       # env.ASSETS.fetch() で dist/ の Static Assets を検証するテストがあるため build の後に置く（§10.2）
       - run: npm run test:integration

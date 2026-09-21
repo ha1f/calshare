@@ -11,3 +11,7 @@ coverage/
 # claude code（プロジェクトスキルはリポジトリで共有するので除外しない）
 /.claude/*
 !/.claude/skills/
+
+# fonttools 用の venv（scripts/fonts/subset.sh のローカル実行）
+.venv/
+.venv-fonttools/
