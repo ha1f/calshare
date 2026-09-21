@@ -122,6 +122,19 @@ describe('buildIcs', () => {
     expect(ics).not.toContain('evil.xyz')
   })
 
+  it('スキーム直後に余分な / があるリンクや www. 始まりの IDN リンクも DESCRIPTION から除かれ、自ドメインの URL だけが残る', () => {
+    const ics = buildIcs(
+      baseInput({
+        memo: '怪しいリンク https:///evil.xyz と www.日本語.jp',
+        detailUrl: 'https://calshare.example/abc123def456',
+      }),
+    )
+    const description = extractDescription(ics)
+    expect(description).not.toContain('evil.xyz')
+    expect(description).not.toContain('日本語')
+    expect(description.match(/calshare\.example/g)).toHaveLength(1)
+  })
+
   it('DESCRIPTION はメモを sanitize した後に詳細 URL を連結し、自ドメインの URL は 1 本だけ残る', () => {
     const ics = buildIcs(
       baseInput({

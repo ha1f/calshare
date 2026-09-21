@@ -52,4 +52,42 @@ describe('sanitizeIcsText', () => {
     expect(sanitizeIcsText(`ww${String.fromCharCode(8)}w.evil.xyz`)).toBe('[リンク]')
     expect(sanitizeIcsText('htt\rps://evil.xyz/a')).toBe('[リンク]')
   })
+
+  it('scheme 付き URL にパスが無くても、直後の日本語や記号を巻き込まない', () => {
+    expect(sanitizeIcsText('https://example.comで申込')).toBe('[リンク]で申込')
+    expect(sanitizeIcsText('https://example.comよろしく')).toBe('[リンク]よろしく')
+    expect(sanitizeIcsText('https://example.com?x=1です')).toBe('[リンク]です')
+    expect(sanitizeIcsText('https://example.com。')).toBe('[リンク]。')
+  })
+
+  it('www. 分岐でも URL 直後の日本語を巻き込まない', () => {
+    expect(sanitizeIcsText('www.example.com、よろしく')).toBe('[リンク]、よろしく')
+  })
+
+  it('www. 分岐でも日本語ドメイン（IDN）を置換する', () => {
+    expect(sanitizeIcsText('www.日本語.jp')).toBe('[リンク]')
+  })
+
+  it('スキームの後に余分な / があっても置換する', () => {
+    expect(sanitizeIcsText('https:///evil.xyz')).toBe('[リンク]')
+  })
+
+  it('userinfo・ポート・IPv6 リテラルを含む URL も置換する', () => {
+    expect(sanitizeIcsText('https://user:pw@evil.com/x')).toBe('[リンク]')
+    expect(sanitizeIcsText('https://1.2.3.4:8080/x')).toBe('[リンク]')
+    expect(sanitizeIcsText('http://[::1]/a')).toBe('[リンク]')
+  })
+
+  it('ホスト直後が句点や読点無しの日本語文でも、句読点をまたいでホストに巻き込まない', () => {
+    expect(sanitizeIcsText('https://example.comです。持ち物はNode.js入門')).toBe(
+      '[リンク]です。持ち物はNode.js入門',
+    )
+  })
+
+  it('ホスト直後の日本語文中に @ があっても、userinfo として文をまたいで飲み込まない', () => {
+    // 「担当@example.jp」の example.jp 自体は許可 TLD のベアドメインとして別途置換される
+    expect(sanitizeIcsText('https://example.comで、担当@example.jpまで')).toBe(
+      '[リンク]で、担当@[リンク]まで',
+    )
+  })
 })

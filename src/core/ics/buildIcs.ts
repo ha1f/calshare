@@ -30,6 +30,18 @@ function normalizeControlChars(text: string): string {
 const URL_CHARS = String.raw`[\w\-./?=&%#:]`
 const ALLOWED_BARE_DOMAIN_TLDS = 'co|com|jp|net|org|io|me|ly|app|dev|link'
 
+// ホストのラベル区切りは ASCII の `.` のみを認め、ラベル自体は IDN（日本語ドメイン等）を拾えるよう
+// 空白・`/`・`.`・`:`・`?`・`#` 以外を許可する。ただし全角句読点・記号（U+3000-303F、全角の !-@、全角の [-~ と半角カナ記号）
+// は文中の区切りとして使われるため許可しない。これが無いと後ろに続く `.` まで文をまたいでホストに巻き込む
+const HOST_PUNCTUATION = String.raw`\u3000-\u303F\uFF01-\uFF20\uFF3B-\uFF65`
+const HOST_LABEL = String.raw`[^\s/.:?#,;'"()<>!${HOST_PUNCTUATION}]+`
+const HOST = String.raw`(?:\[[0-9a-fA-F:]+\]|(?:${HOST_LABEL}\.)*[\w-]+)`
+// RFC 3986 の userinfo に相当する ASCII のみの文字クラス。日本語を許すと `で、担当@example.jp` のように
+// 文中の `@` まで userinfo として飲み込んでしまう
+const USERINFO = String.raw`[\w.~%!$&'()*+,;=:-]+`
+// スキーム付き・www. 付き共通のホスト以降（ポート・パス）。ホストの定義を共有し、パス部は URL_CHARS で絞る
+const URL_TAIL = String.raw`${HOST}(?::\d+)?(?:[/?#]${URL_CHARS}*)?`
+
 /**
  * URL 判定用の正規表現を毎回生成する。`core/text/urlPattern.ts`（別タスクで実装中）が着地するまでの
  * 暫定実装で、スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの 3 形式を対象にする。
@@ -37,9 +49,9 @@ const ALLOWED_BARE_DOMAIN_TLDS = 'co|com|jp|net|org|io|me|ly|app|dev|link'
  */
 function buildIcsUrlPattern(): RegExp {
   return new RegExp(
-    // ホスト部は IDN（日本語ドメイン等）も拾えるよう空白と `/` 以外を許可し、パス部だけ URL_CHARS で絞る
-    String.raw`https?:\/\/[^\s/]+(?:\/${URL_CHARS}*)?` +
-      String.raw`|www\.${URL_CHARS}+` +
+    // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
+    String.raw`https?:\/\/\/*(?:${USERINFO}@)?${URL_TAIL}` +
+      String.raw`|www\.${URL_TAIL}` +
       String.raw`|[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_DOMAIN_TLDS})(?!\w)(?:\/${URL_CHARS}*)?|[a-z]{2,}\/${URL_CHARS}*)`,
     'gi',
   )
