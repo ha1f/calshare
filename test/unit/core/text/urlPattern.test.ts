@@ -50,6 +50,12 @@ describe('URL_PATTERN', () => {
     expect(matchAll('example.company の話')).toEqual([])
   })
 
+  it('`/` 無しのクエリ・フラグメントも含めて一致する（パスが無いと途中で切れてしまうため）', () => {
+    expect(matchAll('www.example.com?q=1 集合')).toEqual(['www.example.com?q=1'])
+    expect(matchAll('www.example.com#map です')).toEqual(['www.example.com#map'])
+    expect(matchAll('example.com?q=1 集合')).toEqual(['example.com?q=1'])
+  })
+
   it('1 行に複数の URL があればすべて一致する', () => {
     expect(matchAll('https://a.example.com と https://b.example.com')).toEqual([
       'https://a.example.com',
