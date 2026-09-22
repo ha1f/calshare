@@ -115,7 +115,9 @@ function runReportRepositoryTests(
 
 describe('D1ReportRepository', () => {
   // D1 のストレージ分離はテストファイル単位で、同じファイル内の it() 間ではテーブルの中身が残る。
-  // pages を消せば reports も CASCADE で消える
+  // pages を消せば reports も CASCADE で消える。この beforeEach は runReportRepositoryTests の
+  // 呼び出しより前に書く必要がある（vitest の beforeEach は登録順に実行されるため、
+  // 内部の seedPage 用 beforeEach より先に DELETE が走る順序になる）
   beforeEach(async () => {
     await env.DB.prepare('DELETE FROM pages').run()
   })
@@ -151,6 +153,19 @@ describe('D1ReportRepository', () => {
       .bind('page-1')
       .first<{ count: number }>()
     expect(row?.count).toBe(1)
+  })
+
+  // reports.page_id は pages(id) への FK。存在しないページへの通報は呼び出し側（ルート）が
+  // 先に findById で 404 を返す想定で、ここに来る前提が崩れている異常系として FK 違反で失敗する
+  it('存在しないページへの通報は FK 違反で失敗する', async () => {
+    const repo = createD1ReportRepository(env.DB)
+
+    await expect(
+      repo.insertIfNotDuplicate(
+        buildReport({ id: 'report-ghost', pageId: 'no-such-page' }),
+        new Date('2026-09-15T00:00:00.000Z'),
+      ),
+    ).rejects.toThrow()
   })
 })
 

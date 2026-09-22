@@ -152,6 +152,8 @@ export function createMemoryPageRepository(): PageRepository {
     },
 
     async listExpired(before: Date, limit: number) {
+      // id の tie-break は UTF-16 コードユニット順。D1 の ORDER BY id は UTF-8 バイト順で、
+      // 非 ASCII の id では順序が食い違いうるが、ページ id は Crockford base32（§4.2）で ASCII のみなので一致する
       return [...pages.values()]
         .filter((page) => page.expiresAt < before)
         .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime() || (a.id < b.id ? -1 : 1))
