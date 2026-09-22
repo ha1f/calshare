@@ -3,18 +3,25 @@
 // "co" は "com" の前方一致になるため、正規表現の候補順で先に置かれる "com" 側を先に試させる
 const ALLOWED_BARE_TLDS = 'com|jp|net|org|io|me|ly|app|dev|link|co'
 
-// 単語の途中から始まる誤検出を避け（`(?<!\w)`）、hxxps:// のような難読化された scheme の
-// 直後のドメインもベアドメインとして拾わない（`(?<!:\/\/)`）
-const NOT_AFTER_SCHEME = String.raw`(?<!\w)(?<!:\/\/)`
+// ドット区切り語の途中（`a.` の繰り返し等）から拾うと、区切りの数だけ末尾までなめる走査を
+// 開始位置ごとに繰り返すことになり O(n^2) になるため、直前が `\w` `.` `-` のいずれでもないことを
+// 条件にする（`(?<![\w.-])`）。hxxps:// のような難読化された scheme の直後のドメインも拾わない（`(?<!:\/\/)`）
+const NOT_AFTER_SCHEME = String.raw`(?<![\w.-])(?<!:\/\/)`
 
 // ベアドメインは (a) パスが続く、(b) 末尾ラベルが ALLOWED_BARE_TLDS のいずれか、の 2 通りだけを URL とみなす。
-// 末尾ラベルが英字というだけでは Node.js / Vue.js のような製品名まで拾ってしまうため
+// 末尾ラベルが英字というだけでは Node.js / Vue.js のような製品名まで拾ってしまうため。
+// (b) は末尾ラベルの直後に英数字・ハイフンが続かないことも確認する（`example.company` の
+// 先頭 `example.com` を誤って切り出さないため）
 const BARE_DOMAIN_WITH_PATH = `${NOT_AFTER_SCHEME}${String.raw`[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}\/[^\s]*`}`
-const BARE_DOMAIN_WITH_ALLOWED_TLD = `${NOT_AFTER_SCHEME}${String.raw`[\w-]+(?:\.[\w-]+)*\.(?:${ALLOWED_BARE_TLDS})(?:\/[^\s]*)?`}`
+const BARE_DOMAIN_WITH_ALLOWED_TLD = `${NOT_AFTER_SCHEME}${String.raw`[\w-]+(?:\.[\w-]+)*\.(?:${ALLOWED_BARE_TLDS})(?![\w-])(?:\/[^\s]*)?`}`
+
+// `www.` 始まりも他のベアドメイン同様、単語の途中や難読化 scheme の直後からは拾わない。
+// ホスト名は ASCII の語・ハイフンに限り、`www.渋谷` のような非対応の文字列は対象にしない
+const WWW_DOMAIN = `${NOT_AFTER_SCHEME}${String.raw`www\.[\w-]+(?:\.[\w-]+)*(?:\/[^\s]*)?`}`
 
 const URL_SOURCE = [
   String.raw`https?:\/\/[^\s]+`,
-  String.raw`www\.[^\s]+`,
+  WWW_DOMAIN,
   BARE_DOMAIN_WITH_PATH,
   BARE_DOMAIN_WITH_ALLOWED_TLD,
 ].join('|')

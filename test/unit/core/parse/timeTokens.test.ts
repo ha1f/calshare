@@ -55,4 +55,20 @@ describe('detectTimeToken', () => {
   it('時刻トークンが無ければ null', () => {
     expect(detectTimeToken('渋谷で飲み会')).toBeNull()
   })
+
+  it('「2時間」は所要時間であって時刻ではない', () => {
+    expect(detectTimeToken('飲み会 2時間くらい')).toBeNull()
+  })
+
+  it('「19:00:00」の秒は読み飛ばす', () => {
+    const result = detectTimeToken('19:00:00 飲み会')
+    expect(result?.start).toEqual({ hour: 19, minute: 0 })
+    expect(result?.length).toBe('19:00:00'.length)
+  })
+
+  it('最初の候補が不正（T6）でも、後続に有効な候補があればそちらを採用する', () => {
+    const result = detectTimeToken('25時ではなく 19時 集合')
+    expect(result?.consumed).toBe(true)
+    expect(result?.start).toEqual({ hour: 19, minute: 0 })
+  })
 })

@@ -1,15 +1,19 @@
 import { MAX_EVENT_LEAD_TIME_MONTHS } from '../config/limits'
-import { addMonths, jstDate, toJstParts } from '../time/jst'
+import { addDays, addMonths, jstDate, toJstParts } from '../time/jst'
+import { RANGE_SYMBOL_SOURCE } from './normalize'
 import type { ParseIssue } from './types'
 
 const WEEKDAY_CHARS = '日月火水木金土'
 
-// 年（任意）+ 月 + 日（曜日カッコ書きは任意で無視）。年は `/` `年` の両方に対応する
-const DATE_ATOM = String.raw`(?:(\d{4})[/年])?(\d{1,2})[/月](\d{1,2})日?(?:\([^)]*\))?`
-const RANGE_RE = new RegExp(`${DATE_ATOM}〜${DATE_ATOM}`)
+// 年（任意）+ 月 + 日（曜日カッコ書きは任意で無視）。年は `/` `年` の両方に対応する。
+// 前後の `(?<!\d)` `(?!\d)` は、長い数字列の途中から日付として切り出すのを防ぐ境界。
+// 曜日カッコの中身は曜日・祝に限定する（任意の文字列だと後続の時刻表記まで飲み込んでしまうため）
+const DATE_ATOM = String.raw`(?<!\d)(?:(\d{4})[/年])?(\d{1,2})[/月](\d{1,2})(?!\d)日?(?:\((?:[${WEEKDAY_CHARS}](?:曜日?)?|祝)\))?`
+const RANGE_RE = new RegExp(`${DATE_ATOM}${RANGE_SYMBOL_SOURCE}${DATE_ATOM}`)
 const ABSOLUTE_RE = new RegExp(DATE_ATOM)
 const RELATIVE_RE = /今日|本日|明後日|あさって|明日/
-const NEXT_WEEK_RE = new RegExp(`来週([${WEEKDAY_CHARS}])曜日?`)
+// 「再来週」は未対応（§5.3）。前に「再」が無いことを確認し、「来週」だけを消費しないようにする
+const NEXT_WEEK_RE = new RegExp(`(?<!再)来週([${WEEKDAY_CHARS}])曜日?`)
 const THIS_WEEK_RE = new RegExp(`今週([${WEEKDAY_CHARS}])曜日?`)
 const WEEKDAY_RE = new RegExp(`([${WEEKDAY_CHARS}])曜日?`)
 
@@ -41,81 +45,62 @@ function relativeOffset(matched: string): 0 | 1 | 2 {
   return 2 // あさって・明後日
 }
 
+/** pattern に一致するすべての箇所を、出現順のトークン候補に変換する */
+function collectMatches<T extends RawDateToken>(
+  text: string,
+  pattern: RegExp,
+  build: (match: RegExpExecArray) => T,
+): DateTokenMatch[] {
+  const withG = new RegExp(
+    pattern.source,
+    pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+  )
+  const matches: DateTokenMatch[] = []
+  for (let m = withG.exec(text); m !== null; m = withG.exec(text)) {
+    matches.push({ index: m.index, length: m[0].length, token: build(m) })
+  }
+  return matches
+}
+
 /**
- * 1 行目から最初（最も左）の日付らしいトークンを検出する（§5.2 手順 4）。
- * 検出のみを行い、カレンダーとしての妥当性や年の補完は resolveDateToken で行う
+ * 1 行目から日付らしいトークンをすべて検出し、出現位置順（同じ位置なら range を優先）に並べて返す（§5.2 手順 4）。
+ * 検出のみを行い、カレンダーとしての妥当性や年の補完は resolveDateToken で行う。
+ * 先頭の候補が不正（D6）でも、後続に有効な候補があればそちらを採用できるよう全件返す
  */
-export function detectDateToken(text: string): DateTokenMatch | null {
-  const candidates: DateTokenMatch[] = []
-
-  const range = RANGE_RE.exec(text)
-  if (range) {
-    candidates.push({
-      index: range.index,
-      length: range[0].length,
-      token: {
-        kind: 'range',
-        startYear: range[1] ? Number(range[1]) : null,
-        startMonth: Number(range[2]),
-        startDay: Number(range[3]),
-        endYear: range[4] ? Number(range[4]) : null,
-        endMonth: Number(range[5]),
-        endDay: Number(range[6]),
-      },
-    })
-  }
-
-  const absolute = ABSOLUTE_RE.exec(text)
-  if (absolute) {
-    candidates.push({
-      index: absolute.index,
-      length: absolute[0].length,
-      token: {
-        kind: 'absolute',
-        year: absolute[1] ? Number(absolute[1]) : null,
-        month: Number(absolute[2]),
-        day: Number(absolute[3]),
-      },
-    })
-  }
-
-  const relative = RELATIVE_RE.exec(text)
-  if (relative) {
-    candidates.push({
-      index: relative.index,
-      length: relative[0].length,
-      token: { kind: 'relative', offsetDays: relativeOffset(relative[0]) },
-    })
-  }
-
-  const nextWeek = NEXT_WEEK_RE.exec(text)
-  if (nextWeek) {
-    candidates.push({
-      index: nextWeek.index,
-      length: nextWeek[0].length,
-      token: { kind: 'nextWeek', weekday: WEEKDAY_CHARS.indexOf(nextWeek[1]) },
-    })
-  }
-
-  const thisWeek = THIS_WEEK_RE.exec(text)
-  if (thisWeek) {
-    candidates.push({
-      index: thisWeek.index,
-      length: thisWeek[0].length,
-      token: { kind: 'thisWeek', weekday: WEEKDAY_CHARS.indexOf(thisWeek[1]) },
-    })
-  }
-
-  const weekday = WEEKDAY_RE.exec(text)
-  if (weekday) {
-    candidates.push({
-      index: weekday.index,
-      length: weekday[0].length,
-      token: { kind: 'weekday', weekday: WEEKDAY_CHARS.indexOf(weekday[1]) },
-    })
-  }
-
-  if (candidates.length === 0) return null
+export function detectDateTokens(text: string): DateTokenMatch[] {
+  const candidates: DateTokenMatch[] = [
+    ...collectMatches(text, RANGE_RE, (m) => ({
+      kind: 'range',
+      startYear: m[1] ? Number(m[1]) : null,
+      startMonth: Number(m[2]),
+      startDay: Number(m[3]),
+      endYear: m[4] ? Number(m[4]) : null,
+      endMonth: Number(m[5]),
+      endDay: Number(m[6]),
+    })),
+    ...collectMatches(text, ABSOLUTE_RE, (m) => ({
+      kind: 'absolute',
+      year: m[1] ? Number(m[1]) : null,
+      month: Number(m[2]),
+      day: Number(m[3]),
+    })),
+    ...collectMatches(text, RELATIVE_RE, (m) => ({
+      kind: 'relative',
+      offsetDays: relativeOffset(m[0]),
+    })),
+    ...collectMatches(text, NEXT_WEEK_RE, (m) => ({
+      kind: 'nextWeek',
+      weekday: WEEKDAY_CHARS.indexOf(m[1]),
+    })),
+    ...collectMatches(text, THIS_WEEK_RE, (m) => ({
+      kind: 'thisWeek',
+      weekday: WEEKDAY_CHARS.indexOf(m[1]),
+    })),
+    ...collectMatches(text, WEEKDAY_RE, (m) => ({
+      kind: 'weekday',
+      weekday: WEEKDAY_CHARS.indexOf(m[1]),
+    })),
+  ]
 
   // 同じ開始位置なら range を absolute より優先する（絶対日付の範囲表現の方が具体的なため）
   const priority: RawDateToken['kind'][] = [
@@ -126,10 +111,14 @@ export function detectDateToken(text: string): DateTokenMatch | null {
     'thisWeek',
     'weekday',
   ]
-  candidates.sort(
+  return candidates.sort(
     (a, b) => a.index - b.index || priority.indexOf(a.token.kind) - priority.indexOf(b.token.kind),
   )
-  return candidates[0]
+}
+
+/** detectDateTokens の先頭（最も左、同じ位置なら最優先）の候補。無ければ null */
+export function detectDateToken(text: string): DateTokenMatch | null {
+  return detectDateTokens(text)[0] ?? null
 }
 
 export interface CalendarDay {
@@ -169,10 +158,32 @@ function resolveYearOmittedDate(
 ): CalendarDay | null {
   if (isValidCalendarDate(today.y, month, day)) {
     const candidate = { y: today.y, m: month, d: day }
-    return compareDay(candidate, today) >= 0 ? candidate : { y: today.y + 1, m: month, d: day }
+    if (compareDay(candidate, today) >= 0) return candidate
   }
-  if (isValidCalendarDate(today.y + 1, month, day)) return { y: today.y + 1, m: month, d: day }
-  return null
+  return isValidCalendarDate(today.y + 1, month, day) ? { y: today.y + 1, m: month, d: day } : null
+}
+
+/**
+ * 年を明示した日付が過去日（D2）か 13 ヶ月超（D3）かを判定する。
+ * 単一日付・日付範囲の開始のどちらでも使う共通の境界チェック
+ */
+function explicitYearIssue(
+  candidate: CalendarDay,
+  now: Date,
+  resolvedStart: { hour: number; minute: number } | null,
+): 'past_date' | 'beyond_max_lead_time' | null {
+  const today = toJstParts(now)
+  if (compareDay(candidate, { y: today.y, m: today.m, d: today.d }) < 0) return 'past_date'
+
+  const startDate = jstDate(
+    candidate.y,
+    candidate.m,
+    candidate.d,
+    resolvedStart?.hour ?? 0,
+    resolvedStart?.minute ?? 0,
+  )
+  const boundary = addMonths(now, MAX_EVENT_LEAD_TIME_MONTHS)
+  return startDate.getTime() > boundary.getTime() ? 'beyond_max_lead_time' : null
 }
 
 function resolveExplicitYearDate(
@@ -185,17 +196,9 @@ function resolveExplicitYearDate(
   if (!isValidCalendarDate(year, month, day))
     return { consumed: false, issues: ['invalid_date'], start: null, end: null }
 
-  const today = toJstParts(now)
   const candidate = { y: year, m: month, d: day }
-  if (compareDay(candidate, { y: today.y, m: today.m, d: today.d }) < 0) {
-    return { consumed: true, issues: ['past_date'], start: null, end: null }
-  }
-
-  const startDate = jstDate(year, month, day, resolvedStart?.hour ?? 0, resolvedStart?.minute ?? 0)
-  const boundary = addMonths(now, MAX_EVENT_LEAD_TIME_MONTHS)
-  if (startDate.getTime() > boundary.getTime()) {
-    return { consumed: true, issues: ['beyond_max_lead_time'], start: null, end: null }
-  }
+  const issue = explicitYearIssue(candidate, now, resolvedStart)
+  if (issue !== null) return { consumed: true, issues: [issue], start: null, end: null }
   return { consumed: true, issues: [], start: candidate, end: candidate }
 }
 
@@ -229,12 +232,8 @@ function resolveThisWeekWeekday(
 }
 
 function addDaysToDay(day: CalendarDay, days: number): CalendarDay {
-  const parts = toJstParts(addDaysToDate(jstDate(day.y, day.m, day.d), days))
+  const parts = toJstParts(addDays(jstDate(day.y, day.m, day.d), days))
   return { y: parts.y, m: parts.m, d: parts.d }
-}
-
-function addDaysToDate(date: Date, days: number): Date {
-  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000)
 }
 
 /**
@@ -248,10 +247,11 @@ export function resolveDateToken(
 ): DateResolution {
   const today = toJstParts(now)
   const todayDay: CalendarDay = { y: today.y, m: today.m, d: today.d }
+  // 同時刻は「まだ過ぎていない」とする（規則 T4 と揃える）
   const timeAlreadyPassed =
     resolvedStart !== null &&
     (resolvedStart.hour < today.h ||
-      (resolvedStart.hour === today.h && resolvedStart.minute <= today.mi))
+      (resolvedStart.hour === today.h && resolvedStart.minute < today.mi))
 
   switch (token.kind) {
     case 'absolute': {
@@ -270,13 +270,23 @@ export function resolveDateToken(
       if (start === null || !isValidCalendarDate(start.y, start.m, start.d))
         return { consumed: false, issues: ['invalid_date'], start: null, end: null }
 
+      // 開始の年を明示した範囲は、単一日付と同じ過去日・13 ヶ月超の境界を適用する（D2・D3）
+      if (token.startYear !== null) {
+        const issue = explicitYearIssue(start, now, resolvedStart)
+        if (issue !== null) return { consumed: true, issues: [issue], start: null, end: null }
+      }
+
       const endYear = token.endYear ?? start.y
       if (!isValidCalendarDate(endYear, token.endMonth, token.endDay))
         return { consumed: false, issues: ['invalid_date'], start: null, end: null }
       let end = { y: endYear, m: token.endMonth, d: token.endDay }
-      // 終了日 < 開始日は年またぎとみなし、終了日を翌年にする（規則 A2）
-      if (token.endYear === null && compareDay(end, start) < 0)
-        end = { y: endYear + 1, m: token.endMonth, d: token.endDay }
+      if (token.endYear === null) {
+        // 終了日 < 開始日は年またぎとみなし、終了日を翌年にする（規則 A2）
+        if (compareDay(end, start) < 0) end = { y: endYear + 1, m: token.endMonth, d: token.endDay }
+      } else if (compareDay(end, start) < 0) {
+        // 終了の年を明示していて開始より前なら、矛盾した入力として invalid_date にする
+        return { consumed: false, issues: ['invalid_date'], start: null, end: null }
+      }
       return { consumed: true, issues: [], start, end }
     }
     case 'relative': {

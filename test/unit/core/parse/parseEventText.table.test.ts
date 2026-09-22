@@ -732,3 +732,135 @@ describe('URL のハイフンを壊さない（§5.2 手順 2・3 の順序）',
     expect(result.memo).toBe('https://example.com/a-b')
   })
 })
+
+describe('範囲記号の統一は日付・時刻の検出時にだけ行う（§5.2 手順 2）', () => {
+  it('タイトル中のハイフンは書き換えない（電話番号）', () => {
+    const result = parseEventText('9/20 19時 渋谷で飲み会 連絡先03-1234-5678', { now: NOW })
+    expect(result.memo).toBe('連絡先03-1234-5678')
+  })
+
+  it('タイトル中のハイフンは書き換えない（英語表記）', () => {
+    const result = parseEventText('9/20 19時 Re-union', { now: NOW })
+    expect(result.title).toBe('Re-union')
+  })
+})
+
+describe('レビュー指摘の反例（T2）', () => {
+  it('D1: うるう年の翌年繰り上げ先にも 2/29 が無ければ invalid_date', () => {
+    const now2028 = jstDate(2028, 3, 1, 1, 0)
+    const result = parseEventText('2/29 うるう日', { now: now2028 })
+    expect(result.start).toBeNull()
+    expect(result.issues).toEqual(['invalid_date', 'no_datetime'])
+  })
+
+  it('曜日カッコの中身は曜日・祝に限るので、カッコ内の時刻表記まで飲み込まない', () => {
+    const result = parseEventText('9/20(19時〜) 渋谷で飲み会', { now: NOW })
+    expect(result.title).toBe('飲み会')
+    expect(result.location).toBe('渋谷')
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+    // カッコ自体は日付・時刻のどちらでもないため文字として残る
+    expect(result.memo).toBe('( )')
+  })
+
+  it('曜日カッコの中身が曜日でなければカッコごと残す（データは失わない）', () => {
+    const result = parseEventText('9/20(渋谷駅集合 19時) 飲み会', { now: NOW })
+    expect(result.title).toBe('(渋谷駅集合 ) 飲み会')
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+  })
+
+  it('数字列の途中の invalid_date に惑わされず、後続の正しい日付・時刻を採用する', () => {
+    const result = parseEventText('会費3000/5000円 9/20 19時 飲み会', { now: NOW })
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+    expect(result.issues).toEqual([])
+  })
+
+  it('D6/D7: 最初の日付が invalid でも後続に有効な日付があれば採用する', () => {
+    const result = parseEventText('2/30 or 3/1 飲み会', { now: NOW })
+    expect(result.isAllDay).toBe(true)
+    expect(result.start).toEqual(jstDate(2027, 3, 1))
+    expect(result.issues).toEqual([])
+  })
+
+  it('T6: 最初の時刻が不正でも後続に有効な時刻があれば採用する', () => {
+    const result = parseEventText('9/20 25時ではなく 19時 集合', { now: NOW })
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+  })
+
+  it('`年/月` だけの不完全な表記は日付として検出しない', () => {
+    const result = parseEventText('2026/9 総会', { now: NOW })
+    expect(result.title).toBe('2026/9 総会')
+    expect(result.issues).toEqual(['no_datetime'])
+  })
+
+  it('L1: 「19時まで」単独でも「まで」を時刻側で消費し、場所として誤検出しない', () => {
+    const result = parseEventText('9/20 19時まで 受付', { now: NOW })
+    expect(result.title).toBe('受付')
+    expect(result.location).toBeNull()
+  })
+
+  it('L1: 「から」の後に空白があっても範囲として解決し、場所を誤検出しない', () => {
+    const result = parseEventText('9/20 19時から 21時まで 飲み会', { now: NOW })
+    expect(result.title).toBe('飲み会')
+    expect(result.location).toBeNull()
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+    expect(result.end).toEqual(dt(2026, 9, 20, 21, 0))
+  })
+
+  it.each([
+    ['9/20 19時 飲み会です', '飲み会です'],
+    ['9/20 19時 参加できる人だけ', '参加できる人だけ'],
+    ['9/20 19時 渋谷では飲み会', '渋谷では飲み会'],
+  ])('L1: 「%s」の「で」は「です・でき・では」の一部で区切りにしない', (input, title) => {
+    const result = parseEventText(input, { now: NOW })
+    expect(result.title).toBe(title)
+    expect(result.location).toBeNull()
+  })
+
+  it('L2: ストップワードを除いた直後から次の場所候補を探す', () => {
+    const result = parseEventText('9/20 19時 みんなで渋谷で飲み会', { now: NOW })
+    expect(result.location).toBe('渋谷')
+    expect(result.title).toBe('飲み会')
+    expect(result.memo).toBe('みんなで')
+  })
+
+  it('T6: 範囲の終了だけが不正なら、開始も含めてトークンごと消費しない（既知の挙動）', () => {
+    const result = parseEventText('9/20 19時〜25時 飲み会', { now: NOW })
+    expect(result.title).toBe('19時〜25時 飲み会')
+    expect(result.isAllDay).toBe(true)
+    expect(result.start).toEqual(jstDate(2026, 9, 20))
+  })
+
+  it('「2時間」は所要時間であって時刻ではないので終日扱いになる', () => {
+    const result = parseEventText('9/20 飲み会 2時間くらい', { now: NOW })
+    expect(result.title).toBe('飲み会 2時間くらい')
+    expect(result.isAllDay).toBe(true)
+  })
+
+  it('「19:00:00」の秒は読み飛ばす', () => {
+    const result = parseEventText('9/20 19:00:00 飲み会', { now: NOW })
+    expect(result.title).toBe('飲み会')
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+  })
+
+  it('ゼロ幅スペースは空白として扱い、日付と時刻がくっつかない', () => {
+    const zwsp = String.fromCharCode(0x200b)
+    const result = parseEventText(`9/20${zwsp}19時 飲み会`, { now: NOW })
+    expect(result.title).toBe('飲み会')
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+  })
+})
+
+describe('改行の正規化と先頭の空行（§5.2 手順 1）', () => {
+  it('CRLF は LF と同様に扱い、\\r を残さない', () => {
+    const result = parseEventText('9/20 19時 渋谷で飲み会\r\n会費5000円\r\n遅れる人は連絡', {
+      now: NOW,
+    })
+    expect(result.memo).toBe('会費5000円\n遅れる人は連絡')
+  })
+
+  it('先頭が空行でも、最初の空でない行をパース対象にする', () => {
+    const result = parseEventText('\n9/20 19時 飲み会', { now: NOW })
+    expect(result.title).toBe('飲み会')
+    expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+  })
+})

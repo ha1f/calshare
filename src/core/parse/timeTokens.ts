@@ -1,4 +1,5 @@
 import { PM_HEURISTIC_MAX_HOUR } from '../config/limits'
+import { RANGE_SYMBOL_SOURCE } from './normalize'
 import type { ParseIssue } from './types'
 
 type Prefix = '午前' | '午後' | '朝' | '夜' | '夕方'
@@ -11,13 +12,19 @@ function timeAtomSource(
   kanjiMinName: string,
   halfName: string,
 ): string {
-  return String.raw`(?:(?<${prefixName}>午前|午後|朝|夜|夕方))?(?<${hourName}>\d{1,2})(?::(?<${colonMinName}>\d{2})|時(?:(?<${kanjiMinName}>\d{1,2})分|(?<${halfName}>半))?)`
+  // (?<!\d) は数字列の途中（`100:00` の `00:00` 等）から時を切り出さないための境界。
+  // `(?::\d{2})?` は `19:00:00` の秒を読み飛ばす。`時(?!間)` は「2時間」を時刻と誤認しないための否定先読み
+  return String.raw`(?:(?<${prefixName}>午前|午後|朝|夜|夕方))?(?<!\d)(?<${hourName}>\d{1,2})(?::(?<${colonMinName}>\d{2})(?::\d{2})?|時(?!間)(?:(?<${kanjiMinName}>\d{1,2})分|(?<${halfName}>半))?)`
 }
 
 const START_ATOM = timeAtomSource('sPrefix', 'sHour', 'sColonMin', 'sKanjiMin', 'sHalf')
 const END_ATOM = timeAtomSource('ePrefix', 'eHour', 'eColonMin', 'eKanjiMin', 'eHalf')
-// 開始のみ（H〜 / Hから）にも一致するよう、終了側の時刻表現とまでは丸ごと省略可能にする
-const TIME_RE = new RegExp(`${START_ATOM}(?:(?:〜|から)(?:${END_ATOM})?(?:まで)?)?`)
+// 開始のみ（H〜 / Hから）にも一致するよう、終了側の時刻表現までは丸ごと省略可能にする。
+// 「まで」は「19時から21時まで」だけでなく「19時まで」単独（から・〜 無し）でも消費する。
+// 「から」の後の空白（「19時から 21時まで」）も許容する
+const TIME_RE = new RegExp(
+  `${START_ATOM}(?:(?:${RANGE_SYMBOL_SOURCE}|から) ?(?:${END_ATOM})?)?(?:まで)?`,
+)
 
 interface AtomValue {
   isColon: boolean
@@ -104,23 +111,23 @@ function resolveEnd(
   return { hour: atom.hour, minute: atom.minute, nextDay: true }
 }
 
-/** 1 行目から最初の時刻トークン（単発・範囲・開始のみ）を検出して解決する（§5.2 手順 5） */
-export function detectTimeToken(text: string): TimeResolution | null {
-  const match = TIME_RE.exec(text)
-  if (match === null) return null
-  const groups = match.groups ?? {}
+function invalidResolution(match: RegExpExecArray): TimeResolution {
+  return {
+    index: match.index,
+    length: match[0].length,
+    consumed: false,
+    issues: [],
+    start: { hour: 0, minute: 0 },
+    end: null,
+  }
+}
 
+/** 1 件の正規表現マッチを時刻として解決する。不正な時刻（規則 T6）なら consumed: false を返す */
+function resolveMatch(match: RegExpExecArray): TimeResolution {
+  const groups = match.groups ?? {}
   const startAtom = readAtom(groups, 'sPrefix', 'sHour', 'sColonMin', 'sKanjiMin', 'sHalf')
-  if (startAtom === null) return null
-  if (!isValidHourMinute(startAtom.hour, startAtom.minute)) {
-    return {
-      index: match.index,
-      length: match[0].length,
-      consumed: false,
-      issues: [],
-      start: { hour: 0, minute: 0 },
-      end: null,
-    }
+  if (startAtom === null || !isValidHourMinute(startAtom.hour, startAtom.minute)) {
+    return invalidResolution(match)
   }
 
   const startHour = resolveStartHour(startAtom)
@@ -135,16 +142,7 @@ export function detectTimeToken(text: string): TimeResolution | null {
       end: null,
     }
   }
-  if (!isValidHourMinute(endAtom.hour, endAtom.minute)) {
-    return {
-      index: match.index,
-      length: match[0].length,
-      consumed: false,
-      issues: [],
-      start: { hour: 0, minute: 0 },
-      end: null,
-    }
-  }
+  if (!isValidHourMinute(endAtom.hour, endAtom.minute)) return invalidResolution(match)
 
   const end = resolveEnd(endAtom, startHour * 60 + startAtom.minute)
   return {
@@ -155,4 +153,20 @@ export function detectTimeToken(text: string): TimeResolution | null {
     start: { hour: startHour, minute: startAtom.minute },
     end,
   }
+}
+
+/**
+ * 1 行目から時刻トークン（単発・範囲・開始のみ）を検出して解決する（§5.2 手順 5）。
+ * 最初の候補が不正（規則 T6）でも消費せず、後続に有効な候補があればそちらを採用する。
+ * 有効な候補が 1 つも無ければ、最初に見つかった不正な候補を返す（呼び出し側は consumed で判定する）
+ */
+export function detectTimeToken(text: string): TimeResolution | null {
+  const re = new RegExp(TIME_RE.source, 'g')
+  let firstInvalid: TimeResolution | null = null
+  for (let match = re.exec(text); match !== null; match = re.exec(text)) {
+    const resolved = resolveMatch(match)
+    if (resolved.consumed) return resolved
+    firstInvalid ??= resolved
+  }
+  return firstInvalid
 }

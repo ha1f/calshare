@@ -19,20 +19,32 @@ interface LocationFound {
   afterText: string
 }
 
+// 「で」の直後がこれらの文字なら、場所の区切りではなく「でも」「です」「でした」等の一部とみなす（規則 L1）
+const NON_SEPARATOR_NEXT_CHARS = new Set(['も', 'す', 'し', 'は', 'き'])
+
 /** 「で」「にて」の直前のひとまとまりを場所候補として探す（§5.5 規則 L1・L2） */
 function findLocation(text: string): LocationFound | null {
   const chunkStarts = computeChunkStarts(text)
   const separatorRe = /にて|で/g
+  // 区切りとして使えなかった「で」の直後を、次の候補を探す起点にする。
+  // 直前の語（ストップワードや「でも」の類）ごと候補に含めてしまうのを防ぐ
+  let searchStart = 0
   for (let match = separatorRe.exec(text); match !== null; match = separatorRe.exec(text)) {
     const sepStart = match.index
     const sepText = match[0]
     const nextChar = text[sepStart + sepText.length]
-    if (sepText === 'で' && nextChar === 'も') continue // 「でも」は区切りにしない（規則 L1）
+    if (sepText === 'で' && NON_SEPARATOR_NEXT_CHARS.has(nextChar ?? '')) {
+      searchStart = sepStart + sepText.length
+      continue
+    }
 
-    const chunkStart = chunkStarts[sepStart]
+    const chunkStart = Math.max(chunkStarts[sepStart], searchStart)
     const candidate = text.slice(chunkStart, sepStart)
     if (candidate.length === 0) continue
-    if (sepText === 'で' && isLocationStopPhrase(candidate + 'で')) continue // 規則 L2
+    if (sepText === 'で' && isLocationStopPhrase(candidate + 'で')) {
+      searchStart = sepStart + sepText.length // 規則 L2
+      continue
+    }
 
     return {
       location: candidate,

@@ -3,12 +3,13 @@ import { addDays, formatDateLabel, jstDate, toJstParts } from '../time/jst'
 import type { EventFields } from '../types'
 import { URL_PATTERN } from '../text/urlPattern'
 import {
-  detectDateToken,
+  detectDateTokens,
   resolveDateToken,
   type CalendarDay,
   type DateResolution,
+  type DateTokenMatch,
 } from './dateTokens'
-import { normalizeRangeSymbols, normalizeWidth } from './normalize'
+import { normalizeWidth } from './normalize'
 import { splitTitleLocationMemo } from './locationTitle'
 import { detectTimeToken, type TimeResolution } from './timeTokens'
 import type { ParseContext, ParseIssue, ParsedEvent } from './types'
@@ -18,12 +19,26 @@ interface Span {
   end: number
 }
 
+/** 隣接・重複する範囲を 1 つにまとめる。順序は開始位置の昇順 */
+function mergeSpans(spans: Span[]): Span[] {
+  const sorted = [...spans].sort((a, b) => a.start - b.start)
+  const merged: Span[] = []
+  for (const span of sorted) {
+    const last = merged[merged.length - 1]
+    if (last !== undefined && span.start <= last.end) {
+      last.end = Math.max(last.end, span.end)
+    } else {
+      merged.push({ ...span })
+    }
+  }
+  return merged
+}
+
 /** 消費した日付・時刻トークンの範囲を空白 1 文字に置き換える（§5.2 手順 6） */
 function removeSpans(text: string, spans: Span[]): string {
-  const sorted = [...spans].sort((a, b) => a.start - b.start)
   let result = ''
   let cursor = 0
-  for (const span of sorted) {
+  for (const span of mergeSpans(spans)) {
     result += text.slice(cursor, span.start) + ' '
     cursor = span.end
   }
@@ -97,14 +112,45 @@ function resolveDateTime(
   return { start: null, end: null, isAllDay: false } // 規則 A3: 日付も時刻も無い下書き
 }
 
+interface DateSelection {
+  match: DateTokenMatch | null
+  resolution: DateResolution | null
+}
+
+/**
+ * 日付候補を出現順に試し、消費できる（有効な）最初の候補を採用する（規則 D6・D7）。
+ * どれも消費できなければ、最初に見つかった不正な候補（invalid_date）を返す
+ */
+function selectDateToken(
+  candidates: DateTokenMatch[],
+  now: Date,
+  resolvedStart: { hour: number; minute: number } | null,
+): DateSelection {
+  let fallback: DateSelection | null = null
+  for (const candidate of candidates) {
+    const resolution = resolveDateToken(candidate.token, now, resolvedStart)
+    if (resolution.consumed) return { match: candidate, resolution }
+    fallback ??= { match: candidate, resolution }
+  }
+  return fallback ?? { match: null, resolution: null }
+}
+
 /**
  * 予定を書いた 1 行目（＋メモになる 2 行目以降）から、タイトル・日時・場所・メモを取り出す（§5.1〜§5.6）。
  * 同期・純粋で core の外を import しない
  */
 export function parseEventText(input: string, ctx: ParseContext): ParsedEvent {
-  const lines = input.split('\n')
-  const originalLine1 = lines[0] ?? ''
-  const restText = lines.slice(1).join('\n').trim()
+  const lines = input.split(/\r?\n/)
+  // 先頭が空行でも、最初の空でない行をパース対象にする（§5.2 手順 1）
+  const line1Index = Math.max(
+    lines.findIndex((line) => line.trim().length > 0),
+    0,
+  )
+  const originalLine1 = lines[line1Index] ?? ''
+  const restText = lines
+    .slice(line1Index + 1)
+    .join('\n')
+    .trim()
 
   const widthNormalized = normalizeWidth(originalLine1)
   const urlRegex = new RegExp(URL_PATTERN.source, URL_PATTERN.flags)
@@ -113,17 +159,18 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent {
     urls.push(matched)
     return ''
   })
-  const rangeNormalized = normalizeRangeSymbols(withoutUrls)
 
-  const timeMatch = detectTimeToken(rangeNormalized)
+  const timeMatch = detectTimeToken(withoutUrls)
   const resolvedStartForDate =
     timeMatch !== null && timeMatch.consumed
       ? { hour: timeMatch.start.hour, minute: timeMatch.start.minute }
       : null
 
-  const dateMatch = detectDateToken(rangeNormalized)
-  const dateResolution =
-    dateMatch !== null ? resolveDateToken(dateMatch.token, ctx.now, resolvedStartForDate) : null
+  const { match: dateMatch, resolution: dateResolution } = selectDateToken(
+    detectDateTokens(withoutUrls),
+    ctx.now,
+    resolvedStartForDate,
+  )
 
   const timeFound = timeMatch !== null && timeMatch.consumed
   const dateFound = dateResolution !== null && dateResolution.consumed
@@ -134,7 +181,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent {
   if (timeMatch !== null && timeFound)
     spans.push({ start: timeMatch.index, end: timeMatch.index + timeMatch.length })
   // 消費した範囲を空白に置き換えると連続空白ができるので 1 つに畳む（前後の空白は各規則側で trim する）
-  const remaining = removeSpans(rangeNormalized, spans).replace(/ +/g, ' ')
+  const remaining = removeSpans(withoutUrls, spans).replace(/ +/g, ' ')
 
   const split = splitTitleLocationMemo(remaining)
 

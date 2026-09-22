@@ -38,11 +38,44 @@ describe('URL_PATTERN', () => {
     expect(matchAll('hxxps://example.com を見て')).toEqual([])
   })
 
+  it('難読化された scheme の直後の www. も一致しない', () => {
+    expect(matchAll('hxxp://www.evil.com を見て')).toEqual([])
+  })
+
+  it('www. のホスト名は ASCII の語に限る（日本語には一致しない）', () => {
+    expect(matchAll('www.渋谷 の話')).toEqual([])
+  })
+
+  it('許可 TLD の直後に英数字が続く場合は一致しない（example.company の company を誤って切らない）', () => {
+    expect(matchAll('example.company の話')).toEqual([])
+  })
+
   it('1 行に複数の URL があればすべて一致する', () => {
     expect(matchAll('https://a.example.com と https://b.example.com')).toEqual([
       'https://a.example.com',
       'https://b.example.com',
     ])
+  })
+})
+
+describe('URL_PATTERN: 長い入力での性能', () => {
+  // ドットや `-` が連続する入力は、開始位置ごとに末尾までなめる走査になると O(n^2) になる（§5.1）
+  matchAll('a.') // 正規表現の JIT コンパイルをウォームアップしておく
+
+  it.each([
+    ['a. を 1000 回繰り返す', 'a.'.repeat(1000)],
+    ['-. を 1000 回繰り返す', '-.'.repeat(1000)],
+  ])('%s（2,000 文字）が 50ms 以内に返る', (_label, input) => {
+    const start = performance.now()
+    matchAll(input)
+    expect(performance.now() - start).toBeLessThan(50)
+  })
+
+  it('a. を 10000 回繰り返しても（20,000 文字）50ms 以内に返る', () => {
+    const input = 'a.'.repeat(10000)
+    const start = performance.now()
+    matchAll(input)
+    expect(performance.now() - start).toBeLessThan(50)
   })
 })
 
