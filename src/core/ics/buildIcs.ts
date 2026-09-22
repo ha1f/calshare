@@ -18,7 +18,7 @@ export interface IcsInput {
 const PRODID = '-//calshare//calshare//JA'
 
 // \n \t 以外の U+0000-U+001F と U+007F（DEL）。\r（U+000D）もここに含まれるので \r\n 正規化後の残り \r もまとめて除去できる。
-// RFC 5545 の TSAFE-CHAR（%x20-7E を除く印字可能文字の定義）は %x7F を含まない
+// RFC 5545 の TSAFE-CHAR は %x7F を含まない
 // eslint-disable-next-line no-control-regex -- ics の TEXT エスケープ仕様上、制御文字そのものを検出対象にする
 const CONTROL_CHARS_EXCEPT_TAB_LF = /[\x00-\x08\x0B-\x1F\x7F]/g
 
@@ -29,16 +29,39 @@ function normalizeControlChars(text: string): string {
 
 // URL に使う文字のみを許可し、直後の空白や日本語を巻き込まないようにする
 const URL_CHARS = String.raw`[\w\-./?=&%#:]`
-const ALLOWED_BARE_DOMAIN_TLDS = 'co|com|jp|net|org|io|me|ly|app|dev|link'
 
-// 文中で区切りとして使われる全角の句読点・記号（U+3000-303F、全角の ！-／：-＠［-｀｛-･、中点 U+30FB）。
-// ホストのラベル文字クラスから除く。全角英数字（U+FF10-19、FF21-3A、FF41-5A）は区切りではないので含めない
-const HOST_PUNCTUATION = String.raw`\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF20\uFF3B-\uFF40\uFF5B-\uFF65\u30FB`
+/**
+ * ASCII の英字だけを `[Aa]` のような文字クラスに展開し、`i` フラグ無しで大文字小文字を区別しない
+ * 照合にする。`buildIcsUrlPattern` は `\p{}` に必要な `u` フラグを使うため `i` を併用できない
+ * （U+017F・U+212A が畳み込みで ASCII 文字扱いになる。同ファイルの `buildIcsUrlPattern` 参照）
+ */
+function toCaseInsensitiveAscii(literal: string): string {
+  return literal.replace(/[a-zA-Z]/g, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`)
+}
+
+const ALLOWED_BARE_DOMAIN_TLDS = [
+  'co',
+  'com',
+  'jp',
+  'net',
+  'org',
+  'io',
+  'me',
+  'ly',
+  'app',
+  'dev',
+  'link',
+]
+  .map(toCaseInsensitiveAscii)
+  .join('|')
+
 // ホストのラベルは「ASCII のみ」と「非 ASCII のみ（IDN や全角英数字。ブラウザは IDNA で半角に正規化して
 // 解釈する）」を別の選択肢にし、ASCII の `.` のみをラベルの区切りとして両者を跨がせない。1 つの文字クラス
 // にまとめると `example.comです` のような「ASCII ドメイン + 区切り無しの日本語文」まで 1 ラベルとして飲み込む
 const ASCII_HOST_LABEL = String.raw`[\w-]+`
-const NON_ASCII_HOST_LABEL = String.raw`[^\x00-\x7F\s${HOST_PUNCTUATION}]+`
+// 非 ASCII ラベルは文字・数字・結合文字（\p{L} \p{N} \p{M}）のみを許可する。区切り記号を列挙する方式だと、
+// 列挙から漏れた記号（絵文字等）までラベルに巻き込み、本文の一部を欠落させる
+const NON_ASCII_HOST_LABEL = String.raw`(?:(?![\x00-\x7F])[\p{L}\p{N}\p{M}])+`
 const HOST_LABEL = String.raw`(?:${ASCII_HOST_LABEL}|${NON_ASCII_HOST_LABEL})`
 // 末尾ラベル（TLD 相当）も HOST_LABEL と同じ規則にし、非 ASCII TLD（`.日本` 等）を拾えるようにする。
 // IPv6 リテラルは IPv4-mapped 形式（`::ffff:1.2.3.4` 等）を拾えるよう `.` も許可する
@@ -50,17 +73,23 @@ const USERINFO = String.raw`[\w.~%!$&'()*+,;=:-]+`
 const URL_TAIL = String.raw`${HOST}(?::\d+)?(?:[/?#]${URL_CHARS}*)?`
 
 /**
- * URL 判定用の正規表現を毎回生成する。`core/text/urlPattern.ts`（別タスクで実装中）が着地するまでの
- * 暫定実装で、スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの 3 形式を対象にする。
- * TLD の前方一致（`co` が `com` の一部になる等）を防ぐため TLD の直後に単語文字が続かないことを確認する
+ * URL 判定用の正規表現を毎回生成する。スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの
+ * 3 形式を対象にする。TLD の前方一致（`co` が `com` の一部になる等）を防ぐため TLD の直後に単語文字が
+ * 続かないことを確認する。`core/text/urlPattern.ts` の共有定義への統合は Issue #19
  */
 function buildIcsUrlPattern(): RegExp {
+  const httpsScheme = `${toCaseInsensitiveAscii('http')}${toCaseInsensitiveAscii('s')}?`
+  const wwwLiteral = toCaseInsensitiveAscii('www')
   return new RegExp(
     // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
-    String.raw`https?:\/\/\/*(?:${USERINFO}@)?${URL_TAIL}` +
-      String.raw`|www\.${URL_TAIL}` +
-      String.raw`|[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_DOMAIN_TLDS})(?!\w)(?:\/${URL_CHARS}*)?|[a-z]{2,}\/${URL_CHARS}*)`,
-    'gi',
+    String.raw`${httpsScheme}:\/\/\/*(?:${USERINFO}@)?${URL_TAIL}` +
+      String.raw`|${wwwLiteral}\.${URL_TAIL}` +
+      String.raw`|[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_DOMAIN_TLDS})(?!\w)(?:\/${URL_CHARS}*)?|[a-zA-Z]{2,}\/${URL_CHARS}*)`,
+    // 'i' は付けない。\p{} に必要な 'u' と 'i' を組み合わせると、大文字小文字の畳み込みで
+    // U+017F（ſ）・U+212A（Kelvin 記号）が ASCII の s/k として \w や [a-z] に一致してしまい、
+    // ホスト名やパスの一部として本文の文字を巻き込む。スキーム・www.・TLD の大文字表記は
+    // toCaseInsensitiveAscii と [a-zA-Z] で個別に対応する
+    'gu',
   )
 }
 

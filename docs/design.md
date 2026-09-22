@@ -849,7 +849,8 @@ export function buildIcs(input: IcsInput): string
 /**
  * `\r\n` を `\n` に正規化し制御文字を除去した上で、URL（URL_PATTERN、§5.2）を「[リンク]」に置換する。
  * 制御文字の除去を URL 判定より先に行わないと、URL の途中に制御文字を挟むことで判定をすり抜けられる。
- * SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す
+ * SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す。
+ * T2（`core/text/urlPattern.ts`）着地までは `buildIcs.ts` 内の暫定判定を使う。統合は Issue #19
  */
 export function sanitizeIcsText(text: string): string
 /**
@@ -926,7 +927,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 ### 9.2 URL の扱い
 
 - 詳細ページのメモ内で URL らしき文字列を自動リンク化しない。リンク化ライブラリも導入しない。
-- URL の判定は `src/core/text/urlPattern.ts` の `URL_PATTERN` 1 本に集約する（§5.2）。パーサの URL 分離・`countUrls`・ics のサニタイズが同じ定義を参照するので、「作成時に数えた本数」と「ics で置換される本数」が一致する。
+- URL の判定は `src/core/text/urlPattern.ts` の `URL_PATTERN` 1 本に集約する（§5.2）。パーサの URL 分離・`countUrls`・ics のサニタイズが同じ定義を参照するので、「作成時に数えた本数」と「ics で置換される本数」が一致する。T2（`core/text/urlPattern.ts`）着地までは ics 側が `buildIcs.ts` 内の暫定判定を使うため、本数が一致しないケースがある（Issue #19）。
 - 作成・更新時に `title + location + memo` に含まれる URL の総数が `MAX_MEMO_URLS = 3` を超えたら `TOO_MANY_URLS`（400）。`raw_text` は数えない（1 行目の URL はメモへ移されるので二重に数えない）。「地図 URL + 申込フォーム URL」は正当な用途として通す。
 - ics の SUMMARY / LOCATION / DESCRIPTION では URL を「[リンク]」に置換する（§7.2）。
 - 「地図で見る」は場所文字列を `encodeURIComponent` した固定パターンの Google マップ検索 URL で、ユーザー入力を URL として解釈しない。

@@ -112,4 +112,30 @@ describe('sanitizeIcsText', () => {
       '[リンク]・詳細はNode.js入門',
     )
   })
+
+  it('非 ASCII ホスト直後の句読点や記号・絵文字で区切られた本文を飲み込まない', () => {
+    expect(sanitizeIcsText('https://例え.日本…詳細はNode.js入門')).toBe(
+      '[リンク]…詳細はNode.js入門',
+    )
+    expect(sanitizeIcsText('https://例え.日本→詳細')).toBe('[リンク]→詳細')
+    expect(sanitizeIcsText('https://例え.日本※注意')).toBe('[リンク]※注意')
+    expect(sanitizeIcsText('https://例え.日本🎉詳細')).toBe('[リンク]🎉詳細')
+  })
+
+  it('U+017F・U+212A のような ASCII に畳み込まれる非 ASCII 文字をホストラベルに巻き込まない', () => {
+    // U+017F（ſ）・U+212A（Kelvin 記号）は大文字小文字を区別しない照合では s/k に一致するが、
+    // ここでは区別するのでホストの一部にならず、本文の文字として残る
+    expect(sanitizeIcsText('https://example.comſです')).toBe('[リンク]ſです')
+    expect(sanitizeIcsText('https://example.com/pathſです')).toBe('[リンク]ſです')
+  })
+
+  it('スキーム・www.・許可リストの TLD が大文字でも置換する', () => {
+    expect(sanitizeIcsText('HTTPS://EVIL.COM/x')).toBe('[リンク]')
+    expect(sanitizeIcsText('WWW.EVIL.COM')).toBe('[リンク]')
+    expect(sanitizeIcsText('EVIL.COM で受付')).toBe('[リンク] で受付')
+  })
+
+  it('パスが続くベアドメインの TLD が大文字でも置換する', () => {
+    expect(sanitizeIcsText('evil.XYZ/path で受付')).toBe('[リンク] で受付')
+  })
 })
