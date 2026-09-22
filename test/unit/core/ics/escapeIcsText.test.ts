@@ -19,6 +19,10 @@ describe('escapeIcsText', () => {
     expect(escapeIcsText(withControls)).toBe('abc\td')
   })
 
+  it('U+007F（DEL）も除去する（RFC 5545 の TSAFE-CHAR は %x7F を含まない）', () => {
+    expect(escapeIcsText(`a${String.fromCharCode(0x7f)}b`)).toBe('ab')
+  })
+
   it('バックスラッシュを含む値を二重エスケープしない', () => {
     // 素朴に置換順序を間違えると \; が \\; になったりする
     expect(escapeIcsText('C:\\path;a,b')).toBe('C:\\\\path\\;a\\,b')

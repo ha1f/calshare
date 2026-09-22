@@ -17,9 +17,10 @@ export interface IcsInput {
 
 const PRODID = '-//calshare//calshare//JA'
 
-// \n \t 以外の U+0000-U+001F。\r（U+000D）もここに含まれるので \r\n 正規化後の残り \r もまとめて除去できる
+// \n \t 以外の U+0000-U+001F と U+007F（DEL）。\r（U+000D）もここに含まれるので \r\n 正規化後の残り \r もまとめて除去できる。
+// RFC 5545 の TSAFE-CHAR（%x20-7E を除く印字可能文字の定義）は %x7F を含まない
 // eslint-disable-next-line no-control-regex -- ics の TEXT エスケープ仕様上、制御文字そのものを検出対象にする
-const CONTROL_CHARS_EXCEPT_TAB_LF = /[\x00-\x08\x0B-\x1F]/g
+const CONTROL_CHARS_EXCEPT_TAB_LF = /[\x00-\x08\x0B-\x1F\x7F]/g
 
 /** `\r\n` を `\n` に正規化し、残った `\r` と制御文字を除く。URL 判定やエスケープの前段として使う */
 function normalizeControlChars(text: string): string {
@@ -30,12 +31,18 @@ function normalizeControlChars(text: string): string {
 const URL_CHARS = String.raw`[\w\-./?=&%#:]`
 const ALLOWED_BARE_DOMAIN_TLDS = 'co|com|jp|net|org|io|me|ly|app|dev|link'
 
-// ホストのラベル区切りは ASCII の `.` のみを認め、ラベル自体は IDN（日本語ドメイン等）を拾えるよう
-// 空白・`/`・`.`・`:`・`?`・`#` 以外を許可する。ただし全角句読点・記号（U+3000-303F、全角の !-@、全角の [-~ と半角カナ記号）
-// は文中の区切りとして使われるため許可しない。これが無いと後ろに続く `.` まで文をまたいでホストに巻き込む
-const HOST_PUNCTUATION = String.raw`\u3000-\u303F\uFF01-\uFF20\uFF3B-\uFF65`
-const HOST_LABEL = String.raw`[^\s/.:?#,;'"()<>!${HOST_PUNCTUATION}]+`
-const HOST = String.raw`(?:\[[0-9a-fA-F:]+\]|(?:${HOST_LABEL}\.)*[\w-]+)`
+// 文中で区切りとして使われる全角の句読点・記号（U+3000-303F、全角の ！-／：-＠［-｀｛-･、中点 U+30FB）。
+// ホストのラベル文字クラスから除く。全角英数字（U+FF10-19、FF21-3A、FF41-5A）は区切りではないので含めない
+const HOST_PUNCTUATION = String.raw`\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF20\uFF3B-\uFF40\uFF5B-\uFF65\u30FB`
+// ホストのラベルは「ASCII のみ」と「非 ASCII のみ（IDN や全角英数字。ブラウザは IDNA で半角に正規化して
+// 解釈する）」を別の選択肢にし、ASCII の `.` のみをラベルの区切りとして両者を跨がせない。1 つの文字クラス
+// にまとめると `example.comです` のような「ASCII ドメイン + 区切り無しの日本語文」まで 1 ラベルとして飲み込む
+const ASCII_HOST_LABEL = String.raw`[\w-]+`
+const NON_ASCII_HOST_LABEL = String.raw`[^\x00-\x7F\s${HOST_PUNCTUATION}]+`
+const HOST_LABEL = String.raw`(?:${ASCII_HOST_LABEL}|${NON_ASCII_HOST_LABEL})`
+// 末尾ラベル（TLD 相当）も HOST_LABEL と同じ規則にし、非 ASCII TLD（`.日本` 等）を拾えるようにする。
+// IPv6 リテラルは IPv4-mapped 形式（`::ffff:1.2.3.4` 等）を拾えるよう `.` も許可する
+const HOST = String.raw`(?:\[[0-9a-fA-F:.]+\]|(?:${HOST_LABEL}\.)*${HOST_LABEL})`
 // RFC 3986 の userinfo に相当する ASCII のみの文字クラス。日本語を許すと `で、担当@example.jp` のように
 // 文中の `@` まで userinfo として飲み込んでしまう
 const USERINFO = String.raw`[\w.~%!$&'()*+,;=:-]+`

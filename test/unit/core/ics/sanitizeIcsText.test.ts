@@ -90,4 +90,26 @@ describe('sanitizeIcsText', () => {
       '[リンク]で、担当@[リンク]まで',
     )
   })
+
+  it('TLD 自体が非 ASCII の IDN（.日本 等）でも置換する', () => {
+    expect(sanitizeIcsText('詳細は https://例え.日本/x を見て')).toBe('詳細は [リンク] を見て')
+    expect(sanitizeIcsText('www.例え.日本')).toBe('[リンク]')
+    expect(sanitizeIcsText('https://例え.コム')).toBe('[リンク]')
+    expect(sanitizeIcsText('https://日本.語/x')).toBe('[リンク]')
+  })
+
+  it('全角英数字だけで書かれたホストも置換する（ブラウザは IDNA で半角に正規化して開ける）', () => {
+    expect(sanitizeIcsText('https://ｅｘａｍｐｌｅ.com')).toBe('[リンク]')
+    expect(sanitizeIcsText('www.１２３.jp')).toBe('[リンク]')
+  })
+
+  it('IPv4-mapped 形式の IPv6 リテラルを含む URL も置換する', () => {
+    expect(sanitizeIcsText('https://[::ffff:1.2.3.4]/x')).toBe('[リンク]')
+  })
+
+  it('ホスト直後の中点「・」で区切られた本文を飲み込まない', () => {
+    expect(sanitizeIcsText('https://example.com・詳細はNode.js入門')).toBe(
+      '[リンク]・詳細はNode.js入門',
+    )
+  })
 })

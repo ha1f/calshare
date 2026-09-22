@@ -46,6 +46,15 @@ describe('buildGoogleCalendarUrl', () => {
     expect(params.get('dates')).toBe('20260920/20260921')
   })
 
+  it('時刻ありイベントは JST の年始でも dates の UTC 表記では前年になる', () => {
+    const params = parseParams(
+      buildGoogleCalendarUrl(
+        baseInput({ start: jstDate(2027, 1, 1, 0, 30), end: jstDate(2027, 1, 1, 1, 30) }),
+      ),
+    )
+    expect(params.get('dates')).toBe('20261231T153000Z/20261231T163000Z')
+  })
+
   it('title を text に、location をそのまま渡す（URL の除去はしない）', () => {
     const params = parseParams(
       buildGoogleCalendarUrl(

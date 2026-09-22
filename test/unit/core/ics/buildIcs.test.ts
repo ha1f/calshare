@@ -88,6 +88,17 @@ describe('buildIcs', () => {
     expect(ics).toContain('DTEND;VALUE=DATE:20270102')
   })
 
+  it('時刻ありイベントは JST の年始でも UTC 表記では前年になる', () => {
+    const ics = buildIcs(
+      baseInput({
+        start: jstDate(2027, 1, 1, 0, 30),
+        end: jstDate(2027, 1, 1, 1, 30),
+      }),
+    )
+    expect(ics).toContain('DTSTART:20261231T153000Z')
+    expect(ics).toContain('DTEND:20261231T163000Z')
+  })
+
   it('SUMMARY / LOCATION は sanitizeIcsText → escapeIcsText を経由する', () => {
     const ics = buildIcs(
       baseInput({
@@ -219,5 +230,14 @@ describe('buildIcs', () => {
       expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75)
     }
     expect(ics.replace(/\r\n /g, '')).toContain(`SUMMARY:${title}`)
+  })
+
+  it('75 オクテットを超える LOCATION も折り返され、unfold すると元の値に戻る', () => {
+    const location = '渋谷区道玄坂の貸し会議室'.repeat(5)
+    const ics = buildIcs(baseInput({ location }))
+    for (const line of ics.split('\r\n')) {
+      expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75)
+    }
+    expect(ics.replace(/\r\n /g, '')).toContain(`LOCATION:${location}`)
   })
 })

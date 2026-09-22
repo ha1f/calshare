@@ -853,7 +853,7 @@ export function buildIcs(input: IcsInput): string
  */
 export function sanitizeIcsText(text: string): string
 /**
- * RFC 5545 の TEXT エスケープ。`\r\n` を `\n` に正規化し、残った `\r` と U+0000–U+001F（`\n` `\t` 以外）を除去した上で
+ * RFC 5545 の TEXT エスケープ。`\r\n` を `\n` に正規化し、残った `\r` と U+0000–U+001F（`\n` `\t` 以外）・U+007F を除去した上で
  * `\` `;` `,` `\n` をエスケープする。lone `\r` を行区切りとして扱う寛容なパーサへのプロパティ注入を防ぐ
  */
 export function escapeIcsText(text: string): string
