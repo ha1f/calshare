@@ -100,6 +100,25 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     expect(page?.editTokenHash).toBe(original.editTokenHash)
   })
 
+  it('同じ id への並行 create は ok が 1 件だけ', async () => {
+    const repo = createRepo()
+    const concurrency = 5
+
+    const results = await Promise.all(
+      Array.from({ length: concurrency }, (_, i) =>
+        repo.create(
+          buildInput({
+            id: 'page-concurrent-create',
+            event: { id: `page-concurrent-create-event-${i}`, ...eventFields() },
+          }),
+        ),
+      ),
+    )
+
+    expect(results.filter((r) => r === 'ok')).toHaveLength(1)
+    expect(results.filter((r) => r === 'id_conflict')).toHaveLength(concurrency - 1)
+  })
+
   it('events の INSERT が失敗すると pages も残らない（event id の使い回し）', async () => {
     const repo = createRepo()
     await repo.create(buildInput({ id: 'page-a', event: { id: 'evt-shared', ...eventFields() } }))
@@ -161,6 +180,7 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     expect(page?.version).toBe(2)
     expect(page?.status).toBe('active')
     expect(page?.reportCount).toBe(1)
+    expect(page?.expiresAt).toEqual(new Date('2026-09-28T00:00:00.000Z'))
     expect(page?.rawText).toBe('9/21 20時 新宿で飲み会')
     expect(page?.event.title).toBe('飲み会（変更後）')
     expect(page?.event.location).toBe('新宿')
@@ -298,6 +318,11 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
 
     const page = await repo.findById('page-report')
     expect(page?.reportCount).toBe(2)
+  })
+
+  it('incrementReportCount: 存在しない id は 0 を返す', async () => {
+    const repo = createRepo()
+    expect(await repo.incrementReportCount('no-such-page')).toBe(0)
   })
 
   it('countActiveByCreator: 同じ ip_hash または device_id を持つ active なページ数', async () => {
