@@ -232,7 +232,10 @@ export function createD1PageRepository(db: D1Database): PageRepository {
           id,
         )
 
-      await db.batch([pagesStmt, eventsStmt])
+      // 事前の SELECT と db.batch の間に GC の deleteByIds が同じページを消すと、
+      // UPDATE は 0 行のまま成功してしまう。実際に更新できた行数で not_found を判定する
+      const [pagesResult] = await db.batch([pagesStmt, eventsStmt])
+      if (pagesResult.meta.changes === 0) return 'not_found'
       return 'ok'
     },
 

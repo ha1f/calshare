@@ -81,16 +81,23 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
 
   it('同じ id で create すると id_conflict を返し、既存のページは変わらない', async () => {
     const repo = createRepo()
-    await repo.create(buildInput({ id: 'page-dup' }))
+    const original = buildInput({ id: 'page-dup' })
+    await repo.create(original)
 
     const result = await repo.create(
-      buildInput({ id: 'page-dup', event: { id: 'page-dup-event-2', ...eventFields() } }),
+      buildInput({
+        id: 'page-dup',
+        event: { id: 'page-dup-event-2', ...eventFields() },
+        rawText: '別の本文',
+        editTokenHash: 'token-hash-2',
+      }),
     )
 
     expect(result).toBe('id_conflict')
     const page = await repo.findById('page-dup')
     expect(page?.event.id).toBe('page-dup-event')
-    expect(page?.rawText).toBe(buildInput({ id: 'page-dup' }).rawText)
+    expect(page?.rawText).toBe(original.rawText)
+    expect(page?.editTokenHash).toBe(original.editTokenHash)
   })
 
   it('events の INSERT が失敗すると pages も残らない（event id の使い回し）', async () => {
@@ -112,6 +119,21 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
   it('update: not_found（存在しない id）', async () => {
     const repo = createRepo()
     const result = await repo.update('no-such-page', {
+      rawText: 'x',
+      event: eventFields(),
+      expiresAt: NOW,
+      previousSnapshot: null,
+      now: NOW,
+    })
+    expect(result).toBe('not_found')
+  })
+
+  it('update: 削除済みの id は not_found', async () => {
+    const repo = createRepo()
+    await repo.create(buildInput({ id: 'page-update-deleted' }))
+    await repo.deleteByIds(['page-update-deleted'])
+
+    const result = await repo.update('page-update-deleted', {
       rawText: 'x',
       event: eventFields(),
       expiresAt: NOW,
@@ -145,6 +167,8 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     expect(page?.event.id).toBe('page-update-event')
     expect(page?.createdAt).toEqual(NOW)
     expect(page?.updatedAt).toEqual(new Date('2026-09-17T00:00:00.000Z'))
+    expect(page?.event.createdAt).toEqual(NOW)
+    expect(page?.event.updatedAt).toEqual(new Date('2026-09-17T00:00:00.000Z'))
   })
 
   it('update: メモ・終日・日時未確定への変更が往復する', async () => {
@@ -438,6 +462,29 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
   })
 }
 
+/**
+ * update() が存在確認のために発行する events の SELECT が返ってきた直後に、
+ * 別経路（GC の deleteByIds 等）で同じページが消えたケースを再現する D1Database ラッパー。
+ * d1PageRepository.ts 自体には手を入れず、渡す db を差し替えるだけで割り込ませる
+ */
+function withPageDeletedAfterEventsCheck(db: D1Database, pageId: string): D1Database {
+  return {
+    prepare(sql: string) {
+      if (!sql.startsWith('SELECT * FROM events WHERE page_id')) return db.prepare(sql)
+      return {
+        bind: (..._args: unknown[]) => ({
+          all: async <T = unknown>() => {
+            const result = await db.prepare(sql).bind(pageId).all<T>()
+            await db.prepare('DELETE FROM pages WHERE id = ?').bind(pageId).run()
+            return result
+          },
+        }),
+      } as unknown as D1PreparedStatement
+    },
+    batch: db.batch.bind(db),
+  } as unknown as D1Database
+}
+
 describe('D1PageRepository', () => {
   // D1 のストレージ分離はテストファイル単位で、同じファイル内の it() 間ではテーブルの中身が残る。
   // pages を消せば events も CASCADE で消える
@@ -446,6 +493,22 @@ describe('D1PageRepository', () => {
   })
 
   runPageRepositoryTests(() => createD1PageRepository(env.DB))
+
+  it('update: 存在確認と UPDATE の間にページが削除されても not_found を返す', async () => {
+    await createD1PageRepository(env.DB).create(buildInput({ id: 'page-race' }))
+
+    const repo = createD1PageRepository(withPageDeletedAfterEventsCheck(env.DB, 'page-race'))
+    const result = await repo.update('page-race', {
+      rawText: 'x',
+      event: eventFields(),
+      expiresAt: NOW,
+      previousSnapshot: null,
+      now: NOW,
+    })
+
+    expect(result).toBe('not_found')
+    expect(await createD1PageRepository(env.DB).findById('page-race')).toBeNull()
+  })
 
   it('events が 2 行あるページを読むと InvariantViolation を投げる', async () => {
     const repo = createD1PageRepository(env.DB)
