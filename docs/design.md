@@ -846,10 +846,15 @@ export interface IcsInput {
   detailUrl: string
 }
 export function buildIcs(input: IcsInput): string
-/** URL（URL_PATTERN、§5.2）を「[リンク]」に置換する。SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す */
+/**
+ * `\r\n` を `\n` に正規化し制御文字を除去した上で、URL（URL_PATTERN、§5.2）を「[リンク]」に置換する。
+ * 制御文字の除去を URL 判定より先に行わないと、URL の途中に制御文字を挟むことで判定をすり抜けられる。
+ * SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す。
+ * T2（`core/text/urlPattern.ts`）着地までは `buildIcs.ts` 内の暫定判定を使う。統合は Issue #19
+ */
 export function sanitizeIcsText(text: string): string
 /**
- * RFC 5545 の TEXT エスケープ。`\r\n` を `\n` に正規化し、残った `\r` と U+0000–U+001F（`\n` `\t` 以外）を除去した上で
+ * RFC 5545 の TEXT エスケープ。`\r\n` を `\n` に正規化し、残った `\r` と U+0000–U+001F（`\n` `\t` 以外）・U+007F を除去した上で
  * `\` `;` `,` `\n` をエスケープする。lone `\r` を行区切りとして扱う寛容なパーサへのプロパティ注入を防ぐ
  */
 export function escapeIcsText(text: string): string
@@ -867,7 +872,7 @@ export function foldIcsLine(line: string): string
 | `DTSTAMP` | ics 生成時刻（UTC、`Z` 表記）。編集のたびに再生成されるので更新される |
 | `DTSTART` / `DTEND` | `TZID` を使わず UTC（`Z`）表記。日本には DST が無いので固定オフセット減算だけで正しく、`VTIMEZONE` を組まない |
 | 終日 | `DTSTART;VALUE=DATE:20260920` / `DTEND;VALUE=DATE:20260921`（排他的翌日） |
-| `SUMMARY` / `LOCATION` / `DESCRIPTION` | いずれも `sanitizeIcsText` → `escapeIcsText` → `foldIcsLine` の順に通す。URL は「[リンク]」に置換する（削除だと文脈が壊れる）。DESCRIPTION は、メモを `sanitizeIcsText` に通した**後**に「詳細はこちら: {detailUrl}」の行を連結し、その後で `escapeIcsText` → `foldIcsLine` に通す（連結してから sanitize すると自ドメインの URL も「[リンク]」になる）。**ics 上の外部リンクは常に 0 本**、自ドメインのみ 1 本 |
+| `SUMMARY` / `LOCATION` / `DESCRIPTION` | いずれも `sanitizeIcsText`（内部で制御文字除去 → URL 置換の順に行う）→ `escapeIcsText` → `foldIcsLine` の順に通す。URL は「[リンク]」に置換する（削除だと文脈が壊れる）。DESCRIPTION は、メモを `sanitizeIcsText` に通した**後**に「詳細はこちら: {detailUrl}」の行を連結し、その後で `escapeIcsText` → `foldIcsLine` に通す（連結してから sanitize すると自ドメインの URL も「[リンク]」になる）。**ics 上の外部リンクは常に 0 本**、自ドメインのみ 1 本 |
 | `URL` | `detailUrl` |
 | `SEQUENCE` | `version - 1`（作成時 0）。編集のたびに +1（§8） |
 | `STATUS` | `CONFIRMED` |
@@ -922,7 +927,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 ### 9.2 URL の扱い
 
 - 詳細ページのメモ内で URL らしき文字列を自動リンク化しない。リンク化ライブラリも導入しない。
-- URL の判定は `src/core/text/urlPattern.ts` の `URL_PATTERN` 1 本に集約する（§5.2）。パーサの URL 分離・`countUrls`・ics のサニタイズが同じ定義を参照するので、「作成時に数えた本数」と「ics で置換される本数」が一致する。
+- URL の判定は `src/core/text/urlPattern.ts` の `URL_PATTERN` 1 本に集約する（§5.2）。パーサの URL 分離・`countUrls`・ics のサニタイズが同じ定義を参照するので、「作成時に数えた本数」と「ics で置換される本数」が一致する。T2（`core/text/urlPattern.ts`）着地までは ics 側が `buildIcs.ts` 内の暫定判定を使うため、本数が一致しないケースがある（Issue #19）。
 - 作成・更新時に `title + location + memo` に含まれる URL の総数が `MAX_MEMO_URLS = 3` を超えたら `TOO_MANY_URLS`（400）。`raw_text` は数えない（1 行目の URL はメモへ移されるので二重に数えない）。「地図 URL + 申込フォーム URL」は正当な用途として通す。
 - ics の SUMMARY / LOCATION / DESCRIPTION では URL を「[リンク]」に置換する（§7.2）。
 - 「地図で見る」は場所文字列を `encodeURIComponent` した固定パターンの Google マップ検索 URL で、ユーザー入力を URL として解釈しない。
