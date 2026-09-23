@@ -119,7 +119,9 @@ interface DateSelection {
 
 /**
  * 日付候補を出現順に試し、消費できる（有効な）最初の候補を採用する（規則 D6・D7）。
- * どれも消費できなければ、最初に見つかった不正な候補（invalid_date）を返す
+ * どれも消費できなければ、最初に見つかった不正な候補（invalid_date）を返す。
+ * 不正と判定した日付範囲の内側にある候補（範囲の開始・終了の月日そのもの）は、
+ * 範囲ごと不正な入力とみなし、単独の日付としては採用しない（規則 D6）
  */
 function selectDateToken(
   candidates: DateTokenMatch[],
@@ -127,10 +129,18 @@ function selectDateToken(
   resolvedStart: { hour: number; minute: number } | null,
 ): DateSelection {
   let fallback: DateSelection | null = null
+  const rejectedRangeSpans: Span[] = []
   for (const candidate of candidates) {
+    const insideRejectedRange = rejectedRangeSpans.some(
+      (span) => candidate.index >= span.start && candidate.index < span.end,
+    )
+    if (insideRejectedRange) continue
+
     const resolution = resolveDateToken(candidate.token, now, resolvedStart)
     if (resolution.consumed) return { match: candidate, resolution }
     fallback ??= { match: candidate, resolution }
+    if (candidate.token.kind === 'range')
+      rejectedRangeSpans.push({ start: candidate.index, end: candidate.index + candidate.length })
   }
   return fallback ?? { match: null, resolution: null }
 }

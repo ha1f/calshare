@@ -19,8 +19,11 @@ interface LocationFound {
   afterText: string
 }
 
-// 「で」の直後がこれらの文字なら、場所の区切りではなく「でも」「です」「でした」等の一部とみなす（規則 L1）
-const NON_SEPARATOR_NEXT_CHARS = new Set(['も', 'す', 'し', 'は', 'き'])
+// 「で」の直後がこれらの文字なら、場所の区切りではなく「でも」「です」「では」「〜き（できる等）」の一部とみなす（規則 L1）
+const NON_SEPARATOR_NEXT_CHARS = new Set(['も', 'す', 'は', 'き'])
+// 「でした」の一部とみなして区切りにしない（規則 L1）。
+// 「し」を 1 文字で除外すると「渋谷でしゃぶしゃぶ」のような通常の場所表現まで区切りにできなくなるため、後続の語で判定する
+const NON_SEPARATOR_NEXT_PATTERN = /^した/
 
 /** 「で」「にて」の直前のひとまとまりを場所候補として探す（§5.5 規則 L1・L2） */
 function findLocation(text: string): LocationFound | null {
@@ -32,8 +35,11 @@ function findLocation(text: string): LocationFound | null {
   for (let match = separatorRe.exec(text); match !== null; match = separatorRe.exec(text)) {
     const sepStart = match.index
     const sepText = match[0]
-    const nextChar = text[sepStart + sepText.length]
-    if (sepText === 'で' && NON_SEPARATOR_NEXT_CHARS.has(nextChar ?? '')) {
+    const afterSep = text.slice(sepStart + sepText.length)
+    if (
+      sepText === 'で' &&
+      (NON_SEPARATOR_NEXT_CHARS.has(afterSep[0] ?? '') || NON_SEPARATOR_NEXT_PATTERN.test(afterSep))
+    ) {
       searchStart = sepStart + sepText.length
       continue
     }

@@ -809,8 +809,10 @@ describe('レビュー指摘の反例（T2）', () => {
   it.each([
     ['9/20 19時 飲み会です', '飲み会です'],
     ['9/20 19時 参加できる人だけ', '参加できる人だけ'],
+    ['9/20 19時 参加できない人は連絡', '参加できない人は連絡'],
     ['9/20 19時 渋谷では飲み会', '渋谷では飲み会'],
-  ])('L1: 「%s」の「で」は「です・でき・では」の一部で区切りにしない', (input, title) => {
+    ['9/20 19時 中止でした', '中止でした'],
+  ])('L1: 「%s」の「で」は「です・でき・では・でした」の一部で区切りにしない', (input, title) => {
     const result = parseEventText(input, { now: NOW })
     expect(result.title).toBe(title)
     expect(result.location).toBeNull()
@@ -830,7 +832,7 @@ describe('レビュー指摘の反例（T2）', () => {
     expect(result.start).toEqual(jstDate(2026, 9, 20))
   })
 
-  it('「2時間」は所要時間であって時刻ではないので終日扱いになる', () => {
+  it('「2時間」は所要時間なので時刻として消費せず終日扱いになる', () => {
     const result = parseEventText('9/20 飲み会 2時間くらい', { now: NOW })
     expect(result.title).toBe('飲み会 2時間くらい')
     expect(result.isAllDay).toBe(true)
@@ -847,6 +849,26 @@ describe('レビュー指摘の反例（T2）', () => {
     const result = parseEventText(`9/20${zwsp}19時 飲み会`, { now: NOW })
     expect(result.title).toBe('飲み会')
     expect(result.start).toEqual(dt(2026, 9, 20, 19, 0))
+  })
+
+  it('D6: 終了年を明示した範囲が開始より前で不正なら、範囲内の月日を単日として拾わない', () => {
+    const result = parseEventText('2027/1/3〜2026/12/30 合宿', { now: NOW })
+    expect(result.title).toBe('2027/1/3〜2026/12/30 合宿')
+    expect(result.start).toBeNull()
+    expect(result.issues).toEqual(['invalid_date', 'no_datetime'])
+  })
+
+  it('D6: 開始が D1 で翌年に繰り上がり明示した終了年と矛盾する範囲も、範囲内の月日を単日として拾わない', () => {
+    const result = parseEventText('9/15〜2026/9/16 合宿', { now: NOW })
+    expect(result.title).toBe('9/15〜2026/9/16 合宿')
+    expect(result.start).toBeNull()
+    expect(result.issues).toEqual(['invalid_date', 'no_datetime'])
+  })
+
+  it('L1: 「し」で始まる語は「でした」以外なら区切りにする', () => {
+    const result = parseEventText('9/20 19時 渋谷でしゃぶしゃぶ', { now: NOW })
+    expect(result.title).toBe('しゃぶしゃぶ')
+    expect(result.location).toBe('渋谷')
   })
 })
 
