@@ -54,9 +54,11 @@ function buildClock(env: Env): Clock {
   return fakeClock(fixed)
 }
 
-/** Env → Deps。ogpRenderer と notifier は T10・T12 まで Fake のまま（§11.7 の buildDeps の表） */
+/** Env → Deps。ogpRenderer と notifier は本物のアダプタが無いため Fake のまま */
 export function buildDeps(env: Env): Deps {
   const clock = buildClock(env)
+  // origin は末尾スラッシュの有無に関わらず一致させたいので URL#origin で正規化する（§9.8 の比較対象）
+  const publicOriginUrl = new URL(env.PUBLIC_ORIGIN)
   return {
     clock,
     ids: createWebCryptoIdGenerator(),
@@ -68,8 +70,8 @@ export function buildDeps(env: Env): Deps {
     notifier: createFakeNotifier(),
     logger: consoleLogger,
     config: {
-      publicOrigin: env.PUBLIC_ORIGIN,
-      publicHost: new URL(env.PUBLIC_ORIGIN).host,
+      publicOrigin: publicOriginUrl.origin,
+      publicHost: publicOriginUrl.host,
       serviceName: env.SERVICE_NAME,
       ratePepper: env.RATE_LIMIT_PEPPER,
     },

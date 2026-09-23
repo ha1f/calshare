@@ -1,20 +1,16 @@
 import { env, SELF } from 'cloudflare:test'
 import { describe, expect, it, vi } from 'vitest'
 import { isValidPageId } from '../../../src/core/id/crockford'
+import { addMonths } from '../../../src/core/time/jst'
 import type { CreatePageRequest, CreatePageResponse } from '../../../src/core/api/types'
 import type { EventFieldsJson } from '../../../src/core/types'
 import { createApp } from '../../../src/server/app'
 import { InvariantViolation, type PageRepository } from '../../../src/ports/pageRepository'
 import { buildFakeDeps } from '../helpers/fakeDeps'
-import { jsonRequest, TEST_ORIGIN } from '../helpers/jsonRequest'
+import { errorCode, jsonRequest, TEST_ORIGIN } from '../helpers/jsonRequest'
 
 // buildFakeDeps の clock（fakeClock）が固定する現在時刻
 const NOW = new Date('2026-09-16T01:00:00.000Z')
-
-/** ApiError の code だけを取り出す。Response#json() の戻り値が unknown 型のため */
-async function errorCode(res: Response): Promise<string> {
-  return ((await res.json()) as { code: string }).code
-}
 
 function validFields(overrides: Partial<EventFieldsJson> = {}): EventFieldsJson {
   return {
@@ -39,6 +35,15 @@ function createBody(overrides: Partial<CreatePageRequest> = {}): CreatePageReque
 
 function postPages(body: unknown, headers?: Record<string, string>) {
   return jsonRequest('/api/pages', { method: 'POST', body, headers })
+}
+
+/** JSON.stringify を経由しない生の本文で POST する。壊れた JSON を送るテスト専用 */
+function postRawBody(body: BodyInit | null, headers?: Record<string, string>) {
+  return new Request(new URL('/api/pages', TEST_ORIGIN), {
+    method: 'POST',
+    headers: { Origin: TEST_ORIGIN, 'Content-Type': 'application/json', ...headers },
+    body,
+  })
 }
 
 describe('POST /api/pages', () => {
@@ -107,6 +112,43 @@ describe('POST /api/pages', () => {
     expect(page?.creatorDeviceId).toBe(existingDeviceId)
   })
 
+  it.each([
+    ['UUID 形式でない値', 'abc'],
+    ['大文字の UUID', 'aaaaaaaa-1111-4111-8111-111111111111'.toUpperCase()],
+  ])(
+    'Cookie の device_id が%sなら再発行され、新しい ID が creatorDeviceId に入る',
+    async (_label, cookieValue) => {
+      const deps = buildFakeDeps()
+      const app = createApp(deps)
+
+      const res = await app.fetch(postPages(createBody(), { Cookie: `cs_device=${cookieValue}` }))
+
+      expect(res.status).toBe(200)
+      const setCookie = res.headers.get('Set-Cookie')
+      expect(setCookie).toMatch(/^cs_device=[0-9a-f-]{36}/)
+      const newDeviceId = setCookie?.split(';')[0].split('=')[1]
+      expect(newDeviceId).not.toBe(cookieValue)
+      const json = (await res.json()) as CreatePageResponse
+      const page = await deps.pages.findById(json.id)
+      expect(page?.creatorDeviceId).toBe(newDeviceId)
+    },
+  )
+
+  it('R2 への ics 保存が失敗しても 200 が返り、ページは D1 に残り、logger.error が 1 回呼ばれる', async () => {
+    const deps = buildFakeDeps()
+    const errorSpy = vi.spyOn(deps.logger, 'error')
+    deps.storage.putIcs = () => Promise.reject(new Error('r2 down'))
+    const app = createApp(deps)
+
+    const res = await app.fetch(postPages(createBody()))
+
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as CreatePageResponse
+    expect(await deps.pages.findById(json.id)).not.toBeNull()
+    expect(errorSpy).toHaveBeenCalledOnce()
+    expect(errorSpy).toHaveBeenCalledWith('create_page_put_ics_failed', expect.anything())
+  })
+
   describe('§5.7 のバリデーション', () => {
     it.each([
       ['EMPTY_INPUT', createBody({ fields: validFields({ title: '  ' }) })],
@@ -154,6 +196,117 @@ describe('POST /api/pages', () => {
 
       expect(res.status).toBe(400)
       expect(await errorCode(res)).toBe(code)
+    })
+
+    it.each([
+      ['title が数値', createBody({ fields: { ...validFields(), title: 123 } as never })],
+      ['fields が配列', createBody({ fields: [] as never })],
+      [
+        'start が ISO8601 として存在しない日時',
+        createBody({ fields: validFields({ start: '2026-02-30T00:00:00.000Z' }) }),
+      ],
+    ])(
+      'fields の形式が不正（%s）なら 400 INVALID_REQUEST で、レート制限カウンタが進まない',
+      async (_label, body) => {
+        const deps = buildFakeDeps()
+        const consumeSpy = vi.spyOn(deps.rateLimiter, 'consume')
+        const app = createApp(deps)
+
+        const res = await app.fetch(postPages(body))
+
+        expect(res.status).toBe(400)
+        expect(await errorCode(res)).toBe('INVALID_REQUEST')
+        expect(consumeSpy).not.toHaveBeenCalled()
+      },
+    )
+
+    it.each([
+      ['壊れた JSON', '{"rawText": '],
+      ['トップレベルが文字列', '"str"'],
+      ['トップレベルが null', 'null'],
+      ['トップレベルが配列', '[]'],
+      ['空文字', ''],
+      // TextDecoder は既定で先頭の BOM を取り除く。BOM だけの本文はデコード後に空文字になり、他の空文字と同じ扱いになる
+      ['BOM のみ', String.fromCharCode(0xfeff)],
+    ])(
+      '本文が JSON として壊れている（%s）なら 400 INVALID_REQUEST で、レート制限カウンタが進まない',
+      async (_label, body) => {
+        const deps = buildFakeDeps()
+        const consumeSpy = vi.spyOn(deps.rateLimiter, 'consume')
+        const app = createApp(deps)
+
+        const res = await app.fetch(postRawBody(body))
+
+        expect(res.status).toBe(400)
+        expect(await errorCode(res)).toBe('INVALID_REQUEST')
+        expect(consumeSpy).not.toHaveBeenCalled()
+      },
+    )
+
+    it('本文が無い（body なし）なら 400 INVALID_REQUEST で、レート制限カウンタが進まない', async () => {
+      const deps = buildFakeDeps()
+      const consumeSpy = vi.spyOn(deps.rateLimiter, 'consume')
+      const app = createApp(deps)
+
+      const res = await app.fetch(postRawBody(null))
+
+      expect(res.status).toBe(400)
+      expect(await errorCode(res)).toBe('INVALID_REQUEST')
+      expect(consumeSpy).not.toHaveBeenCalled()
+    })
+
+    it('start が now + 13 ヶ月ちょうどなら 200 になる', async () => {
+      const limit = addMonths(NOW, 13)
+      const app = createApp(buildFakeDeps())
+
+      const res = await app.fetch(
+        postPages(
+          createBody({
+            fields: validFields({
+              start: limit.toISOString(),
+              end: new Date(limit.getTime() + 60 * 60 * 1000).toISOString(),
+            }),
+          }),
+        ),
+      )
+
+      expect(res.status).toBe(200)
+    })
+
+    it('start が now + 13 ヶ月を 1 分でも超えると 400 BEYOND_MAX_LEAD_TIME になる', async () => {
+      const limit = new Date(addMonths(NOW, 13).getTime() + 60 * 1000)
+      const app = createApp(buildFakeDeps())
+
+      const res = await app.fetch(
+        postPages(
+          createBody({
+            fields: validFields({
+              start: limit.toISOString(),
+              end: new Date(limit.getTime() + 60 * 60 * 1000).toISOString(),
+            }),
+          }),
+        ),
+      )
+
+      expect(res.status).toBe(400)
+      expect(await errorCode(res)).toBe('BEYOND_MAX_LEAD_TIME')
+    })
+
+    it('end が now とちょうど同じなら過去扱いにならず 200 になる', async () => {
+      const app = createApp(buildFakeDeps())
+
+      const res = await app.fetch(
+        postPages(
+          createBody({
+            fields: validFields({
+              start: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString(),
+              end: NOW.toISOString(),
+            }),
+          }),
+        ),
+      )
+
+      expect(res.status).toBe(200)
     })
 
     it('rawText が MAX_INPUT_LENGTH 超過なら 400 INPUT_TOO_LONG になり、レート制限カウンタが進まない', async () => {
@@ -245,7 +398,7 @@ describe('POST /api/pages', () => {
       expect(json.id).toBe('page00000002')
     })
 
-    it('再採番しても衝突し続ける場合は 500 になる', async () => {
+    it('再採番しても衝突し続ける場合は 500 になり、logger.error が 1 回呼ばれる', async () => {
       const deps = buildFakeDeps({
         ids: {
           generatePageId: () => 'page00000001',
@@ -253,6 +406,7 @@ describe('POST /api/pages', () => {
           generateUuid: () => '00000000-0000-4000-8000-000000000001',
         },
       })
+      const errorSpy = vi.spyOn(deps.logger, 'error')
       await deps.pages.create({
         id: 'page00000001',
         editTokenHash: 'existing-hash',
@@ -278,27 +432,45 @@ describe('POST /api/pages', () => {
 
       expect(res.status).toBe(500)
       expect(await errorCode(res)).toBe('INTERNAL')
+      expect(errorSpy).toHaveBeenCalledOnce()
     })
   })
 
-  it('events 不変条件が破れている（InvariantViolation）と 500 になる', async () => {
+  it('events 不変条件が破れている（InvariantViolation）と 500 になり、logger.error が 1 回呼ばれる', async () => {
+    const deps = buildFakeDeps()
+    const errorSpy = vi.spyOn(deps.logger, 'error')
     const brokenPages: PageRepository = {
-      ...buildFakeDeps().pages,
+      ...deps.pages,
       findById: async () => {
         throw new InvariantViolation('page does not have exactly 1 event')
       },
     }
-    const app = createApp(buildFakeDeps({ pages: brokenPages }))
+    const app = createApp({ ...deps, pages: brokenPages })
 
     const res = await app.fetch(postPages(createBody()))
 
     expect(res.status).toBe(500)
     expect(await errorCode(res)).toBe('INTERNAL')
+    expect(errorSpy).toHaveBeenCalledOnce()
+  })
+
+  it('deps.pages.create が想定外の例外を投げると 500 になり、logger.error が 1 回呼ばれる', async () => {
+    const deps = buildFakeDeps()
+    const errorSpy = vi.spyOn(deps.logger, 'error')
+    deps.pages.create = () => Promise.reject(new Error('D1_ERROR: database is locked'))
+    const app = createApp(deps)
+
+    const res = await app.fetch(postPages(createBody()))
+
+    expect(res.status).toBe(500)
+    expect(await errorCode(res)).toBe('INTERNAL')
+    expect(errorSpy).toHaveBeenCalledOnce()
   })
 
   describe('レート制限（§9.3）', () => {
     it('同一 IP からの作成が 31 回目で 429 になる。Cookie（device）を毎回変えても IP 側で弾かれる', async () => {
       const deps = buildFakeDeps()
+      const warnSpy = vi.spyOn(deps.logger, 'warn')
       const app = createApp(deps)
       const ip = { 'CF-Connecting-IP': '203.0.113.1' }
 
@@ -310,10 +482,18 @@ describe('POST /api/pages', () => {
       const res = await app.fetch(postPages(createBody(), ip))
       expect(res.status).toBe(429)
       expect(await errorCode(res)).toBe('RATE_LIMITED')
+      expect(warnSpy).toHaveBeenCalledWith(
+        'rate_limited',
+        expect.objectContaining({
+          scope: 'create',
+          exceeded: expect.arrayContaining([{ bucket: 'ip', window: 'hour' }]),
+        }),
+      )
     })
 
     it('同一 device からの作成が 21 回目で 429 になる。IP を毎回変えても device 側で弾かれる', async () => {
       const deps = buildFakeDeps()
+      const warnSpy = vi.spyOn(deps.logger, 'warn')
       const app = createApp(deps)
       const deviceId = '22222222-2222-4222-8222-222222222222'
       const headersFor = (i: number) => ({
@@ -329,6 +509,13 @@ describe('POST /api/pages', () => {
       const res = await app.fetch(postPages(createBody(), headersFor(20)))
       expect(res.status).toBe(429)
       expect(await errorCode(res)).toBe('RATE_LIMITED')
+      expect(warnSpy).toHaveBeenCalledWith(
+        'rate_limited',
+        expect.objectContaining({
+          scope: 'create',
+          exceeded: expect.arrayContaining([{ bucket: 'device', window: 'day' }]),
+        }),
+      )
     })
   })
 

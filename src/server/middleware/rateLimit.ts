@@ -64,6 +64,13 @@ export async function consumeCreateRateLimit(
   ]
   const result = await deps.rateLimiter.consume(rules, now)
   if (!result.allowed) {
+    deps.logger.warn('rate_limited', {
+      scope: 'create',
+      exceeded: result.exceeded.map((rule) => ({
+        bucket: rule.bucketKey.split(':')[0],
+        window: rule.window,
+      })),
+    })
     throw apiRequestError(429, 'RATE_LIMITED', 'rate limit exceeded')
   }
 }

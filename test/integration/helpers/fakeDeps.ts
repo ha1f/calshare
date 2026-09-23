@@ -10,19 +10,14 @@ import type { Logger } from '../../../src/ports/logger'
 import type { Deps } from '../../../src/server/deps'
 import { TEST_ORIGIN } from './jsonRequest'
 
-/** 何も出力しない Logger。warn/error を経由するテストで結合テストの出力を汚さないための Fake */
-export const silentLogger: Logger = {
-  info() {},
-  warn() {},
-  error() {},
-}
-
 /**
  * ルートの結合テストで使う Deps。時刻・ID・D1・R2・レート制限のすべてを Fake（memory 実装）に差し替える
- * （§10.2「差し替えは createApp(deps) の引数で行う」）。SELF.fetch を使うテストは本物の buildDeps を使う
+ * （§10.2「差し替えは createApp(deps) の引数で行う」）。SELF.fetch を使うテストは本物の buildDeps を使う。
+ * logger は呼び出しごとに新しく作る。1 個を使い回すと vi.spyOn の呼び出し回数が他のテストと混ざる
  */
 export function buildFakeDeps(overrides: Partial<Deps> = {}): Deps {
   const clock = fakeClock(new Date('2026-09-16T01:00:00.000Z'))
+  const logger: Logger = { info() {}, warn() {}, error() {} }
   return {
     clock,
     ids: createFakeIdGenerator(),
@@ -32,7 +27,7 @@ export function buildFakeDeps(overrides: Partial<Deps> = {}): Deps {
     rateLimiter: createMemoryRateLimiter(),
     ogpRenderer: createFakeOgpRenderer(),
     notifier: createFakeNotifier(),
-    logger: silentLogger,
+    logger,
     config: {
       publicOrigin: TEST_ORIGIN,
       publicHost: new URL(TEST_ORIGIN).host,

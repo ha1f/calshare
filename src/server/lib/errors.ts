@@ -1,4 +1,3 @@
-import { InvariantViolation } from '../../ports/pageRepository'
 import type { ApiError, ApiErrorCode } from '../../core/api/types'
 import type { ValidationErrorCode } from '../../core/types'
 
@@ -42,9 +41,6 @@ export function validationApiError(code: ValidationErrorCode): ApiRequestError {
 export function toApiErrorResponse(error: unknown): { status: number; body: ApiError } {
   if (error instanceof ApiRequestError) {
     return { status: error.status, body: { code: error.code, message: error.message } }
-  }
-  if (error instanceof InvariantViolation) {
-    return { status: 500, body: { code: 'INTERNAL', message: 'internal error' } }
   }
   return { status: 500, body: { code: 'INTERNAL', message: 'internal error' } }
 }

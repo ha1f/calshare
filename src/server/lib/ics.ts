@@ -9,7 +9,7 @@ export function buildDetailUrl(publicOrigin: string, pageId: string): string {
 
 /**
  * PageRecord と config から ics 文字列を組む（§7.2）。日時の無い下書きは ics を持たないので null を返す。
- * 作成（T7）・更新（T11）・自己修復（T9）で共用する
+ * 作成・更新・自己修復で共用する
  */
 export function buildIcsForPage(
   page: PageRecord,
