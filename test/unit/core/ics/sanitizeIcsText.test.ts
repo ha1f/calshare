@@ -147,4 +147,42 @@ describe('sanitizeIcsText', () => {
     expect(sanitizeIcsText('https://😀.la')).toBe('[リンク]')
     expect(sanitizeIcsText('https://[fe80::1%25eth0]/')).toBe('[リンク]')
   })
+
+  it('難読化された scheme（hxxps://）はスキーム部分を残すが、ホスト部はベアドメインとして置換する', () => {
+    expect(sanitizeIcsText('hxxps://evil.com を見て')).toBe('hxxps://[リンク] を見て')
+    expect(sanitizeIcsText('hxxp://www.evil.com を見て')).toBe('hxxp://[リンク] を見て')
+  })
+
+  it('ftp など http(s) 以外のスキームでも、ホスト部はベアドメインとして置換する', () => {
+    expect(sanitizeIcsText('ftp://evil.com/x を見て')).toBe('ftp://[リンク] を見て')
+  })
+
+  it('日本語文の直後のドット区切りドメインも置換する', () => {
+    expect(sanitizeIcsText('受付終了.evil.com')).toBe('受付終了.[リンク]')
+  })
+
+  it('scheme 分岐がポート番号の数字で終わっても、続くドメインを別の URL として取りこぼさない', () => {
+    // scheme 分岐は "https://x:1" までしか消費しないため、続く "evil.com/path" を
+    // ベアドメイン分岐が拾えないと外部リンクが本文に残る（§7.2 の外部リンク 0 本）
+    expect(sanitizeIcsText('https://x:1evil.com/path を見て')).toBe('[リンク][リンク] を見て')
+  })
+
+  it('カンマ区切りで並ぶ 2 つの URL は、両方とも置換する', () => {
+    expect(sanitizeIcsText('https://evil.com/x,www.evil2.com')).toBe('[リンク],[リンク]')
+  })
+
+  it('許可 TLD のベアドメイン直後に scheme 付き URL が続いても、ベアドメイン部分を取りこぼさない', () => {
+    expect(sanitizeIcsText('evil.comhttps://x')).toBe('[リンク][リンク]')
+  })
+})
+
+describe('sanitizeIcsText: 長い入力での性能', () => {
+  sanitizeIcsText('a.') // JIT ウォームアップ
+
+  it('a. を 10000 回繰り返しても（20,000 文字）50ms 以内に返る', () => {
+    const input = 'a.'.repeat(10000)
+    const start = performance.now()
+    sanitizeIcsText(input)
+    expect(performance.now() - start).toBeLessThan(50)
+  })
 })
