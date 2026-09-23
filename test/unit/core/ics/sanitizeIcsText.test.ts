@@ -138,4 +138,13 @@ describe('sanitizeIcsText', () => {
   it('パスが続くベアドメインの TLD が大文字でも置換する', () => {
     expect(sanitizeIcsText('evil.XYZ/path で受付')).toBe('[リンク] で受付')
   })
+
+  it('ホストが絵文字・記号カテゴリの文字で書かれていても、精密なホスト規則の受け皿として置換する', () => {
+    // ⓔⓥⓘⓛ.com は UTS#46 で evil.com に正規化されてブラウザで開けるが、
+    // 囲み英数字（Unicode カテゴリ So）は \p{L} に一致せずホスト規則をすり抜ける
+    expect(sanitizeIcsText('https://ⓔⓥⓘⓛ.com')).toBe('[リンク]')
+    expect(sanitizeIcsText('https://☃.net')).toBe('[リンク]')
+    expect(sanitizeIcsText('https://😀.la')).toBe('[リンク]')
+    expect(sanitizeIcsText('https://[fe80::1%25eth0]/')).toBe('[リンク]')
+  })
 })

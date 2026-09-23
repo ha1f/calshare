@@ -192,6 +192,43 @@ describe('buildIcs', () => {
     expectNoLoneLineFeed(ics)
   })
 
+  it('title / memo に U+0085・U+2028・U+2029 が混ざっても、それらを行区切りとする分割で行頭にプロパティ名が現れない', () => {
+    const nel = String.fromCharCode(0x85)
+    const lineSeparator = String.fromCharCode(0x2028)
+    const paragraphSeparator = String.fromCharCode(0x2029)
+    const ics = buildIcs(
+      baseInput({
+        title: ['懇親会', 'END:VEVENT', 'BEGIN:VEVENT', 'SUMMARY:spam'].join(lineSeparator),
+        memo: ['x', 'ATTACH:y'].join(nel) + paragraphSeparator + 'ORGANIZER:z',
+      }),
+    )
+    const lineBreakPattern = new RegExp(`[\\r\\n${nel}${lineSeparator}${paragraphSeparator}]`)
+    const splitLines = ics.split(lineBreakPattern)
+    const countStartingWith = (prefix: string) =>
+      splitLines.filter((line) => line.startsWith(prefix)).length
+    // BEGIN:VCALENDAR/VEVENT・END:VEVENT/VCALENDAR は buildIcs 自身が出す分でちょうど 2 行ずつ、
+    // SUMMARY は 1 行のみのはず。U+0085・U+2028・U+2029 を行区切りとする分割でこれより増えていれば
+    // 別イベントの追加が成立している。ORGANIZER / ATTACH は 1 行も現れてはならない
+    expect(countStartingWith('BEGIN:')).toBe(2)
+    expect(countStartingWith('END:')).toBe(2)
+    expect(countStartingWith('SUMMARY:')).toBe(1)
+    expect(countStartingWith('ORGANIZER:')).toBe(0)
+    expect(countStartingWith('ATTACH:')).toBe(0)
+  })
+
+  it('uid / detailUrl に改行が混ざっていても、UID / URL 行から独立したプロパティ行を作らない', () => {
+    const ics = buildIcs(
+      baseInput({
+        uid: 'x\r\nATTACH:y@h',
+        detailUrl: 'https://h/\r\nATTACH:y',
+      }),
+    )
+    expect(ics).toContain('UID:xATTACH:y@h')
+    expect(ics).toContain('URL:https://h/ATTACH:y')
+    expect(ics).not.toMatch(/^ATTACH[:;]/m)
+    expectNoLoneLineFeed(ics)
+  })
+
   it('改行は \\r\\n のみで、裸の \\n を含まない', () => {
     const ics = buildIcs(baseInput({ memo: '1行目\n2行目' }))
     expectNoLoneLineFeed(ics)
