@@ -368,7 +368,7 @@ export function isWithinMaxLeadTime(eventStart: Date, now: Date): boolean
 
 ### 3.5 変更バナー用のスナップショット
 
-`PATCH /api/pages/:id` でタイトル・日時・場所のいずれかが変わったとき、**変更前の日時だけ**を `previous_snapshot`（`ChangeSnapshot` の JSON、§11.3）に、変更時刻を `changed_at` に書く。タイトル・場所は「変わった」という事実（`titleChanged` / `locationChanged`）だけを持ち、旧値は保存しない。メモだけの変更では書かない。`CHANGE_BANNER_HOURS = 48` 時間だけ詳細ページにバナーを出し（§8）、それを過ぎた行の `previous_snapshot` / `changed_at` は GC が NULL にする（§2.6）。
+`PATCH /api/pages/:id` でタイトル・日時・場所のいずれかが変わったとき、**変更前の日時だけ**を `previous_snapshot`（`ChangeSnapshot` の JSON、§11.3）に、変更時刻を `changed_at` に書く。タイトル・場所は「変わった」という事実（`titleChanged` / `locationChanged`）だけを持ち、旧値は保存しない。メモだけの変更では書かない。`CHANGE_BANNER_HOURS = 48` 時間だけ詳細ページにバナーを出し（§8）、それを過ぎた行の `previous_snapshot` / `changed_at` は GC が NULL にする（§2.6）。タイトル・場所の比較は `null` と空文字、前後の空白の違いを変更とみなさない（`buildChangeSnapshot` 内で正規化して比較する）。編集画面が空欄を `''` で送ってもバナーが出ないようにするため。
 
 > 旧値を日時に限る理由: 場所欄に自宅住所、タイトルに実名や電話番号を書いてしまい、気づいて編集で消す、という訂正が最も起きやすい。旧値をバナーに出すと「消したかった値」が 48 時間、より目立つ形で公開される。日時は個人情報になりにくく、受け手が一番知りたい差分でもあるので、バナーの目的は失われない。
 
@@ -664,7 +664,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 | `FORBIDDEN_ORIGIN` | 403 | 同一オリジンでない（§9.8） | （同上） |
 | `INVALID_REQUEST` | 400 | JSON が壊れている、必須項目が無い、`source` や通報の `reason` が列挙値に無い、型が違う | （同上。クライアントのバグ） |
 | `EMPTY_INPUT` | 400 | `rawText.trim()` が空、または `title.trim()` が空 | 「予定を書いてください」 |
-| `INPUT_TOO_LONG` | 400 | `rawText` > `MAX_INPUT_LENGTH`（2,000 文字）、`title` > 200、`location` > 200、`memo` > 2,000、通報の `comment` > 500。`rawText` の長さは (2) で、それ以外は (4) で検査する | 「長すぎます（2,000 文字まで）」 |
+| `INPUT_TOO_LONG` | 400 | `rawText` > `MAX_INPUT_LENGTH`（2,000 文字）、`title` > 200、`location` > 200、`memo` > 2,000、通報の `comment` > 500。`rawText` の長さは (2) で先に弾くが、`validateEventFields`（(4)）でも同じ条件を検査し、クライアントのプレビューは `validateEventFields` 1 つで事前表示できるようにする | 「長すぎます（2,000 文字まで）」 |
 | `INVALID_RANGE` | 400 | `start` と `end` の片方だけ null、`end <= start`、終日で JST 00:00 でない | 「終了は開始より後にしてください」 |
 | `PAST_EVENT` | 400 | 作成: `end < now`。更新: **日時（`start` `end` `isAllDay`）を変更した場合のみ** `end < now` を検証し、日時不変の編集（メモの修正など）は終了後でも通す | 「過去の日時です」 |
 | `BEYOND_MAX_LEAD_TIME` | 400 | `start` > `now + 13 ヶ月` | 「作成できるのは13ヶ月先までです」 |
@@ -684,11 +684,11 @@ export interface PrefillParams {
   dates?: string      // 開始/終了。ISO basic UTC（Google の render?action=TEMPLATE と同形式）。終日は YYYYMMDD/YYYYMMDD
   location?: string
   details?: string    // メモ
-  q?: string          // 自然文。構造化パラメータが無いときだけ使う
+  q?: string          // 自然文。構造化パラメータに使える値が無いときだけ使う
 }
 
 export interface PrefillResult {
-  rawText: string          // textarea の初期値（q があれば q、無ければ text から組み立てた 1 行）
+  rawText: string          // textarea の初期値（構造化パラメータに使える値があれば text を 1 行にしたもの、q のみなら q）
   fields: Partial<EventFields>
   manualKeys: (keyof EventFields)[]   // 構造化パラメータで来た項目は manual 扱いで固定する
 }
@@ -698,11 +698,11 @@ export function resolvePrefill(params: PrefillParams, ctx: ParseContext): Prefil
 
 | 入力 | 挙動 |
 |---|---|
-| `text` `dates` `location` `details` のいずれかあり（`q` も同時にあり） | 構造化パラメータを優先し `q` は無視する。来た項目を `manual` として固定 |
-| `q` のみ | `parseEventText(q, ctx)` の結果を `auto` として表示 |
+| `text` `dates` `location` `details` のいずれかに使える値がある（`q` も同時にあり） | 構造化パラメータを優先し `q` は無視する。来た項目を `manual` として固定 |
+| `q` のみ、または構造化パラメータはあるが使える値が 1 つも残らない | `parseEventText(q, ctx)` の結果を `auto` として表示 |
 | 何もなし | 空のトップ画面 |
 
-`dates` が不正な形式なら無視する（`issues` には入れない）。プリフィルを踏んだだけでは公開しない。`/new?...` は常に作成画面を表示し、ユーザーが「URLを作る」を押すまで API は呼ばれない（concept §05）。
+値が空（trim 後空文字）のパラメータは「無い」ものとして扱う。`dates` が不正な形式（存在しない暦・時刻、終了が開始以前、同日終日の `YYYYMMDD/YYYYMMDD` など）なら無視する（`issues` には入れない）。`text` `dates` `location` `details` のうち使える値が 1 つも残らなければ、構造化パラメータが「来た」ことにはせず `q` にフォールバックする。`text` は 1 行のタイトル用パラメータなので、改行は空白に変換してから `title` / `rawText` に使う。プリフィルを踏んだだけでは公開しない。`/new?...` は常に作成画面を表示し、ユーザーが「URLを作る」を押すまで API は呼ばれない（concept §05）。
 
 ### 5.9 LLM フォールバックの境界（Phase 1 では未実装）
 
@@ -741,7 +741,7 @@ export const ruleBasedInterpreter: TextInterpreter = {
   - 日時が `null`（下書き）のときは日時項目に「日時を認識できませんでした。タップして直せます」を出す。`issues` に応じた文言は §5.7。
 - `singleTokenTitle` が true で場所が null のとき、タイトル項目の脇に「場所にする」リンクを出す。タップで場所 = そのタイトル、タイトル = 日時の整形文字列（§5.5 T-c）に入れ替え、両方 `manual` にする。
 - プリフィル（§5.8）は初期表示時にクエリ文字列から読む。構造化パラメータ由来の項目は `manual` で固定する（「自動に戻す」で `auto` に戻せる）。
-- 「URLを作る」押下で `POST /api/pages`。body は `{ rawText, fields: EventFieldsJson, source }`。`source` はクライアントが決める: クエリに `ref=detail_cta` があれば `'detail_cta'`、プリフィルパラメータ（§5.8）のいずれかがあれば `'prefill'`、それ以外は `'direct'`（両方あれば `detail_cta` を優先）。これが concept §02「KPI の最上位」の転換率を測る唯一の手段になる（§9.6）。成功したら localStorage の履歴（§6.4）に追記し `/done?id={id}` へ遷移する。失敗（400/429）はエラーコードに対応する文言をボタン直下に出す。
+- 「URLを作る」押下で `POST /api/pages`。body は `{ rawText, fields: EventFieldsJson, source }`。`source` はクライアントが決める: クエリに `ref=detail_cta` があれば `'detail_cta'`、プリフィルパラメータ（§5.8）のいずれかに使える値があれば `'prefill'`（空文字は数えない）、それ以外は `'direct'`（両方あれば `detail_cta` を優先）。これが concept §02「KPI の最上位」の転換率を測る唯一の手段になる（§9.6）。成功したら localStorage の履歴（§6.4）に追記し `/done?id={id}` へ遷移する。失敗（400/429）はエラーコードに対応する文言をボタン直下に出す。
 - 二重送信防止のためボタンは送信中に無効化する。
 
 ### 6.2 ② 完成（`/done?id=:id`）
