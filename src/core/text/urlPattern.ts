@@ -98,42 +98,39 @@ const WIDE_URL_TAIL = String.raw`${WIDE_HOST}(?::\d+)?(?:[/?#]${WIDE_URL_CHARS}*
 // ケース（`https://x:1evil.com` 等）を誤ってブロックしない
 const WIDE_BARE_DOMAIN_MAX_LABELS = 20
 
-/**
- * URL 判定の正規表現を毎回生成する。スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの
- * 3 形式に加え、ホストが精密な規則に一致しない場合の受け皿としてスキーム付き URL 全体も対象にする。
- * TLD の前方一致（`co` が `com` の一部になる等）を防ぐため直後に単語文字が続かないことを確認する。
- * www.・ベアドメイン分岐には URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たせない。ics の
- * サニタイズは obfuscated scheme（`hxxps://evil.com`）や http(s) 以外のスキーム（`ftp://evil.com`）の
- * 直後でもホスト部だけは「[リンク]」に置換したいため（§7.2 の外部リンク 0 本の対象を広げる）
- */
-function freshWideUrlPattern(): RegExp {
-  const httpsScheme = `${toCaseInsensitiveAscii('http')}${toCaseInsensitiveAscii('s')}?`
-  const wwwLiteral = toCaseInsensitiveAscii('www')
-  const source =
-    // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
-    String.raw`${httpsScheme}:\/\/\/*(?:${USERINFO}@)?${WIDE_URL_TAIL}` +
-    String.raw`|${wwwLiteral}\.${WIDE_URL_TAIL}` +
-    String.raw`|[\w-]+(?:\.[\w-]+){0,${WIDE_BARE_DOMAIN_MAX_LABELS}}\.(?:(?:${ALLOWED_BARE_TLDS_CASE_INSENSITIVE})(?!\w)(?:\/${WIDE_URL_CHARS}*)?|[a-zA-Z]{2,}\/${WIDE_URL_CHARS}*)` +
-    // 上の選択肢は左から順に試すので、精密なホスト規則に一致する通常の URL はここまでで消費し尽くす。
-    // ここまで一致しなかった場合だけ受け皿としてスキーム以降を丸ごと拾う。囲み英数字（Unicode カテゴリ
-    // So）や IPv6 の zone id 等、精密なホスト規則をすり抜ける非 ASCII ホストを取りこぼさないため
-    String.raw`|${httpsScheme}:\/\/\S+`
-  // 'i' は付けない。\p{} に必要な 'u' と 'i' を組み合わせると、大文字小文字の畳み込みで
-  // U+017F（ſ）・U+212A（Kelvin 記号）が ASCII の s/k として \w や [a-z] に一致してしまい、
-  // ホスト名やパスの一部として本文の文字を巻き込む。スキーム・www.・TLD の大文字表記は
-  // toCaseInsensitiveAscii と [a-zA-Z] で個別に対応する
-  return new RegExp(source, 'gu')
-}
+// www.・ベアドメイン分岐には URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たせない。ics の
+// サニタイズは難読化された scheme（`hxxps://evil.com`）や http(s) 以外のスキーム（`ftp://evil.com`）の
+// 直後でもホスト部だけは「[リンク]」に置換したいため（§7.2 の外部リンク 0 本の対象を広げる）
+const WIDE_HTTPS_SCHEME = `${toCaseInsensitiveAscii('http')}${toCaseInsensitiveAscii('s')}?`
+const WIDE_WWW_LITERAL = toCaseInsensitiveAscii('www')
+
+const WIDE_URL_SOURCE =
+  // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
+  String.raw`${WIDE_HTTPS_SCHEME}:\/\/\/*(?:${USERINFO}@)?${WIDE_URL_TAIL}` +
+  String.raw`|${WIDE_WWW_LITERAL}\.${WIDE_URL_TAIL}` +
+  // 許可 TLD の直後は「単語文字が続かない」だけでなく「scheme や www. が続く」場合も区切ってよい。
+  // `evil.comhttps://x` のように TLD の直後に別の URL が直結すると、単語文字が続くという理由だけで
+  // ベアドメイン分岐が丸ごと諦めてしまい、`evil.com` が本文に残って URL_PATTERN に再一致する
+  String.raw`|[\w-]+(?:\.[\w-]+){0,${WIDE_BARE_DOMAIN_MAX_LABELS}}\.(?:(?:${ALLOWED_BARE_TLDS_CASE_INSENSITIVE})(?:(?!\w)|(?=${WIDE_HTTPS_SCHEME}:\/\/|${WIDE_WWW_LITERAL}\.))(?:\/${WIDE_URL_CHARS}*)?|[a-zA-Z]{2,}\/${WIDE_URL_CHARS}*)` +
+  // 上の選択肢は左から順に試すので、精密なホスト規則に一致する通常の URL はここまでで消費し尽くす。
+  // ここまで一致しなかった場合だけ受け皿としてスキーム以降を丸ごと拾う。囲み英数字（Unicode カテゴリ
+  // So）や IPv6 の zone id 等、精密なホスト規則をすり抜ける非 ASCII ホストを取りこぼさないため
+  String.raw`|${WIDE_HTTPS_SCHEME}:\/\/\S+`
 
 /**
- * ics のサニタイズ（§7.2）専用の広い判定。URL_PATTERN の 3 形式に加え、非 ASCII ホスト（IDN・全角
- * 英数字）・IPv6 リテラル・userinfo・記号カテゴリのホストの受け皿を持つ。ics は「外部リンクを常に
- * 0 本にする」ことが目的で、過剰一致は「[リンク]」への置換が増えるだけでリンクは増えないため、誤検出を
- * 避けたい URL_PATTERN より広く一致してよい（§5.2）。抽出用途にはこちらを使わない。
+ * ics のサニタイズ（§7.2）専用の広い判定で、URL_PATTERN の 3 形式に加え非 ASCII ホスト・IPv6 リテラル・
+ * userinfo・記号カテゴリホストの受け皿を持つ（過剰一致が許される理由は §5.2）。抽出用途には使わない。
  * g フラグ付きのインスタンスを直接使い回すと lastIndex が残るため、使う側は
  * `new RegExp(WIDE_URL_PATTERN.source, WIDE_URL_PATTERN.flags)` で毎回新しいインスタンスを作る
  */
-export const WIDE_URL_PATTERN = freshWideUrlPattern()
+// 'i' は付けない。\p{} に必要な 'u' と 'i' を組み合わせると、大文字小文字の畳み込みで U+017F（ſ）・
+// U+212A（Kelvin 記号）が ASCII の s/k として \w や [a-z] に一致し、ホスト名やパスの一部として本文の
+// 文字を巻き込む。スキーム・www.・TLD の大文字表記は toCaseInsensitiveAscii と [a-zA-Z] で個別に対応する
+export const WIDE_URL_PATTERN = new RegExp(WIDE_URL_SOURCE, 'gu')
+
+function freshWideUrlPattern(): RegExp {
+  return new RegExp(WIDE_URL_PATTERN.source, WIDE_URL_PATTERN.flags)
+}
 
 /** text 中の WIDE_URL_PATTERN に一致する箇所をすべて replacement に置き換える */
 export function replaceUrlsWide(text: string, replacement: string): string {

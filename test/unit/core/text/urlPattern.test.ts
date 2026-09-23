@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MAX_MEMO_LENGTH } from '../../../../src/core/config/limits'
 import {
   replaceUrls,
   replaceUrlsWide,
@@ -170,6 +171,14 @@ describe('WIDE_URL_PATTERN', () => {
       'www.evil2.com',
     ])
   })
+
+  it('許可 TLD のベアドメイン直後に scheme 付き URL が続いても、ベアドメイン部分を取りこぼさない', () => {
+    // TLD 直後が単語文字だとベアドメイン分岐は失敗するが、続く文字列が scheme か www. なら
+    // そこで区切って良い（TLD の一部を装った別ホストではないため）。ここを塞がないと、
+    // 置換後に残ったベアドメインが URL_PATTERN に再一致してしまう（§7.2 の外部リンク 0 本が崩れる）
+    expect(matchAllWide('evil.comhttps://x')).toEqual(['evil.com', 'https://x'])
+    expect(matchAllWide('evil.jphttp://x.com')).toEqual(['evil.jp', 'http://x.com'])
+  })
 })
 
 describe('WIDE_URL_PATTERN: 長い入力での性能', () => {
@@ -193,11 +202,19 @@ describe('WIDE_URL_PATTERN: 長い入力での性能', () => {
     expect(performance.now() - start).toBeLessThan(50)
   })
 
-  it('ドットを含まない単語文字の繰り返し（MAX_MEMO_LENGTH 相当の 2,000 文字）も 50ms 以内に返る', () => {
+  it('中間ラベルが上限を超えるホストは末尾側だけ一致し、残りに URL_PATTERN の一致は無い', () => {
+    // WIDE_BARE_DOMAIN_MAX_LABELS（20）を超える中間ラベルは先頭側が本文に残るが、TLD を
+    // 含まないため URL_PATTERN には再一致しない
+    const input = `${'a.'.repeat(25)}com`
+    expect(matchAllWide(input)).toEqual([`${'a.'.repeat(21)}com`])
+    expect(matchAll(replaceUrlsWide(input, '[リンク]'))).toEqual([])
+  })
+
+  it('ドットを含まない単語文字の繰り返し（MAX_MEMO_LENGTH 相当の文字数）も 50ms 以内に返る', () => {
     // 中間ラベルの繰り返し回数の上限はドット区切りの入力にしか効かない。ドットを含まない
     // 単語文字の連続（`[\w-]+` 単体）は依然として開始位置ごとに O(n) の走査になり得るため、
-    // MAX_MEMO_LENGTH（2000）の範囲に収まることをここで固定する
-    const input = 'a'.repeat(2000)
+    // MAX_MEMO_LENGTH の範囲に収まることをここで固定する
+    const input = 'a'.repeat(MAX_MEMO_LENGTH)
     const start = performance.now()
     matchAllWide(input)
     expect(performance.now() - start).toBeLessThan(50)
@@ -237,18 +254,25 @@ describe('URL_PATTERN と WIDE_URL_PATTERN の本数の一致', () => {
   })
 
   it('WIDE_URL_PATTERN は URL_PATTERN の上位集合で、置換後の文字列に URL_PATTERN の一致は残らない', () => {
+    // ここでの入力は「作成時に URL_PATTERN が数えた URL が、ics 上では必ず消える」ことを固定する
+    // ためのものなので、置換前から URL_PATTERN に一致しない入力（ftp:// や hxxps:// 等の非対称
+    // ケース）を混ぜると、置換しなくても通ってしまう空のアサーションになる。前提として置換前に
+    // 一致が 1 件以上あることを確認する
     const inputs = [
       'https://example.com/map です',
-      'ftp://evil.com/x を見て',
-      'hxxps://evil.com を見て',
       'https://例え.日本/x を見て',
-      'www.日本語.jp',
       'https://user:pw@evil.com/x',
       'https://evil.com/x,www.evil2.com',
       'https://exａmple.com/x',
       'https://x:1evil.com/path',
+      'evil.comhttps://x',
+      'evil.jphttp://x.com',
+      'a.comWWW.evil.com',
+      'example.com?q=1',
+      `${'l.'.repeat(25)}com`,
     ]
     for (const input of inputs) {
+      expect(matchAll(input).length).toBeGreaterThan(0)
       expect(matchAll(replaceUrlsWide(input, '[リンク]'))).toEqual([])
     }
   })

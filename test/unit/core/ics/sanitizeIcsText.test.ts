@@ -170,6 +170,10 @@ describe('sanitizeIcsText', () => {
   it('カンマ区切りで並ぶ 2 つの URL は、両方とも置換する', () => {
     expect(sanitizeIcsText('https://evil.com/x,www.evil2.com')).toBe('[リンク],[リンク]')
   })
+
+  it('許可 TLD のベアドメイン直後に scheme 付き URL が続いても、ベアドメイン部分を取りこぼさない', () => {
+    expect(sanitizeIcsText('evil.comhttps://x')).toBe('[リンク][リンク]')
+  })
 })
 
 describe('sanitizeIcsText: 長い入力での性能', () => {
