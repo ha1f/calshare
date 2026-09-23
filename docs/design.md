@@ -436,7 +436,7 @@ export function isValidPageId(s: string): boolean
 - 入力欄は `<textarea>` 1 つ（原則 1「1 行でも 100 行でも同じ場所に入れる」）。**1 行目をパース対象、2 行目以降はそのままメモ**にする。Phase 2 の複数イベント貼り付けはこの規則を「複数行をパース対象にする」方向へ広げる。
 - パーサが 1 行目から抽出するのは **タイトル・日時・場所・メモ（1 行目の残り）**。タイムゾーンは Asia/Tokyo 固定。日本には夏時間が無いので `JST - 9 時間 = UTC` の算術だけで変換し、タイムゾーンライブラリは持ち込まない。
 - 現在時刻は引数で受け取る（実行環境の時計に依存させず、日付をまたぐケースをテストで固定するため）。
-- **正規表現の実装規約**: パーサはブラウザとサーバの両方で 2,000 文字の入力を受ける。ネストした量指定子（`(a+)+` 形式）や `\S+` と任意文字の組み合わせのようにバックトラックが爆発するパターンを使わない。全パターンは 1 行目（最初の改行まで）にのみ適用する。T2 の unit テストに「2,000 文字の繰り返し入力（`9/` × 1000、`〜` × 2000、`http://` × 200 など）が 50ms 以内に返る」を入れる。作成 API はパースや検証の前に `MAX_INPUT_LENGTH` で弾く（§5.7）。
+- **正規表現の実装規約**: パーサはブラウザとサーバの両方で 2,000 文字の入力を受ける。ネストした量指定子（`(a+)+` 形式）や `\S+` と任意文字の組み合わせのようにバックトラックが爆発するパターンを使わない。全パターンは 1 行目（最初の改行まで）にのみ適用する。T2 の unit テストに「2,000 文字の繰り返し入力（`9/` × 1000、`〜` × 2000、`http://` × 200、`a.` × 1000、`-.` × 1000 など）が 50ms 以内に返る」を入れる（`a.` `-.` の繰り返しは `URL_PATTERN` のベアドメイン判定が開始位置ごとに末尾までなめる形になっていないかの確認）。作成 API はパースや検証の前に `MAX_INPUT_LENGTH` で弾く（§5.7）。
 
 ```typescript
 // src/core/parse/types.ts
@@ -468,11 +468,11 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 
 ### 5.2 抽出の優先順位
 
-1. 入力を 1 行目と 2 行目以降に分ける。2 行目以降は trim して `memo` の末尾に付ける（1 行目由来のメモがあれば改行で結合）。
-2. 1 行目を正規化する（全角英数字・記号 → 半角、全角スペース → 半角、`～` `〜` `-` `−` `–` → 範囲記号 `〜`、`：` → `:`、`／` → `/`、`．` → `.`）。
-3. **URL** を 1 行目から取り除き、メモの先頭に移す。URL の判定は `src/core/text/urlPattern.ts` の 1 本の正規表現 `URL_PATTERN` に集約し、`countUrls`（§9.2）と ics のサニタイズ（§7.2）も同じ定義を参照する。判定対象は (a) `https?://` 付き、(b) `www.` 始まり、(c) ベアドメイン `[\w-]+(\.[\w-]+)*\.[a-z]{2,}` のうち **`/` が続く（`example.xyz/path`）か、末尾ラベルが `co|com|jp|net|org|io|me|ly|app|dev|link` のいずれか（`example.com` `example.co.jp` `bit.ly`）** のもの（末尾ラベルが英字 2 文字以上というだけでは `Node.js` `Vue.js` `Next.js` のような製品名が URL に数えられ、ics で「[リンク]」に置換されてしまう。`9.20` のような数字はドメインにしない）の 3 形式。`hxxps://` のような難読化表記は対象にしない（受け手のカレンダーアプリもリンク化しないため）。
-4. **日付トークン**を検出する。複数見つかった場合は最初のものを採用し、残りは通常の文字として扱う（日付範囲 `M/D〜M/D` は 1 トークン）。
-5. **時刻トークン**（範囲・単発）を検出する。日付トークンと同様に最初のものを採用する。
+1. 入力の改行は `\r\n` `\n` のどちらも受け付ける。先頭に空行があっても無視し、最初の空でない行をパース対象（1 行目）にする。それより後ろの行は trim して `memo` の末尾に付ける（1 行目由来のメモがあれば改行で結合）。
+2. 1 行目を正規化する（全角英数字・記号 → 半角、全角スペース → 半角、`：` → `:`、`／` → `/`、`．` → `.`、C0 制御文字とゼロ幅文字（U+200B〜U+200D, U+FEFF）を除去）。`-` `−` `–` `～` `〜` の範囲記号は文字列を書き換えず、日付・時刻の正規表現側の文字クラスとして扱う（手順 4・5）。行全体を `〜` に書き換えると、日付・時刻と無関係なハイフン（電話番号 `03-1234-5678`、英語表記 `Re-union` 等）まで壊れるため
+3. **URL** を 1 行目から取り除き、メモの先頭に移す。URL の判定は `src/core/text/urlPattern.ts` の 1 本の正規表現 `URL_PATTERN` に集約し、`countUrls`（§9.2）と ics のサニタイズ（§7.2）も同じ定義を参照する。判定対象は (a) `https?://` 付き、(b) `www.` 始まり（ホスト名は ASCII の語・ハイフンのみ）、(c) ベアドメイン `[\w-]+(\.[\w-]+)*\.[a-z]{2,}` のうち **`/` が続く（`example.xyz/path`）か、末尾ラベルが `co|com|jp|net|org|io|me|ly|app|dev|link` のいずれかで、かつその直後に英数字・ハイフンが続かない（`example.com` `example.co.jp` `bit.ly` は該当、`example.company` は非該当）** のもの（末尾ラベルが英字 2 文字以上というだけでは `Node.js` `Vue.js` `Next.js` のような製品名が URL に数えられ、ics で「[リンク]」に置換されてしまう。`9.20` のような数字はドメインにしない）の 3 形式。(b)(c) はいずれも、単語の途中（ドット区切り語の一部）や `hxxps://` のような難読化された scheme の直後からは拾わない。`hxxps://` `hxxp://www...` のような難読化表記自体も対象にしない（受け手のカレンダーアプリもリンク化しないため）。
+4. **日付トークン**を検出する。複数見つかった場合は、出現順に検証し、最初に有効な（カレンダー上に存在し、規則 D2・D3 も満たす）ものを採用する。それより前にあった無効な候補は消費せず、通常の文字として残す（規則 D6・D7）。有効な候補が 1 つも無ければ、最初に見つかった無効な候補について `invalid_date` を issue に入れる。日付範囲 `M/D〜M/D` は 1 トークン。
+5. **時刻トークン**（範囲・単発）を検出する。日付トークンと同様に、出現順に検証し最初に有効なものを採用する（規則 T6）。
 6. 日付・時刻として消費した部分を空白に置き換え、残りの文字列 `R` から **場所** を検出する（§5.5 規則 L）。
 7. 残りから **タイトルとメモ** を分ける（§5.5 規則 T）。
 8. 日付と時刻を合成し、曖昧さの規則（§5.5）で `start` / `end` / `isAllDay` / `issues` を決める。
@@ -481,7 +481,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 
 | 種別 | パターン | 例 | 解決 |
 |---|---|---|---|
-| 絶対日付 | `M/D` `M月D日`（末尾 `(曜)` 任意） | `9/20` `9月20日(日)` | 年は今日基準で補完（規則 D1）。曜日表記は検証せず無視する |
+| 絶対日付 | `M/D` `M月D日`（末尾 `(曜)` `(祝)` 任意） | `9/20` `9月20日(日)` | 年は今日基準で補完（規則 D1）。曜日・祝日のカッコ書きは検証せず無視する。カッコの中身は曜日・祝に限り、それ以外の文字列（`(19時〜)` 等）はカッコごと日付トークンに含めない |
 | 年付き日付 | `YYYY/M/D` `YYYY年M月D日` | `2027/3/1` | 年をそのまま採用（規則 D2, D3） |
 | 日付範囲 | `M/D〜M/D`（年付き可） | `9/20〜9/21` | 終日の複数日予定（規則 A2） |
 | 相対日 | `今日` `本日` / `明日` / `あさって` `明後日` | | +0 / +1 / +2 日 |
@@ -490,14 +490,14 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 | 来週 + 曜日 | `来週◯曜` | `来週月曜` | 今週の当該曜日 + 7 日 |
 | 時刻 | `H:MM` `H時` `H時MM分` `H時半` | `19:00` `19時` `19時半` | 「半」= 30 分 |
 | 午前・午後 | `午前H時` `午後H時` `朝H時` `夜H時` `夕方H時` | `午後7時` | 午後・夜・夕方は +12 時（12 時は加算しない） |
-| 時刻範囲 | `H〜H` `HからH(まで)` `H:MM-H:MM` | `19時〜21時` `19:00-21:00` | 終了 < 開始なら日を跨ぐ（規則 T3） |
-| 開始のみ | `H〜` `Hから` | `19時〜` | 終了は開始 + 60 分 |
+| 時刻範囲 | `H〜H` `HからH(まで)` `H:MM-H:MM` | `19時〜21時` `19:00-21:00` | 終了 < 開始なら日を跨ぐ（規則 T3）。`から` の後の空白（`19時から 21時まで`）は許容する。終了が不正（T6）なら開始も含めてトークンごと消費しない |
+| 開始のみ | `H〜` `Hから` `Hまで` | `19時〜` `19時まで` | 終了は開始 + 60 分。`H時間`（所要時間）や `H:MM:SS` の秒は時刻として消費しない |
 
-サポートしない（既知の限界、§14）: `.` 区切りの日付（`9.20`）、`来月` `再来週` 等の月・複数週の相対表現、`夜` `朝` などの時刻を伴わない時間帯語、英語表記、時刻付きの複数日レンジ（`9/20 19時〜9/21 10時`）。
+サポートしない（既知の限界、§14）: `.` 区切りの日付（`9.20`）、`来月` `再来週` 等の月・複数週の相対表現（`再来週◯曜` は `来週◯曜` として誤読しないよう検出しないが、単独の曜日表記として直近の当該曜日に解決されることはある）、`夜` `朝` などの時刻を伴わない時間帯語、英語表記、時刻付きの複数日レンジ（`9/20 19時〜9/21 10時`）。
 
 ### 5.4 場所のストップリスト
 
-「〜で」の直前が場所を意味しない定型語なら場所として採用しない。リストは「候補 + `で`」の形で持ち、規則 L2 で候補 + `で` がリストに一致するかを見る。初期リスト: `みんなで` `皆で` `ひとりで` `一人で` `全員で` `二人で` `2人で` `ふたりで` `家族で` `有志で` `急ぎで` `無料で`。`でも`（`誰でも歓迎`）はリストではなく規則 L1 の区切り判定（`で` の直後が `も` なら区切りにしない）で除外する。`オンラインで` はリストに入れない（`オンライン` は場所として採用する）。リストは `src/core/parse/stopWords.ts` に置き、外れたケースを見つけたらテスト行と一緒に足す。
+「〜で」の直前が場所を意味しない定型語なら場所として採用しない。リストは「候補 + `で`」の形で持ち、規則 L2 で候補 + `で` がリストに一致するかを見る。初期リスト: `みんなで` `皆で` `ひとりで` `一人で` `全員で` `二人で` `2人で` `ふたりで` `家族で` `有志で` `急ぎで` `無料で`。`でも`（`誰でも歓迎`）はリストではなく規則 L1 の区切り判定（`で` の直後が `も・す・は・き` のいずれか、または `した` から始まるなら区切りにしない。`です` `では` `できる` `でした` の一部を場所と誤認しないため）で除外する。`オンラインで` はリストに入れない（`オンライン` は場所として採用する）。リストは `src/core/parse/stopWords.ts` に置き、外れたケースを見つけたらテスト行と一緒に足す。
 
 ### 5.5 曖昧さの解決規則
 
@@ -505,13 +505,13 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 
 | 規則 | 内容 | 理由 |
 |---|---|---|
-| D1 年の補完 | 年省略の `M/D` `M月D日` は今日の年を仮定し、結果が今日より前（同日は含まない）なら翌年に繰り上げる。`2/29` のように今年に存在しない日付は翌年に存在するか確認し、それも無ければ D6（`invalid_date`） | 保持期限は「終了 + 7 日」なので、繰り上げないと作成直後に期限切れのページが生まれる |
-| D2 年明示の過去日 | 年を明示して今日より前なら `past_date` を issue に入れ、日時は採用しない（`start = null`）。日付を消費した残りはタイトルに使う | ユーザーが意図して書いた可能性を否定できないので勝手に未来へ書き換えず、プレビューで確認を促す |
-| D3 13 ヶ月超 | 開始が `now + MAX_EVENT_LEAD_TIME_MONTHS` を超える（同日同時刻は許容）なら `beyond_max_lead_time` を issue に入れ、日時は採用しない | concept §07 の上限。定数はパーサと API 検証の両方が同じものを参照する |
-| D4 曜日単独 | 今日を含めて直近の当該曜日。今日が当該曜日で、時刻指定が既に過ぎているなら +7 日 | 「水曜 19 時」を水曜午前に書く用途 |
+| D1 年の補完 | 年省略の `M/D` `M月D日` は今日の年を仮定し、結果が今日より前（同日は含まない）なら翌年に繰り上げる。繰り上げた先の年にもその日付が存在するか必ず確認し（`2/29` のように今年に無ければ翌年を確認し、翌年にも無ければ D6）、無ければ D6（`invalid_date`）にする | 保持期限は「終了 + 7 日」なので、繰り上げないと作成直後に期限切れのページが生まれる |
+| D2 年明示の過去日 | 年を明示して今日より前なら `past_date` を issue に入れ、日時は採用しない（`start = null`）。日付を消費した残りはタイトルに使う。日付範囲（後述）の開始も、年を明示していればこの規則を適用する | ユーザーが意図して書いた可能性を否定できないので勝手に未来へ書き換えず、プレビューで確認を促す |
+| D3 13 ヶ月超 | 開始が `now + MAX_EVENT_LEAD_TIME_MONTHS` を超える（同日同時刻は許容）なら `beyond_max_lead_time` を issue に入れ、日時は採用しない。日付範囲の開始も、年を明示していればこの規則を適用する | concept §07 の上限。定数はパーサと API 検証の両方が同じものを参照する |
+| D4 曜日単独 | 今日を含めて直近の当該曜日。今日が当該曜日で、時刻指定が既に過ぎている（基準時刻とちょうど同時刻は「過ぎていない」扱い。規則 T4 と揃える）なら +7 日 | 「水曜 19 時」を水曜午前に書く用途 |
 | D5 今週 + 曜日 | 月曜始まりの今週の当該曜日。それが今日より前なら翌週へ繰り上げる。当該曜日が今日で時刻指定が既に過ぎている場合も +7 日（D4 と同じ扱い） | 「今週月曜」を水曜に書くのは言い間違いか翌週の意図であり、過去のページを作らない |
-| D6 不正な日付 | `2/30` `13/1` のように存在しない日付はトークンとして消費せず通常の文字として残し、`invalid_date` を issue に入れる | 黙って捨てず、プレビューで気づけるようにする |
-| D7 複数の日付 | 最初に出現した日付だけ採用し、残りは文字として扱う（メモかタイトルに残る） | 「9/20 と 10/5 どちらか」のような未確定表現は Phase 1 で扱わない |
+| D6 不正な日付 | `2/30` `13/1` のように存在しない日付はトークンとして消費せず通常の文字として残し、`invalid_date` を issue に入れる。日付候補が複数あるときは出現順に検証し、それより後に有効な候補が見つかればそちらを採用する（issue には入れない）。有効な候補が 1 つも無ければ最初に見つかった不正な候補について `invalid_date` にする（`2/30 or 3/1` → `3/1` を採用。単独の `2/30` のみなら `invalid_date`）。不正と判定した日付範囲の内側にある月日は、単独の日付としては採用しない（`2027/1/3〜2026/12/30` は範囲ごと `invalid_date` にし、内側の `2027/1/3` を単日として拾わない） | 黙って捨てず、プレビューで気づけるようにする |
+| D7 複数の日付 | 最初に見つかった**有効な**日付だけ採用し、それ以外（不正な候補も含む）は文字として扱う（メモかタイトルに残る） | 「9/20 と 10/5 どちらか」のような未確定表現は Phase 1 で扱わない |
 
 **時刻（T）**
 
@@ -522,22 +522,22 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 | T3 範囲の終了時刻 | 開始に T2 を適用した後、終了を次の順で決める。(1) `H:MM` 表記か午前・午後の語があればその値（リテラル）。(2) `H時` 表記なら候補 `{E, E+12}`（`E+12 < 24` のもの）のうち**開始より後になる最小の候補**を採る。(3) 候補が無い（終了 ≤ 開始）なら E のまま**翌日**にする | `6時〜8時` → 18:00〜20:00、`10時〜2時` → 10:00〜14:00、`23:00〜1:00` → 23:00〜翌 01:00、`19時〜7時` → 19:00〜翌 07:00（徹夜）、`23時〜1時` → 23:00〜翌 01:00 |
 | T4 時刻のみ・日付なし | 今日を仮定し、開始が基準時刻より前なら翌日にする | 作成直後に過去になるページを作らない |
 | T5 明示日付 + 過ぎた時刻 | `9/16 8:00` を 9/16 10:00 に書いた場合はそのまま採用する（繰り上げない） | 日付を明示しているので勝手に未来へ書き換えず、プレビューで「過去の日時です」（§5.7 `PAST_EVENT`）を出して修正を促す。パーサは拒否せず API 側の検証で弾く |
-| T6 24 時以上 | `25時` のような時刻は不正としてトークンにしない | |
+| T6 24 時以上 | `25時` のような時刻は不正としてトークンにしない。時刻候補が複数あるときは出現順に検証し、最初に有効なものを採用する（`25時ではなく19時` → `19時` を採用）。範囲の終了だけが不正なとき（`19時〜25時`）は、開始も含めてトークンごと消費しない（終了だけを切り離して開始のみ採用することはしない） | |
 
 **終日（A）**
 
 | 規則 | 内容 |
 |---|---|
 | A1 | 日付はあるが時刻が無い → 終日。`start` = その日 00:00 JST、`end` = 翌日 00:00 JST（排他的） |
-| A2 | 日付範囲 `M/D〜M/D` → 終日の複数日。`end` = 終了日の翌日 00:00 JST。終了日 < 開始日なら年またぎとみなし終了日を翌年にする |
+| A2 | 日付範囲 `M/D〜M/D` → 終日の複数日。`end` = 終了日の翌日 00:00 JST。終了の年を省略していて終了日 < 開始日なら年またぎとみなし終了日を翌年にする。終了の年を明示していて終了日 < 開始日なら、年をまたぐ意図か開始日側の年繰り上げ（D1）とかみ合っていない矛盾した入力とみなし `invalid_date` にする |
 | A3 | 日付も時刻も無い → 完全な下書き（`start = end = null`、`no_datetime`）。保持期限は作成 + 7 日 |
 
 **場所（L）**
 
 | 規則 | 内容 |
 |---|---|
-| L1 | 残り `R` の中で、`で` または `にて` の直前のひとまとまり（直前の空白・読点から `で` まで）を場所候補にする。ただし `で` の直後が `も` のとき（`誰でも`）はその `で` を区切りにしない。最初に見つかったものを採用 |
-| L2 | 候補 + `で` がストップリスト（§5.4）に一致すれば場所にせず、`で` を含めてタイトル側の文字として扱う |
+| L1 | 残り `R` の中で、`で` または `にて` の直前のひとまとまり（直前の空白・読点から `で` まで）を場所候補にする。ただし `で` の直後が `も・す・は・き` のいずれか、または `した` から始まるとき（`誰でも` `〜です` `渋谷では` `〜できる` `〜でした`）はその `で` を区切りにしない（`渋谷でしゃぶしゃぶ` の `し` はこれに当たらないので区切りにする）。最初に見つかったものを採用 |
+| L2 | 候補 + `で` がストップリスト（§5.4）に一致すれば場所にせず、`で` を含めてタイトル側の文字として扱う。この場合、次の場所候補はこの `で` の直後から探す（`みんなで渋谷で飲み会` → `みんなで` を除外した後は `渋谷` だけを候補にし、`みんなで渋谷` のように候補が伸びないようにする） |
 | L3 | `で` が無ければ場所は null。ただし残りが空白区切り 1 語（読点を含まない）だけなら `singleTokenTitle = true` にし、UI で「場所にする」を 1 タップで選べるようにする（§6.1） |
 
 > 採らなかった案: `9/20 19時 渋谷`（「で」無しの末尾 1 語）を場所として拾う規則。`9/20 19時 飲み会` を場所=飲み会 と誤るケースの方が多いと判断し、タイトルに置いた上で 1 タップで入れ替えられる UI を採った。concept の合格基準の例文はこの UI で救う。
@@ -628,6 +628,28 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 | 69 | `2/29 うるう日` | 2/29 うるう日 | null | null | null | null | D1: 2026 年にも 2027 年にも存在しない → `invalid_date` + `no_datetime`（基準が 2027 年なら 2028-02-29 になる） |
 | 70 | `9/20 19時 車で移動` | 移動 | 09-20 19:00 | 09-20 20:00 | 車 | null | L1 の誤検出例。UI の「空にする = 使わない」で場所を消せる（§6.1）。ストップリストに `車で` を足すかは実データで判断 |
 | 71 | `9/20 19時〜8時 夜勤` | 夜勤 | 09-20 19:00 | 09-20 20:00 | null | null | T3(2): 候補 {8, 20} のうち開始より後の最小 = 20。翌朝 8 時の意図は取れない（既知の限界、§14.1） |
+| 72 | `会費3000/5000円 9/20 19時 飲み会` | 会費3000/5000円 飲み会 | 09-20 19:00 | 09-20 20:00 | null | null | 数字列の途中（`00/50`）を日付として切り出さず、有効な `9/20` を採用する |
+| 73 | `2/30 or 3/1 飲み会` | 2/30 or 飲み会 | 2027-03-01 終日 | 2027-03-02 終日 | null | null | D6/D7: 最初の `2/30` は invalid のため消費せず、後続の有効な `3/1` を採用（D1 で翌年） |
+| 74 | `2026/9 総会` | 2026/9 総会 | null | null | null | null | `年/月` だけの不完全な表記は日付として検出しない。`no_datetime` |
+| 75 | `9/20(19時〜) 渋谷で飲み会` | 飲み会 | 09-20 19:00 | 09-20 20:00 | 渋谷 | `( )` | 曜日カッコの中身は曜日・祝に限る。カッコ自体は日付・時刻のどちらでもないため文字として残る |
+| 76 | `9/20(渋谷駅集合 19時) 飲み会` | `(渋谷駅集合 ) 飲み会` | 09-20 19:00 | 09-20 20:00 | null | null | カッコの中身が曜日・祝でなければカッコごと文字として残す（データは失わない） |
+| 77 | `9/20 25時ではなく 19時 集合` | `25時ではなく 集合` | 09-20 19:00 | 09-20 20:00 | null | null | T6: 最初の `25時` は不正のため消費せず、後続の有効な `19時` を採用する |
+| 78 | `9/20 19時〜25時 飲み会` | `19時〜25時 飲み会` | 09-20 終日 | 09-21 終日 | null | null | T6: 範囲の終了だけ不正なら、開始も含めてトークンごと消費しない（既知の挙動） |
+| 79 | `9/20 19時まで 受付` | 受付 | 09-20 19:00 | 09-20 20:00 | null | null | 「まで」は から・〜 が無い単独の `H時まで` でも時刻側で消費し、場所として誤検出しない。`まで` は終了だけの指定として扱わず、時刻はそのまま開始として扱う（終了のみを表す表現は Phase 1 では扱わない。T1 で終了は必ず開始から導く） |
+| 80 | `9/20 19時から 21時まで 飲み会` | 飲み会 | 09-20 19:00 | 09-20 21:00 | null | null | 「から」の後の空白も範囲として解決する |
+| 81 | `9/20 19時 飲み会です` | 飲み会です | 09-20 19:00 | 09-20 20:00 | null | null | L1: `です` の `で` は区切りにしない |
+| 82 | `9/20 19時 参加できる人だけ` | 参加できる人だけ | 09-20 19:00 | 09-20 20:00 | null | null | L1: `できる` の `で` は区切りにしない |
+| 83 | `9/20 19時 渋谷では飲み会` | 渋谷では飲み会 | 09-20 19:00 | 09-20 20:00 | null | null | L1: `では` の `で` は区切りにしない（`渋谷` は場所として取れなくなるが既知のトレードオフ） |
+| 84 | `9/20 19時 みんなで渋谷で飲み会` | 飲み会 | 09-20 19:00 | 09-20 20:00 | 渋谷 | みんなで | L2: ストップワードを除いた直後から次の場所候補を探すので、候補が伸びない |
+| 85 | `9/20 飲み会 2時間くらい` | 飲み会 2時間くらい | 09-20 終日 | 09-21 終日 | null | null | `H時間`（所要時間）は時刻として消費しない |
+| 86 | `9/20 19:00:00 飲み会` | 飲み会 | 09-20 19:00 | 09-20 20:00 | null | null | `H:MM:SS` の秒は読み飛ばす |
+| 87 | `再来週月曜 会議` | 再来週 会議 | 09-21 終日 | 09-22 終日 | null | null | 「再来週」は未対応（既知の限界）。`来週月曜` として誤読はしないが、単独の `月曜` として D4（直近の月曜）に解決される |
+| 88 | `9/20 19時 渋谷で飲み会\r\n会費5000円\r\n遅れる人は連絡`（CRLF） | 飲み会 | 09-20 19:00 | 09-20 20:00 | 渋谷 | `会費5000円\n遅れる人は連絡` | `\r\n` も `\n` と同様に改行として扱い、メモに `\r` を残さない |
+| 89 | `\n9/20 19時 飲み会`（先頭が空行） | 飲み会 | 09-20 19:00 | 09-20 20:00 | null | null | 先頭の空行は無視し、最初の空でない行をパース対象にする |
+| 90 | `9/20` + ZWSP（U+200B） + `19時 飲み会` | 飲み会 | 09-20 19:00 | 09-20 20:00 | null | null | ゼロ幅スペースは空白に変える（空文字にすると前後の数字がくっつき、日付・時刻のどちらとしても検出できなくなる） |
+| 91 | `2027/1/3〜2026/12/30 合宿` | 2027/1/3〜2026/12/30 合宿 | null | null | null | null | D6: 終了年を明示した範囲が開始より前で矛盾するため `invalid_date`。範囲の内側の `2027/1/3` を単日としては拾わない。`no_datetime` |
+| 92 | `9/15〜2026/9/16 合宿` | 9/15〜2026/9/16 合宿 | null | null | null | null | D6: 開始が D1 で翌年に繰り上がり、明示した終了年（2026）より後になって矛盾するため `invalid_date`。範囲の内側の `9/15` を単日としては拾わない。`no_datetime` |
+| 93 | `9/20 19時 渋谷でしゃぶしゃぶ` | しゃぶしゃぶ | 09-20 19:00 | 09-20 20:00 | 渋谷 | null | L1: `しゃぶしゃぶ` の `し` は `した` ではないので区切りにする |
 
 「明後日」は「あさって」、「本日」は「今日」の同義語として同じ規則で解決する。
 
@@ -1892,7 +1914,7 @@ export default defineConfig({
 | ID | ブランチ | タイトル | 依存 | 主なファイル | テスト観点 | 完了条件 |
 |---|---|---|---|---|---|---|
 | T1 | `feat/scaffold` | chore: 足場（wrangler / Hono / テスト 3 層 / CI / 共有型・定数・ポート・Fake。構成は §11.7） | — | `wrangler.jsonc` `package.json` `package-lock.json` `.nvmrc` `.gitignore` `.dev.vars.example` `tsconfig.json` `tsconfig.{core,server,web}.json` `eslint.config.js` `.prettierrc` `.prettierignore` `migrations/.gitkeep`（`readD1Migrations('migrations')` が存在しないディレクトリで例外を投げるため。`migrations/0001_init.sql` 自体は T5 が置く） `vitest.config.ts` `playwright.config.ts`（`chromium` + `line-ios` の 2 プロジェクト）`.github/workflows/ci.yml` `scripts/build-web.mjs` `src/core/config/*` `src/core/types.ts` `src/core/api/types.ts` `src/core/time/jst.ts` `src/core/id/types.ts`（`ports/idGenerator.ts` の re-export 先。§11.4 の時点で `core/id/types.ts` への依存が生じるが、`crockford.ts` は T3 の担当のままなので `types.ts` だけ先に置く。実装時に判明した §11.1 / §12 の食い違いの是正） `src/ports/*`（`reportRepository.ts` を含む）`src/server/{index,app,env,deps}.ts` `src/server/routes/health.ts` `src/server/lib/notWired.ts` `src/adapters/clock/*` `src/adapters/logger/consoleLogger.ts` `src/adapters/ogp/fakeOgpRenderer.ts` `src/adapters/notifier/fakeNotifier.ts` `src/adapters/memory/memoryReportRepository.ts` `src/web/pages/*.html`（§11.7 の最小雛形）`src/web/_headers` `src/web/styles/base.css` `src/web/{robots.txt,favicon.ico}` `src/web/img/ogp-fallback.png` `test/unit/core/time/*` `test/unit/core/types.test.ts` `test/unit/adapters/logger/*` `test/unit/adapters/memory/memoryReportRepository.test.ts`（テスト観点に `memoryReportRepository` の `'inserted'`/`'duplicate'` が挙げられているにもかかわらず本節のファイル一覧に無かったため追加） `test/unit/web/headers.test.ts` `test/integration/{setup.ts,env.d.ts}` `test/integration/helpers/jsonRequest.ts` `test/integration/helpers/jsonRequest.test.ts` `test/integration/server/{health,staticAssets}.test.ts` `test/unit/server/deps.test.ts` `test/unit/server/lib/notWired.test.ts` `test/e2e/fixtures.ts` `test/e2e/smoke.spec.ts` | unit: `jst.ts` の変換・整形（`formatDateLabel` が「19:00〜20:00」形式）・`addMonths` の月末境界。`toEventFieldsJson` / `fromEventFieldsJson` の往復と不正入力。`consoleLogger` が `Error` を `{ name, message }` に正規化し message を 200 文字で切る。`_headers` に §11.7 の各パス・各ヘッダが載っている。`memoryReportRepository` の `'inserted'` / `'duplicate'`。`buildDeps` の `clock`（`E2E_FIXED_NOW` なし・`localhost` + `E2E_FIXED_NOW`・非 `localhost` + `E2E_FIXED_NOW` で warn）。`notWired` がどのメソッド呼び出しでも `not wired: <name>` を投げる。integration: `GET /api/health` が 200 で `{ ok: true }`・`Cache-Control: no-store`。**`env.ASSETS.fetch('/')` が静的 HTML を返す（pool-workers の Static Assets 対応。`SELF.fetch` は Worker の手前の Static Assets ルーティング層を経由しないため使わない。確認済み〈T1〉、詳細は §10.2）**。`env.ASSETS.fetch('/done')` のレスポンスに CSP・`X-Content-Type-Options`・`X-Robots-Tag` が付く（`_headers`。確認済み〈T1〉）。`jsonRequest` が `Origin` と `Content-Type` を付ける。e2e: 固定時刻（§10.3）の下で `/` が 200 で `textarea` がある（`chromium` `line-ios` の両方） | `npm run lint/typecheck/test:unit/test:integration/test:e2e` が全部通り、CI が green。`tsc -p tsconfig.core.json` が通り、`src/core` に `document` の参照を足すとエラーになる（確認済み〈T1〉。`hono` の import は tsc ではなく ESLint の `no-restricted-imports` が検出する。§11.7 の ESLint の項を参照）。`wrangler deploy --dry-run --outdir dist-worker` が未ログイン・プレースホルダ `database_id` で通る（確認済み〈T1〉、§11.7 参照）。`compatibility_flags` の `nodejs_compat` の要否と、`test.projects` 内で pool-workers の Vite プラグイン（`cloudflareTest`）が動くかを記録（確認済み〈T1〉。§11.7 参照）。ESLint で `innerHTML` / `outerHTML` / `insertAdjacentHTML` / `dangerouslySetInnerHTML` と、`src/core` からの相対パス以外の import が禁止されている。`vitest` `wrangler` `@cloudflare/vitest-pool-workers` `hono` `typescript` `esbuild` の解決済みバージョンを PR 説明に記録。`_headers` と Static Assets はいずれも pool-workers で動作確認済み（§10.2）|
-| T2 | `feat/core-parse` | feat: 日時パーサ（1 行目の解釈）と URL 判定 | T1 | `src/core/text/urlPattern.ts` `src/core/parse/*` `test/unit/core/{text,parse}/*` | §5.6 の全 71 ケースを `test.each` で。正規化（`．` を含む）・ストップリスト・URL 分離の個別テスト。`URL_PATTERN` の 3 形式（scheme / `www.` / ベアドメイン）と非該当（`9.20`、`hxxps://`）。ベアドメインの末尾ラベル条件（§5.2）: `Node.js 勉強会` は URL 0 本、`example.com` `example.co.jp` `example.xyz/path` は 1 本。**2,000 文字の繰り返し入力（`9/` × 1000、`〜` × 2000、`http://` × 200）が 50ms 以内に返る** | 表が全部 green。`parseEventText` が同期・純粋で `core/` 外を import しない |
+| T2 | `feat/core-parse` | feat: 日時パーサ（1 行目の解釈）と URL 判定 | T1 | `src/core/text/urlPattern.ts` `src/core/parse/*` `test/unit/core/{text,parse}/*` | §5.6 の基本 71 ケースを `test.each` で、追加の 22 ケース（#72〜#93、レビュー対応）を個別のテストで検証する。正規化（`．` を含む）・ストップリスト・URL 分離の個別テスト。`URL_PATTERN` の 3 形式（scheme / `www.` / ベアドメイン）と非該当（`9.20`、`hxxps://`、`hxxp://www...`、`example.company`）。ベアドメインの末尾ラベル条件（§5.2）: `Node.js 勉強会` は URL 0 本、`example.com` `example.co.jp` `example.xyz/path` は 1 本。**2,000 文字の繰り返し入力（`9/` × 1000、`〜` × 2000、`http://` × 200、`a.` × 1000、`-.` × 1000）が 50ms 以内に返る** | 表が全部 green。`parseEventText` が同期・純粋で `core/` 外を import しない |
 | T3 | `feat/core-rules` | feat: 保持期限・ID・トークン・検証・プリフィル・インタープリタ境界 | T2 | `src/core/retention/*` `src/core/id/crockford.ts`（`id/types.ts` は T1 が置く済み） `src/core/token/*` `src/core/validate/*` `src/core/prefill/*` `src/core/interpret/*` `src/core/change/*` `src/adapters/id/*` `test/unit/core/{retention,id,token,validate,prefill,interpret,change}/*` | 13 ヶ月ちょうど／+1 秒、下書き（`baseDate` 基準）。ID が 12 文字・許可文字のみ・予約パスと不一致（1 万件生成）。`isValidPageId` が `//example.com` `%2F%2F` 11 文字・13 文字・大文字を拒否。トークン 43 文字。§5.7 の各エラーコード（`mode: 'update'` で日時不変なら終了後でも ok、日時を過去に変えると `PAST_EVENT`）。`countUrls` が `URL_PATTERN` と一致。§5.8 の優先順位。`buildChangeSnapshot`: メモだけの変更は null、日時だけの変更は変更前の日時 + `titleChanged = locationChanged = false`、タイトルだけの変更は `titleChanged = true` で日時は変更前の値（§3.5） | 全 unit green。`calculateExpiresAt` の戻り値が非 null の `Date` |
 | T4 | `feat/core-calendar` | feat: ics ビルダーと Google カレンダー URL | T3 | `src/core/ics/*` `src/core/google/*` `test/unit/core/{ics,google}/*` | 終日／時刻あり／年またぎ、エスケープ（`\r\n` 正規化、`\rATTACH:` を含む title が 1 行のまま、C0 制御文字の除去）、日本語混在の 75 オクテット折り返し（継続行のスペース込み）、`sanitizeIcsText` が SUMMARY / LOCATION / DESCRIPTION の URL を「[リンク]」に置換し自ドメイン 1 本だけ残る、`ORGANIZER` `ATTENDEE` `ATTACH` `X-ALT-DESC` が出力に無い、`PRODID` の形式、`SEQUENCE`。Google: `ctz`、`dates` を URL パースで検証、`details` の 500 文字切り詰めと末尾の詳細 URL | §7.1 / §7.2 の表を満たす。折り返しがマルチバイト境界で切れない |
 | T5 | `feat/d1-repository` | feat: D1 スキーマと PageRepository（本物 + インメモリ） | T4 | `migrations/0001_init.sql` `src/adapters/d1/{d1PageRepository,d1ReportRepository}.ts` `src/adapters/memory/memoryPageRepository.ts` `test/integration/adapters/{pageRepository,reportRepository}.test.ts` | create（`source` `creator_*` が入る、`events` の INSERT 失敗で `pages` も残らない）/ findById / update（`status` `report_count` 不変、`previousSnapshot` に日時のみ）/ incrementReportCount / countActiveByCreator / listExpired / deleteByIds（CASCADE、**101 件以上**）/ clearExpiredSnapshots。`events` 2 行で InvariantViolation。`ReportRepository.insertIfNotDuplicate`: 初回は `'inserted'`、同一 `ip_hash`・同一ページで `dedupeSince` 以降に既にあれば `'duplicate'` で行が増えない、別ページ・`dedupeSince` より前なら `'inserted'`。同じスイートを D1 と memory（`memoryReportRepository` は T1 のもの）の両方に流す | integration green。`wrangler d1 migrations apply --local` が通る（`window_kind` 列名で構文エラーが出ない） |
