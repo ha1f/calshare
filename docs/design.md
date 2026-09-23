@@ -656,7 +656,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 
 ### 5.7 API 側のバリデーションとエラーコード
 
-パーサは issue を返すだけで拒否しない。作成・更新 API（§11.5）はプレビューの確定値を受け取り、次を検証する。検証の順序は **(1) Content-Type と Origin（§9.8）→ (2) 本文の byte 上限（`MAX_BODY_BYTES` = 32KB）と JSON の形、および `rawText.length > MAX_INPUT_LENGTH`（`INPUT_TOO_LONG`）→ (3) レート制限（§9.3）→ (4) 下表の項目検証** とし、明らかに不正なリクエストでは D1 に触れない（レート制限カウンタも進まない）。
+パーサは issue を返すだけで拒否しない。作成・更新 API（§11.5）はプレビューの確定値を受け取り、次を検証する。検証の順序は **(1) Content-Type（415 `UNSUPPORTED_MEDIA_TYPE`）→ Origin（§9.8、403 `FORBIDDEN_ORIGIN`）→ (2) 本文の byte 上限（`MAX_BODY_BYTES` = 32KB。超過は `INVALID_REQUEST`）と JSON の形、および `rawText.length > MAX_INPUT_LENGTH`（`INPUT_TOO_LONG`）→ (3) レート制限（§9.3）→ (4) 下表の項目検証** とし、明らかに不正なリクエストでは D1 に触れない（レート制限カウンタも進まない）。
 
 | コード | HTTP | 条件 | プレビューでの文言（クライアントは同じ `core/validate` を使って事前表示） |
 |---|---|---|---|
