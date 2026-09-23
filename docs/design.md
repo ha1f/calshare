@@ -656,7 +656,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 
 ### 5.7 API 側のバリデーションとエラーコード
 
-パーサは issue を返すだけで拒否しない。作成・更新 API（§11.5）はプレビューの確定値を受け取り、次を検証する。検証の順序は **(1) Content-Type と Origin（§9.8）→ (2) 本文の byte 上限（`MAX_BODY_BYTES` = 32KB）と JSON の形、および `rawText.length > MAX_INPUT_LENGTH`（`INPUT_TOO_LONG`）→ (3) レート制限（§9.3）→ (4) 下表の項目検証** とし、明らかに不正なリクエストでは D1 に触れない（レート制限カウンタも進まない）。
+パーサは issue を返すだけで拒否しない。作成・更新 API（§11.5）はプレビューの確定値を受け取り、次を検証する。検証の順序は **(1) Content-Type（415 `UNSUPPORTED_MEDIA_TYPE`）→ Origin（§9.8、403 `FORBIDDEN_ORIGIN`）→ (2) 本文の byte 上限（`MAX_BODY_BYTES` = 32KB。超過は `INVALID_REQUEST`）と JSON の形、および `rawText.length > MAX_INPUT_LENGTH`（`INPUT_TOO_LONG`）→ (3) レート制限（§9.3）→ (4) 下表の項目検証** とし、明らかに不正なリクエストでは D1 に触れない（レート制限カウンタも進まない）。
 
 | コード | HTTP | 条件 | プレビューでの文言（クライアントは同じ `core/validate` を使って事前表示） |
 |---|---|---|---|
@@ -1232,7 +1232,7 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 │       └── detail/main.ts         # 詳細ページ用の小さな JS（LINE UA 判定・Android 注記）
 ├── test/
 │   ├── unit/                      # src と同じ階層構造（core / adapters / server / web）
-│   ├── integration/               # adapters / server / scheduled。setup.ts（マイグレーション適用）env.d.ts helpers/jsonRequest.ts
+│   ├── integration/               # adapters / server / scheduled。setup.ts（マイグレーション適用）env.d.ts helpers/{jsonRequest,fakeDeps}.ts
 │   ├── e2e/                       # Playwright。fixtures.ts（時刻固定の共通フィクスチャ）
 │   └── fixtures/fonts/            # サブセット OTF と LICENSE.txt（OFL）。T10 で追加
 └── docs/
@@ -1524,7 +1524,9 @@ export interface Deps {
     ratePepper: string         // env.RATE_LIMIT_PEPPER
   }
 }
-/** Env → Deps。T1 時点の配線は §11.7。未実装のポート（ids / pages / storage / rateLimiter）は notWired() を登録し、T7 が本物に差し替える */
+/** Env → Deps。T1 時点の配線は §11.7。確認済み（T7）: ids / pages / storage / rateLimiter / reports は
+ * webCryptoIdGenerator / d1PageRepository / r2ObjectStorage / d1RateLimiter / d1ReportRepository に差し替え済み。
+ * ogpRenderer と notifier は本物のアダプタが無いため T10・T12 まで Fake のまま */
 export function buildDeps(env: Env): Deps
 
 // server/lib/notWired.ts（T1）
@@ -1724,8 +1726,8 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 | Deps | T1 の配線 | 本物に差し替える PR |
 |---|---|---|
 | `clock` | `E2E_FIXED_NOW` があり `new URL(PUBLIC_ORIGIN).hostname === 'localhost'` なら `fakeClock(new Date(E2E_FIXED_NOW))`、それ以外は `systemClock`（`E2E_FIXED_NOW` があるのに localhost でなければ warn ログを出して無視。localhost でも `E2E_FIXED_NOW` が Invalid Date になる値なら `e2e_fixed_now_invalid` を warn して `systemClock` にする） | —（T1 で確定） |
-| `ids` `pages` `storage` `rateLimiter` | `notWired('ids')` 等（§11.5） | T7 |
-| `reports` | `memoryReportRepository` | T7（`d1ReportRepository`。実装は T5） |
+| `ids` `pages` `storage` `rateLimiter` | 確認済み（T7）: `webCryptoIdGenerator` / `d1PageRepository` / `r2ObjectStorage` / `d1RateLimiter` に差し替え済み | —（T7 で確定） |
+| `reports` | 確認済み（T7）: `d1ReportRepository` に差し替え済み | —（T7 で確定） |
 | `ogpRenderer` | `fakeOgpRenderer` | T10 |
 | `notifier` | `fakeNotifier` | T12（`REPORT_WEBHOOK_URL` があるときだけ `webhookNotifier`） |
 | `logger` | `consoleLogger` | —（T1 で確定） |

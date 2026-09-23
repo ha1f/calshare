@@ -1,9 +1,13 @@
 import { fakeClock } from '../adapters/clock/fakeClock'
 import { systemClock } from '../adapters/clock/systemClock'
+import { createD1PageRepository } from '../adapters/d1/d1PageRepository'
+import { createD1RateLimiter } from '../adapters/d1/d1RateLimiter'
+import { createD1ReportRepository } from '../adapters/d1/d1ReportRepository'
+import { createWebCryptoIdGenerator } from '../adapters/id/webCryptoIdGenerator'
 import { consoleLogger } from '../adapters/logger/consoleLogger'
-import { createMemoryReportRepository } from '../adapters/memory/memoryReportRepository'
 import { createFakeNotifier } from '../adapters/notifier/fakeNotifier'
 import { createFakeOgpRenderer } from '../adapters/ogp/fakeOgpRenderer'
+import { createR2ObjectStorage } from '../adapters/r2/r2ObjectStorage'
 import type { Clock } from '../ports/clock'
 import type { IdGenerator } from '../ports/idGenerator'
 import type { Logger } from '../ports/logger'
@@ -14,7 +18,6 @@ import type { PageRepository } from '../ports/pageRepository'
 import type { RateLimiter } from '../ports/rateLimiter'
 import type { ReportRepository } from '../ports/reportRepository'
 import type { Env } from './env'
-import { notWired } from './lib/notWired'
 
 export interface Deps {
   clock: Clock // 本番は systemClock。E2E_FIXED_NOW があり PUBLIC_ORIGIN のホスト名が localhost なら fakeClock で固定（§10.3）
@@ -51,21 +54,24 @@ function buildClock(env: Env): Clock {
   return fakeClock(fixed)
 }
 
-/** Env → Deps。未実装のポート（ids / pages / storage / rateLimiter）は notWired() を登録し、T7 が本物に差し替える */
+/** Env → Deps。ogpRenderer と notifier は本物のアダプタが無いため Fake のまま */
 export function buildDeps(env: Env): Deps {
+  const clock = buildClock(env)
+  // origin は末尾スラッシュの有無に関わらず一致させたいので URL#origin で正規化する（§9.8 の比較対象）
+  const publicOriginUrl = new URL(env.PUBLIC_ORIGIN)
   return {
-    clock: buildClock(env),
-    ids: notWired<IdGenerator>('ids'),
-    pages: notWired<PageRepository>('pages'),
-    reports: createMemoryReportRepository(),
-    storage: notWired<ObjectStorage>('storage'),
-    rateLimiter: notWired<RateLimiter>('rateLimiter'),
+    clock,
+    ids: createWebCryptoIdGenerator(),
+    pages: createD1PageRepository(env.DB),
+    reports: createD1ReportRepository(env.DB),
+    storage: createR2ObjectStorage(env.BUCKET, clock),
+    rateLimiter: createD1RateLimiter(env.DB),
     ogpRenderer: createFakeOgpRenderer(),
     notifier: createFakeNotifier(),
     logger: consoleLogger,
     config: {
-      publicOrigin: env.PUBLIC_ORIGIN,
-      publicHost: new URL(env.PUBLIC_ORIGIN).host,
+      publicOrigin: publicOriginUrl.origin,
+      publicHost: publicOriginUrl.host,
       serviceName: env.SERVICE_NAME,
       ratePepper: env.RATE_LIMIT_PEPPER,
     },

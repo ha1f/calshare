@@ -69,4 +69,10 @@ describe('buildDeps / buildClock', () => {
     const deps = buildDeps(testEnv({ PUBLIC_ORIGIN: 'http://localhost:8787' }))
     expect(deps.config.publicHost).toBe('localhost:8787')
   })
+
+  it('PUBLIC_ORIGIN の末尾にスラッシュが付いていても config.publicOrigin には残らない', () => {
+    const deps = buildDeps(testEnv({ PUBLIC_ORIGIN: 'http://localhost:8787/' }))
+    expect(deps.config.publicOrigin).toBe('http://localhost:8787')
+    expect(deps.config.publicHost).toBe('localhost:8787')
+  })
 })
