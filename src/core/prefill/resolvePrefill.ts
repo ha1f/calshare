@@ -92,7 +92,10 @@ function present(v: string | undefined): v is string {
 
 /** text は 1 行のタイトル用パラメータなので、改行は空白に変換してから使う（§5.8） */
 function toSingleLine(text: string): string {
-  return text.split(/\r?\n/).join(' ').trim()
+  return text
+    .split(/\r\n|\r|\n/)
+    .join(' ')
+    .trim()
 }
 
 function resolveStructuredPrefill(params: PrefillParams): PrefillResult {
