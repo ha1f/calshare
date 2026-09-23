@@ -1,7 +1,22 @@
 // URL 判定の正規表現（§5.2）。パーサ・countUrls（§9.2）・ics のサニタイズ（§7.2）で共用する。
+// 抽出用の厳密な判定（URL_PATTERN）と、ics のサニタイズ用の広い判定（WIDE_URL_PATTERN）の
+// 2 本を持つ。両者の非対称性の理由は WIDE_URL_PATTERN 側のコメントを参照
 
 // "co" は "com" の前方一致になるため、正規表現の候補順で先に置かれる "com" 側を先に試させる
-const ALLOWED_BARE_TLDS = 'com|jp|net|org|io|me|ly|app|dev|link|co'
+const ALLOWED_BARE_TLD_LIST = [
+  'com',
+  'jp',
+  'net',
+  'org',
+  'io',
+  'me',
+  'ly',
+  'app',
+  'dev',
+  'link',
+  'co',
+]
+const ALLOWED_BARE_TLDS = ALLOWED_BARE_TLD_LIST.join('|')
 
 // ドット区切り語の途中（`a.` の繰り返し等）から拾うと、区切りの数だけ末尾までなめる走査を
 // 開始位置ごとに繰り返すことになり O(n^2) になるため、直前が `\w` `.` `-` のいずれでもないことを
@@ -43,4 +58,82 @@ function freshUrlPattern(): RegExp {
 /** text 中の URL_PATTERN に一致する箇所をすべて replacement に置き換える */
 export function replaceUrls(text: string, replacement: string): string {
   return text.replace(freshUrlPattern(), replacement)
+}
+
+/**
+ * ASCII の英字だけを `[Aa]` のような文字クラスに展開し、`i` フラグ無しで大文字小文字を区別しない
+ * 照合にする。WIDE_URL_PATTERN は `\p{}` に必要な `u` フラグを使うため `i` を併用できない
+ * （U+017F・U+212A が畳み込みで ASCII 文字扱いになり、\w がホスト名以外の文字まで拾ってしまう）
+ */
+function toCaseInsensitiveAscii(literal: string): string {
+  return literal.replace(/[a-zA-Z]/g, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`)
+}
+
+const ALLOWED_BARE_TLDS_CASE_INSENSITIVE =
+  ALLOWED_BARE_TLD_LIST.map(toCaseInsensitiveAscii).join('|')
+
+// ホストのラベルは「ASCII のみ」と「非 ASCII のみ（IDN や全角英数字。ブラウザは IDNA で半角に正規化して
+// 解釈する）」を別の選択肢にし、ASCII の `.` のみをラベルの区切りとして両者を跨がせない。1 つの文字クラス
+// にまとめると `example.comです` のような「ASCII ドメイン + 区切り無しの日本語文」まで 1 ラベルとして飲み込む
+const ASCII_HOST_LABEL = String.raw`[\w-]+`
+// 非 ASCII ラベルは文字・数字・結合文字（\p{L} \p{N} \p{M}）のみを許可する。区切り記号を列挙する方式だと、
+// 列挙から漏れた記号（絵文字等）までラベルに巻き込み、本文の一部を欠落させる
+const NON_ASCII_HOST_LABEL = String.raw`(?:(?![\x00-\x7F])[\p{L}\p{N}\p{M}])+`
+const WIDE_HOST_LABEL = String.raw`(?:${ASCII_HOST_LABEL}|${NON_ASCII_HOST_LABEL})`
+// 末尾ラベル（TLD 相当）も HOST_LABEL と同じ規則にし、非 ASCII TLD（`.日本` 等）を拾えるようにする。
+// IPv6 リテラルは IPv4-mapped 形式（`::ffff:1.2.3.4` 等）を拾えるよう `.` も許可する
+const WIDE_HOST = String.raw`(?:\[[0-9a-fA-F:.]+\]|(?:${WIDE_HOST_LABEL}\.)*${WIDE_HOST_LABEL})`
+// RFC 3986 の userinfo に相当する ASCII のみの文字クラス。日本語を許すと `で、担当@example.jp` のように
+// 文中の `@` まで userinfo として飲み込んでしまう
+const USERINFO = String.raw`[\w.~%!$&'()*+,;=:-]+`
+// URL に使う文字のみを許可し、直後の空白や日本語を巻き込まないようにする
+const WIDE_URL_CHARS = String.raw`[\w\-./?=&%#:]`
+// スキーム付き・www. 付き共通のホスト以降（ポート・パス）
+const WIDE_URL_TAIL = String.raw`${WIDE_HOST}(?::\d+)?(?:[/?#]${WIDE_URL_CHARS}*)?`
+
+// ベアドメイン規則は obfuscated scheme や ftp 等の直後でもホスト部を拾えるよう後読みを持たないため、
+// ドット区切りが連続する入力（`a.a.a...`）では開始位置ごとに末尾までなめて O(n^2) になる。直前の
+// 1〜2 文字が「単語文字・ハイフン」またはその直後のドットなら、前の開始位置で試して失敗した分岐の
+// 焼き直しでしかないため試さない。直前が日本語文などの非単語文字＋ドットの場合はブロックしないので、
+// `受付終了.evil.com` のような検出範囲は変わらない
+const WIDE_NOT_MID_DOT_RUN = String.raw`(?<![\w-])(?<![\w-]\.)`
+
+/**
+ * URL 判定の正規表現を毎回生成する。スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの
+ * 3 形式に加え、ホストが精密な規則に一致しない場合の受け皿としてスキーム付き URL 全体も対象にする。
+ * TLD の前方一致（`co` が `com` の一部になる等）を防ぐため直後に単語文字が続かないことを確認する。
+ * スキーム・www. 分岐には URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たせない。ics の
+ * サニタイズは obfuscated scheme（`hxxps://evil.com`）や http(s) 以外のスキーム（`ftp://evil.com`）の
+ * 直後でもホスト部だけは「[リンク]」に置換したいため（§7.2 の外部リンク 0 本の対象を広げる）
+ */
+function freshWideUrlPattern(): RegExp {
+  const httpsScheme = `${toCaseInsensitiveAscii('http')}${toCaseInsensitiveAscii('s')}?`
+  const wwwLiteral = toCaseInsensitiveAscii('www')
+  const source =
+    // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
+    String.raw`${httpsScheme}:\/\/\/*(?:${USERINFO}@)?${WIDE_URL_TAIL}` +
+    String.raw`|${wwwLiteral}\.${WIDE_URL_TAIL}` +
+    String.raw`|${WIDE_NOT_MID_DOT_RUN}[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_TLDS_CASE_INSENSITIVE})(?!\w)(?:\/${WIDE_URL_CHARS}*)?|[a-zA-Z]{2,}\/${WIDE_URL_CHARS}*)` +
+    // 上の選択肢は左から順に試すので、精密なホスト規則に一致する通常の URL はここまでで消費し尽くす。
+    // ここまで一致しなかった場合だけ受け皿としてスキーム以降を丸ごと拾う。囲み英数字（Unicode カテゴリ
+    // So）や IPv6 の zone id 等、精密なホスト規則をすり抜ける非 ASCII ホストを取りこぼさないため
+    String.raw`|${httpsScheme}:\/\/\S+`
+  // 'i' は付けない。\p{} に必要な 'u' と 'i' を組み合わせると、大文字小文字の畳み込みで
+  // U+017F（ſ）・U+212A（Kelvin 記号）が ASCII の s/k として \w や [a-z] に一致してしまい、
+  // ホスト名やパスの一部として本文の文字を巻き込む。スキーム・www.・TLD の大文字表記は
+  // toCaseInsensitiveAscii と [a-zA-Z] で個別に対応する
+  return new RegExp(source, 'gu')
+}
+
+/**
+ * ics のサニタイズ（§7.2）専用の広い判定。URL_PATTERN の 3 形式に加え、非 ASCII ホスト（IDN・全角
+ * 英数字）・IPv6 リテラル・userinfo・記号カテゴリのホストの受け皿を持つ。ics は「外部リンクを常に
+ * 0 本にする」ことが目的で、過剰一致は「[リンク]」への置換が増えるだけでリンクは増えないため、誤検出を
+ * 避けたい URL_PATTERN より広く一致してよい（§5.2）。抽出用途にはこちらを使わない
+ */
+export const WIDE_URL_PATTERN = freshWideUrlPattern()
+
+/** text 中の WIDE_URL_PATTERN に一致する箇所をすべて replacement に置き換える */
+export function replaceUrlsWide(text: string, replacement: string): string {
+  return text.replace(freshWideUrlPattern(), replacement)
 }

@@ -147,4 +147,32 @@ describe('sanitizeIcsText', () => {
     expect(sanitizeIcsText('https://😀.la')).toBe('[リンク]')
     expect(sanitizeIcsText('https://[fe80::1%25eth0]/')).toBe('[リンク]')
   })
+
+  it('難読化された scheme（hxxps://）はスキーム部分を残すが、ホスト部はベアドメインとして置換する', () => {
+    expect(sanitizeIcsText('hxxps://evil.com を見て')).toBe('hxxps://[リンク] を見て')
+    expect(sanitizeIcsText('hxxp://www.evil.com を見て')).toBe('hxxp://[リンク] を見て')
+  })
+
+  it('ftp など http(s) 以外のスキームでも、ホスト部はベアドメインとして置換する', () => {
+    expect(sanitizeIcsText('ftp://evil.com/x を見て')).toBe('ftp://[リンク] を見て')
+  })
+
+  it('日本語文の直後のドット区切りドメインは、繰り返し入力を挟んでも置換対象のまま残る', () => {
+    // ベアドメイン規則の O(n^2) 対策（後読み）が、単語文字ではない文字の直後のドットまで
+    // 塞いでいないことの確認
+    expect(sanitizeIcsText('受付終了.evil.com')).toBe('受付終了.[リンク]')
+  })
+})
+
+describe('sanitizeIcsText: 長い入力での性能', () => {
+  // Issue #19: ベアドメイン規則に後読みが無いと、ドット区切りの繰り返し入力で
+  // 開始位置ごとに末尾までなめる走査になり O(n^2) になる（'a.'.repeat(10000) で 485ms 実測）
+  sanitizeIcsText('a.') // JIT ウォームアップ
+
+  it('a. を 10000 回繰り返しても（20,000 文字）50ms 以内に返る', () => {
+    const input = 'a.'.repeat(10000)
+    const start = performance.now()
+    sanitizeIcsText(input)
+    expect(performance.now() - start).toBeLessThan(50)
+  })
 })

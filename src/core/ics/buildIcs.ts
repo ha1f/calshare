@@ -1,4 +1,5 @@
 import { formatBasicDateJst, formatBasicUtc } from '../time/jst'
+import { replaceUrlsWide } from '../text/urlPattern'
 
 export interface IcsInput {
   /** サーバが生成する `${eventId}@${config.publicHost}`。改行を含めない */
@@ -37,84 +38,13 @@ function sanitizeIcsIdentifier(text: string): string {
   return normalizeControlChars(text).replace(/\n/g, '')
 }
 
-// URL に使う文字のみを許可し、直後の空白や日本語を巻き込まないようにする
-const URL_CHARS = String.raw`[\w\-./?=&%#:]`
-
 /**
- * ASCII の英字だけを `[Aa]` のような文字クラスに展開し、`i` フラグ無しで大文字小文字を区別しない
- * 照合にする。`buildIcsUrlPattern` は `\p{}` に必要な `u` フラグを使うため `i` を併用できない
- * （U+017F・U+212A が畳み込みで ASCII 文字扱いになる。同ファイルの `buildIcsUrlPattern` 参照）
- */
-function toCaseInsensitiveAscii(literal: string): string {
-  return literal.replace(/[a-zA-Z]/g, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`)
-}
-
-const ALLOWED_BARE_DOMAIN_TLDS = [
-  'co',
-  'com',
-  'jp',
-  'net',
-  'org',
-  'io',
-  'me',
-  'ly',
-  'app',
-  'dev',
-  'link',
-]
-  .map(toCaseInsensitiveAscii)
-  .join('|')
-
-// ホストのラベルは「ASCII のみ」と「非 ASCII のみ（IDN や全角英数字。ブラウザは IDNA で半角に正規化して
-// 解釈する）」を別の選択肢にし、ASCII の `.` のみをラベルの区切りとして両者を跨がせない。1 つの文字クラス
-// にまとめると `example.comです` のような「ASCII ドメイン + 区切り無しの日本語文」まで 1 ラベルとして飲み込む
-const ASCII_HOST_LABEL = String.raw`[\w-]+`
-// 非 ASCII ラベルは文字・数字・結合文字（\p{L} \p{N} \p{M}）のみを許可する。区切り記号を列挙する方式だと、
-// 列挙から漏れた記号（絵文字等）までラベルに巻き込み、本文の一部を欠落させる
-const NON_ASCII_HOST_LABEL = String.raw`(?:(?![\x00-\x7F])[\p{L}\p{N}\p{M}])+`
-const HOST_LABEL = String.raw`(?:${ASCII_HOST_LABEL}|${NON_ASCII_HOST_LABEL})`
-// 末尾ラベル（TLD 相当）も HOST_LABEL と同じ規則にし、非 ASCII TLD（`.日本` 等）を拾えるようにする。
-// IPv6 リテラルは IPv4-mapped 形式（`::ffff:1.2.3.4` 等）を拾えるよう `.` も許可する
-const HOST = String.raw`(?:\[[0-9a-fA-F:.]+\]|(?:${HOST_LABEL}\.)*${HOST_LABEL})`
-// RFC 3986 の userinfo に相当する ASCII のみの文字クラス。日本語を許すと `で、担当@example.jp` のように
-// 文中の `@` まで userinfo として飲み込んでしまう
-const USERINFO = String.raw`[\w.~%!$&'()*+,;=:-]+`
-// スキーム付き・www. 付き共通のホスト以降（ポート・パス）。ホストの定義を共有し、パス部は URL_CHARS で絞る
-const URL_TAIL = String.raw`${HOST}(?::\d+)?(?:[/?#]${URL_CHARS}*)?`
-
-/**
- * URL 判定用の正規表現を毎回生成する。スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの
- * 3 形式に加え、ホストが精密な規則に一致しない場合の受け皿としてスキーム付き URL 全体も対象にする。
- * TLD の前方一致（`co` が `com` の一部になる等）を防ぐため直後に単語文字が続かないことを確認する
- * （`core/text/urlPattern.ts` への統合は Issue #19）。
- */
-function buildIcsUrlPattern(): RegExp {
-  const httpsScheme = `${toCaseInsensitiveAscii('http')}${toCaseInsensitiveAscii('s')}?`
-  const wwwLiteral = toCaseInsensitiveAscii('www')
-  return new RegExp(
-    // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
-    String.raw`${httpsScheme}:\/\/\/*(?:${USERINFO}@)?${URL_TAIL}` +
-      String.raw`|${wwwLiteral}\.${URL_TAIL}` +
-      String.raw`|[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_DOMAIN_TLDS})(?!\w)(?:\/${URL_CHARS}*)?|[a-zA-Z]{2,}\/${URL_CHARS}*)` +
-      // 上の選択肢は左から順に試すので、精密なホスト規則に一致する通常の URL はここまでで消費し尽くす。
-      // ここまで一致しなかった場合だけ受け皿としてスキーム以降を丸ごと拾う。囲み英数字（Unicode カテゴリ
-      // So）や IPv6 の zone id 等、精密なホスト規則をすり抜ける非 ASCII ホストを取りこぼさないため
-      String.raw`|${httpsScheme}:\/\/\S+`,
-    // 'i' は付けない。\p{} に必要な 'u' と 'i' を組み合わせると、大文字小文字の畳み込みで
-    // U+017F（ſ）・U+212A（Kelvin 記号）が ASCII の s/k として \w や [a-z] に一致してしまい、
-    // ホスト名やパスの一部として本文の文字を巻き込む。スキーム・www.・TLD の大文字表記は
-    // toCaseInsensitiveAscii と [a-zA-Z] で個別に対応する
-    'gu',
-  )
-}
-
-/**
- * URL（暫定判定。`core/text/urlPattern.ts` の共有定義への統合は Issue #19）を「[リンク]」に置換する。
+ * URL（core/text/urlPattern.ts の WIDE_URL_PATTERN、§5.2・§7.2）を「[リンク]」に置換する。
  * 制御文字の除去を URL 判定より先に行う。順序を入れ替えると、URL の途中に制御文字を挟むことで判定を
  * すり抜けられる。SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す。
  */
 export function sanitizeIcsText(text: string): string {
-  return normalizeControlChars(text).replace(buildIcsUrlPattern(), '[リンク]')
+  return replaceUrlsWide(normalizeControlChars(text), '[リンク]')
 }
 
 /**

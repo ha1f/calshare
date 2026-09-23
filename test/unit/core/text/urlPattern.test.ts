@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { replaceUrls, URL_PATTERN } from '../../../../src/core/text/urlPattern'
+import {
+  replaceUrls,
+  replaceUrlsWide,
+  URL_PATTERN,
+  WIDE_URL_PATTERN,
+} from '../../../../src/core/text/urlPattern'
 
 function matchAll(text: string): string[] {
   return Array.from(text.matchAll(new RegExp(URL_PATTERN.source, URL_PATTERN.flags)), (m) => m[0])
+}
+
+function matchAllWide(text: string): string[] {
+  return Array.from(
+    text.matchAll(new RegExp(WIDE_URL_PATTERN.source, WIDE_URL_PATTERN.flags)),
+    (m) => m[0],
+  )
 }
 
 describe('URL_PATTERN', () => {
@@ -62,6 +74,10 @@ describe('URL_PATTERN', () => {
       'https://b.example.com',
     ])
   })
+
+  it('ftp:// のような http(s) 以外のスキームには一致しない', () => {
+    expect(matchAll('ftp://evil.com/x を見て')).toEqual([])
+  })
 })
 
 describe('URL_PATTERN: 長い入力での性能', () => {
@@ -99,5 +115,116 @@ describe('replaceUrls', () => {
   it('繰り返し呼んでも lastIndex の状態を引きずらない', () => {
     expect(replaceUrls('https://a.example.com', '[リンク]')).toBe('[リンク]')
     expect(replaceUrls('https://b.example.com', '[リンク]')).toBe('[リンク]')
+  })
+})
+
+describe('WIDE_URL_PATTERN', () => {
+  it('URL_PATTERN の 3 形式にも一致する', () => {
+    expect(matchAllWide('https://example.com/map です')).toEqual(['https://example.com/map'])
+    expect(matchAllWide('www.example.com を見て')).toEqual(['www.example.com'])
+    expect(matchAllWide('example.com を見て')).toEqual(['example.com'])
+  })
+
+  it('難読化された scheme（hxxps://）はスキームとして扱わないが、ホスト部はベアドメインとして一致する', () => {
+    expect(matchAllWide('hxxps://evil.com を見て')).toEqual(['evil.com'])
+  })
+
+  it('ftp などの http(s) 以外のスキームでも、ホスト部はベアドメインとして一致する', () => {
+    expect(matchAllWide('ftp://evil.com/x を見て')).toEqual(['evil.com/x'])
+  })
+
+  it('IDN（日本語ドメイン）を含む https:// リンクに一致する', () => {
+    expect(matchAllWide('https://例え.日本/x を見て')).toEqual(['https://例え.日本/x'])
+  })
+
+  it('userinfo・ポート・IPv6 リテラルを含む URL に一致する', () => {
+    expect(matchAllWide('https://user:pw@evil.com/x')).toEqual(['https://user:pw@evil.com/x'])
+    expect(matchAllWide('http://[::1]/a')).toEqual(['http://[::1]/a'])
+  })
+
+  it('ホストが記号カテゴリの文字で書かれていても、受け皿としてスキーム以降全体に一致する', () => {
+    expect(matchAllWide('https://ⓔⓥⓘⓛ.com')).toEqual(['https://ⓔⓥⓘⓛ.com'])
+  })
+})
+
+describe('WIDE_URL_PATTERN: 長い入力での性能', () => {
+  // ベアドメイン分岐は URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たないため、対策が
+  // 無いとドット区切りの繰り返し入力で O(n^2) になる（Issue #19）
+  matchAllWide('a.') // JIT ウォームアップ
+
+  it.each([
+    ['a. を 1000 回繰り返す', 'a.'.repeat(1000)],
+    ['-. を 1000 回繰り返す', '-.'.repeat(1000)],
+  ])('%s（2,000 文字）が 50ms 以内に返る', (_label, input) => {
+    const start = performance.now()
+    matchAllWide(input)
+    expect(performance.now() - start).toBeLessThan(50)
+  })
+
+  it('a. を 10000 回繰り返しても（20,000 文字）50ms 以内に返る', () => {
+    const input = 'a.'.repeat(10000)
+    const start = performance.now()
+    matchAllWide(input)
+    expect(performance.now() - start).toBeLessThan(50)
+  })
+
+  it('日本語文の直後のドット区切りドメインは、繰り返し入力の中でも置換対象のまま残る', () => {
+    // 後読みで開始位置を絞っても、単語文字ではない文字の直後のドットまでは塞がないことの確認
+    expect(matchAllWide('受付終了.evil.com')).toEqual(['evil.com'])
+  })
+})
+
+describe('replaceUrlsWide', () => {
+  it('一致した URL をすべて置換する', () => {
+    expect(replaceUrlsWide('https://example.com/map で待ち合わせ', '[リンク]')).toBe(
+      '[リンク] で待ち合わせ',
+    )
+  })
+
+  it('URL が無ければそのまま返す', () => {
+    expect(replaceUrlsWide('渋谷で飲み会', '[リンク]')).toBe('渋谷で飲み会')
+  })
+
+  it('繰り返し呼んでも lastIndex の状態を引きずらない', () => {
+    expect(replaceUrlsWide('https://a.example.com', '[リンク]')).toBe('[リンク]')
+    expect(replaceUrlsWide('https://b.example.com', '[リンク]')).toBe('[リンク]')
+  })
+})
+
+describe('URL_PATTERN と WIDE_URL_PATTERN の本数の一致', () => {
+  // ASCII の scheme 付き／www./ベアドメインだけの通常入力では、抽出用（URL_PATTERN）と
+  // 置換用（WIDE_URL_PATTERN）の一致本数は一致する。作成時に数える URL 本数（MAX_MEMO_URLS、§9.2）と
+  // ics で置換される本数がずれない範囲はここまでで、IDN 等の非対称ケースは別に固定する
+  it.each([
+    ['https://example.com/map です', 1],
+    ['www.example.com を見て', 1],
+    ['example.com bit.ly example.xyz/path', 3],
+    ['https://a.example.com と https://b.example.com', 2],
+    ['渋谷で飲み会', 0],
+  ])('%s の一致本数が一致する', (input, expectedCount) => {
+    expect(matchAll(input)).toHaveLength(expectedCount)
+    expect(matchAllWide(input)).toHaveLength(expectedCount)
+  })
+
+  it('WIDE_URL_PATTERN は URL_PATTERN の上位集合で、置換後の文字列に URL_PATTERN の一致は残らない', () => {
+    const inputs = [
+      'https://example.com/map です',
+      'ftp://evil.com/x を見て',
+      'hxxps://evil.com を見て',
+      'https://例え.日本/x を見て',
+      'www.日本語.jp',
+      'https://user:pw@evil.com/x',
+    ]
+    for (const input of inputs) {
+      expect(matchAll(replaceUrlsWide(input, '[リンク]'))).toEqual([])
+    }
+  })
+
+  it('非 ASCII ホストや他スキームでは WIDE_URL_PATTERN の方が本数が多くなる（既知の非対称性、§5.2）', () => {
+    expect(matchAll('www.日本語.jp')).toHaveLength(0)
+    expect(matchAllWide('www.日本語.jp')).toHaveLength(1)
+
+    expect(matchAll('ftp://evil.com/x')).toHaveLength(0)
+    expect(matchAllWide('ftp://evil.com/x')).toHaveLength(1)
   })
 })

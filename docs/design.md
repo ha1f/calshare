@@ -471,7 +471,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 1. 入力の改行は `\r\n` `\n` のどちらも受け付ける。先頭に空行があっても無視し、最初の空でない行をパース対象（1 行目）にする。それより後ろの行は trim して `memo` の末尾に付ける（1 行目由来のメモがあれば改行で結合）。
 2. 1 行目を正規化する（全角英数字・記号 → 半角、全角スペース → 半角、`：` → `:`、`／` → `/`、`．` → `.`、C0 制御文字とゼロ幅文字（U+200B〜U+200D, U+FEFF）を除去）。`-` `−` `–` `～` `〜` の範囲記号は文字列を書き換えず、日付・時刻の正規表現側の文字クラスとして扱う（手順 4・5）。行全体を `〜` に書き換えると、日付・時刻と無関係なハイフン（電話番号 `03-1234-5678`、英語表記 `Re-union` 等）まで壊れるため
 3. **URL** を 1 行目から取り除き、メモの先頭に移す。URL の判定は `src/core/text/urlPattern.ts` の 1 本の正規表現 `URL_PATTERN` に集約し、`countUrls`（§9.2）と ics のサニタイズ（§7.2）も同じ定義を参照する。判定対象は (a) `https?://` 付き、(b) `www.` 始まり（ホスト名は ASCII の語・ハイフンのみ）、(c) ベアドメイン `[\w-]+(\.[\w-]+)*\.[a-z]{2,}` のうち **`/` が続く（`example.xyz/path`）か、末尾ラベルが `co|com|jp|net|org|io|me|ly|app|dev|link` のいずれかで、かつその直後に英数字・ハイフンが続かない（`example.com` `example.co.jp` `bit.ly` は該当、`example.company` は非該当）** のもの（末尾ラベルが英字 2 文字以上というだけでは `Node.js` `Vue.js` `Next.js` のような製品名が URL に数えられ、ics で「[リンク]」に置換されてしまう。`9.20` のような数字はドメインにしない）の 3 形式。(b)(c) はいずれも、単語の途中（ドット区切り語の一部）や `hxxps://` のような難読化された scheme の直後からは拾わない。`hxxps://` `hxxp://www...` のような難読化表記自体も対象にしない（受け手のカレンダーアプリもリンク化しないため）。
-   > ics のサニタイズ（§7.2）は `URL_PATTERN` より広く一致してよい。`URL_PATTERN` は「本文からの URL 抽出」が目的で誤検出（製品名等）を避ける必要があるのに対し、ics 側は「§7.2 の外部リンク 0 本」が目的で、広く一致しすぎても文字列が過剰に「[リンク]」へ置換されるだけでリンクは増えない。T2 着地までの `buildIcs.ts` 内の暫定判定（IDN・全角ホスト・IPv6 リテラル・userinfo 等を独自に拾う）が `URL_PATTERN` と完全一致していないのはこの非対称性にもとづく設計判断だが、統合後にこの広さを `URL_PATTERN` 側に持たせるか ics 側だけに残すかは未決定で、Issue #19 で判断する。
+   > ics のサニタイズ（§7.2）は `URL_PATTERN` より広く一致してよい。`URL_PATTERN` は「本文からの URL 抽出」が目的で誤検出（製品名等）を避ける必要があるのに対し、ics 側は「§7.2 の外部リンク 0 本」が目的で、広く一致しすぎても文字列が過剰に「[リンク]」へ置換されるだけでリンクは増えない。この非対称性のため `src/core/text/urlPattern.ts` は 2 本の正規表現を持つ: 抽出用の `URL_PATTERN`（本節の 3 形式のみ）と、ics のサニタイズ専用の `WIDE_URL_PATTERN`（IDN・全角ホスト・IPv6 リテラル・userinfo・記号カテゴリホストの受け皿に加え、obfuscated scheme や `ftp://` 等の他スキームの直後でもホスト部だけは拾う）。`sanitizeIcsText` は `WIDE_URL_PATTERN` を呼ぶだけで独自の判定を持たない（Issue #19）。
 4. **日付トークン**を検出する。複数見つかった場合は、出現順に検証し、最初に有効な（カレンダー上に存在し、規則 D2・D3 も満たす）ものを採用する。それより前にあった無効な候補は消費せず、通常の文字として残す（規則 D6・D7）。有効な候補が 1 つも無ければ、最初に見つかった無効な候補について `invalid_date` を issue に入れる。日付範囲 `M/D〜M/D` は 1 トークン。
 5. **時刻トークン**（範囲・単発）を検出する。日付トークンと同様に、出現順に検証し最初に有効なものを採用する（規則 T6）。
 6. 日付・時刻として消費した部分を空白に置き換え、残りの文字列 `R` から **場所** を検出する（§5.5 規則 L）。
@@ -870,10 +870,10 @@ export interface IcsInput {
 }
 export function buildIcs(input: IcsInput): string
 /**
- * `\r\n` を `\n` に正規化し制御文字を除去した上で、URL（URL_PATTERN、§5.2）を「[リンク]」に置換する。
+ * `\r\n` を `\n` に正規化し制御文字を除去した上で、URL（`core/text/urlPattern.ts` の
+ * `WIDE_URL_PATTERN`、§5.2）を「[リンク]」に置換する。
  * 制御文字の除去を URL 判定より先に行わないと、URL の途中に制御文字を挟むことで判定をすり抜けられる。
  * SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す。
- * T2（`core/text/urlPattern.ts`）着地までは `buildIcs.ts` 内の暫定判定を使う。統合は Issue #19
  */
 export function sanitizeIcsText(text: string): string
 /**
@@ -951,7 +951,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 ### 9.2 URL の扱い
 
 - 詳細ページのメモ内で URL らしき文字列を自動リンク化しない。リンク化ライブラリも導入しない。
-- URL の判定は `src/core/text/urlPattern.ts` の `URL_PATTERN` 1 本に集約する（§5.2）。パーサの URL 分離・`countUrls`・ics のサニタイズが同じ定義を参照するので、「作成時に数えた本数」と「ics で置換される本数」が一致する。T2（`core/text/urlPattern.ts`）着地までは ics 側が `buildIcs.ts` 内の暫定判定を使うため、本数が一致しないケースがある（Issue #19）。
+- URL の判定は `src/core/text/urlPattern.ts` に集約する（§5.2）。パーサの URL 分離・`countUrls` は抽出用の `URL_PATTERN` を、ics のサニタイズはサニタイズ専用の `WIDE_URL_PATTERN` を参照する。通常の ASCII URL では両者の本数は一致するが、`WIDE_URL_PATTERN` は IDN・記号カテゴリホスト・obfuscated scheme 等も拾う分だけ広いため、「作成時に数えた本数」より「ics で置換される本数」が多くなることがある（§5.2 の非対称性、Issue #19）。この非対称性が「作成時に数えた URL は ics から必ず消える」という向きでしか成立しないことは `test/unit/core/text/urlPattern.test.ts` で固定している。
 - 作成・更新時に `title + location + memo` に含まれる URL の総数が `MAX_MEMO_URLS = 3` を超えたら `TOO_MANY_URLS`（400）。`raw_text` は数えない（1 行目の URL はメモへ移されるので二重に数えない）。「地図 URL + 申込フォーム URL」は正当な用途として通す。
 - ics の SUMMARY / LOCATION / DESCRIPTION では URL を「[リンク]」に置換する（§7.2）。
 - 「地図で見る」は場所文字列を `encodeURIComponent` した固定パターンの Google マップ検索 URL で、ユーザー入力を URL として解釈しない。
