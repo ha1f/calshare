@@ -1170,7 +1170,7 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 │   │   ├── types.ts                 # EventFields / PageSummary / Json 型 / ChangeSnapshot / ReportReason / ValidationErrorCode（足場 PR が所有）
 │   │   ├── api/types.ts             # API のリクエスト / レスポンス型。web と server が共用（足場 PR が所有）
 │   │   ├── time/jst.ts              # JST ⇔ UTC 変換・整形（足場 PR が所有）
-│   │   ├── text/urlPattern.ts       # URL 判定の正規表現 1 本（パーサ・countUrls・ics で共用）
+│   │   ├── text/urlPattern.ts       # URL 判定の正規表現。抽出用（パーサ・countUrls）と ics サニタイズ用の 2 本
 │   │   ├── parse/{parseEventText,normalize,dateTokens,timeTokens,locationTitle,stopWords,types}.ts
 │   │   ├── interpret/{types,ruleBasedInterpreter}.ts
 │   │   ├── prefill/resolvePrefill.ts

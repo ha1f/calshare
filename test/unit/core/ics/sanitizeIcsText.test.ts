@@ -167,7 +167,7 @@ describe('sanitizeIcsText', () => {
     expect(sanitizeIcsText('https://x:1evil.com/path を見て')).toBe('[リンク][リンク] を見て')
   })
 
-  it('複数の URL が区切り文字を挟まず並んでいても、両方とも置換する', () => {
+  it('カンマ区切りで並ぶ 2 つの URL は、両方とも置換する', () => {
     expect(sanitizeIcsText('https://evil.com/x,www.evil2.com')).toBe('[リンク],[リンク]')
   })
 })

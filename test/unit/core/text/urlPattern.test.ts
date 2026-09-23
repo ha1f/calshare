@@ -163,7 +163,8 @@ describe('WIDE_URL_PATTERN', () => {
     ])
   })
 
-  it('複数の URL が区切り文字を挟まず並んでいても、それぞれ本数どおりに一致する', () => {
+  it('カンマ区切りで並ぶ 2 つの URL は、それぞれ別の URL として一致する', () => {
+    // scheme 分岐のパス文字（WIDE_URL_CHARS）はカンマを含まないため、1 つ目はカンマの手前で終わる
     expect(matchAllWide('https://evil.com/x,www.evil2.com')).toEqual([
       'https://evil.com/x',
       'www.evil2.com',
@@ -186,6 +187,16 @@ describe('WIDE_URL_PATTERN: 長い入力での性能', () => {
 
   it('a. を 10000 回繰り返しても（20,000 文字）50ms 以内に返る', () => {
     const input = 'a.'.repeat(10000)
+    const start = performance.now()
+    matchAllWide(input)
+    expect(performance.now() - start).toBeLessThan(50)
+  })
+
+  it('ドットを含まない単語文字の繰り返し（MAX_MEMO_LENGTH 相当の 2,000 文字）も 50ms 以内に返る', () => {
+    // 中間ラベルの繰り返し回数の上限はドット区切りの入力にしか効かない。ドットを含まない
+    // 単語文字の連続（`[\w-]+` 単体）は依然として開始位置ごとに O(n) の走査になり得るため、
+    // MAX_MEMO_LENGTH（2000）の範囲に収まることをここで固定する
+    const input = 'a'.repeat(2000)
     const start = performance.now()
     matchAllWide(input)
     expect(performance.now() - start).toBeLessThan(50)
@@ -248,9 +259,14 @@ describe('URL_PATTERN と WIDE_URL_PATTERN の本数の一致', () => {
     expect(matchAll('ftp://evil.com/x')).toHaveLength(0)
     expect(matchAllWide('ftp://evil.com/x')).toHaveLength(1)
 
-    // 全角英数字を含むホストは、ASCII 部分だけが URL_PATTERN のベアドメインとして単独一致する
-    // ケースがあるため単純な優劣にはならないが、WIDE_URL_PATTERN の合計本数は URL_PATTERN 以上になる
+    // URL_PATTERN の scheme 分岐（`https?:\/\/[^\s]+`）はカンマも拾って 1 本にまとめて一致するが、
+    // WIDE_URL_PATTERN の scheme 分岐はパス文字にカンマを含まないためカンマの手前で終わり、
+    // 残りが別のベアドメインとしてもう 1 本一致する
     expect(matchAll('https://evil.com/x,www.evil2.com')).toHaveLength(1)
     expect(matchAllWide('https://evil.com/x,www.evil2.com')).toHaveLength(2)
+
+    // 全角英数字を含むホストは、ASCII 部分だけが URL_PATTERN のベアドメインとして単独一致するため
+    expect(matchAll('https://exａmple.com/x')).toHaveLength(1)
+    expect(matchAllWide('https://exａmple.com/x')).toHaveLength(2)
   })
 })
