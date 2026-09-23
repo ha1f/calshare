@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest'
+import {
+  CROCKFORD_ALPHABET,
+  encodeCrockford,
+  isValidPageId,
+  PAGE_ID_PATTERN,
+} from '../../../../src/core/id/crockford'
+import { RESERVED_PATHS } from '../../../../src/core/config/reservedPaths'
+
+describe('encodeCrockford', () => {
+  it('各バイトを Crockford Base32 の 1 文字に写像する', () => {
+    // 32 の倍数と余りの境界（0, 31, 32, 255）を確認する
+    expect(encodeCrockford(new Uint8Array([0, 31, 32, 255]))).toBe(
+      CROCKFORD_ALPHABET[0] +
+        CROCKFORD_ALPHABET[31] +
+        CROCKFORD_ALPHABET[0] +
+        CROCKFORD_ALPHABET[255 % 32],
+    )
+  })
+
+  it('アルファベットに i l o u を含まない（32 文字）', () => {
+    expect(CROCKFORD_ALPHABET.length).toBe(32)
+    expect(CROCKFORD_ALPHABET).not.toMatch(/[ilou]/)
+  })
+})
+
+describe('isValidPageId', () => {
+  it('12 文字・許可文字のみの ID を受け付ける', () => {
+    expect(isValidPageId('a1b2c3d4e5f6')).toBe(true)
+  })
+
+  it('11 文字は拒否する', () => {
+    expect(isValidPageId('a1b2c3d4e5f')).toBe(false)
+  })
+
+  it('13 文字は拒否する', () => {
+    expect(isValidPageId('a1b2c3d4e5f67')).toBe(false)
+  })
+
+  it('大文字は拒否する', () => {
+    expect(isValidPageId('A1b2c3d4e5f6')).toBe(false)
+  })
+
+  it('i l o u を含む文字列は拒否する', () => {
+    expect(isValidPageId('ailou3d4e5f6')).toBe(false)
+  })
+
+  it('プロトコル相対 URL（//example.com）を拒否する', () => {
+    expect(isValidPageId('//example.com')).toBe(false)
+  })
+
+  it('URL エンコードされたスラッシュ（%2F%2F）を拒否する', () => {
+    expect(isValidPageId('%2F%2F')).toBe(false)
+  })
+
+  it('予約パスとは長さが異なるため一致しない', () => {
+    for (const path of RESERVED_PATHS) {
+      expect(isValidPageId(path)).toBe(false)
+    }
+  })
+
+  it('PAGE_ID_PATTERN は isValidPageId と同じ文字集合・長さを表す', () => {
+    expect(new RegExp(`^${PAGE_ID_PATTERN}$`).test('a1b2c3d4e5f6')).toBe(true)
+  })
+})

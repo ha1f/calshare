@@ -688,7 +688,7 @@ export interface PrefillParams {
 }
 
 export interface PrefillResult {
-  rawText: string          // textarea の初期値（q があれば q、無ければ text から組み立てた 1 行）
+  rawText: string          // textarea の初期値（構造化パラメータがあれば text、q のみなら q）
   fields: Partial<EventFields>
   manualKeys: (keyof EventFields)[]   // 構造化パラメータで来た項目は manual 扱いで固定する
 }
