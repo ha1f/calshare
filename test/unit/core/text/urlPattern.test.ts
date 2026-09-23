@@ -4,6 +4,7 @@ import {
   replaceUrls,
   replaceUrlsWide,
   URL_PATTERN,
+  WIDE_BARE_DOMAIN_MAX_LABELS,
   WIDE_URL_PATTERN,
 } from '../../../../src/core/text/urlPattern'
 
@@ -203,10 +204,10 @@ describe('WIDE_URL_PATTERN: 長い入力での性能', () => {
   })
 
   it('中間ラベルが上限を超えるホストは末尾側だけ一致し、残りに URL_PATTERN の一致は無い', () => {
-    // WIDE_BARE_DOMAIN_MAX_LABELS（20）を超える中間ラベルは先頭側が本文に残るが、TLD を
+    // WIDE_BARE_DOMAIN_MAX_LABELS を超える中間ラベルは先頭側が本文に残るが、TLD を
     // 含まないため URL_PATTERN には再一致しない
-    const input = `${'a.'.repeat(25)}com`
-    expect(matchAllWide(input)).toEqual([`${'a.'.repeat(21)}com`])
+    const input = `${'a.'.repeat(WIDE_BARE_DOMAIN_MAX_LABELS + 5)}com`
+    expect(matchAllWide(input)).toEqual([`${'a.'.repeat(WIDE_BARE_DOMAIN_MAX_LABELS + 1)}com`])
     expect(matchAll(replaceUrlsWide(input, '[リンク]'))).toEqual([])
   })
 
@@ -269,7 +270,7 @@ describe('URL_PATTERN と WIDE_URL_PATTERN の本数の一致', () => {
       'evil.jphttp://x.com',
       'a.comWWW.evil.com',
       'example.com?q=1',
-      `${'l.'.repeat(25)}com`,
+      `${'l.'.repeat(WIDE_BARE_DOMAIN_MAX_LABELS + 5)}com`,
     ]
     for (const input of inputs) {
       expect(matchAll(input).length).toBeGreaterThan(0)

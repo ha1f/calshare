@@ -96,7 +96,7 @@ const WIDE_URL_TAIL = String.raw`${WIDE_HOST}(?::\d+)?(?:[/?#]${WIDE_URL_CHARS}*
 // ここまでのラベル数はまず無いので、繰り返し回数の上限で個々の開始位置のバックトラックを打ち切る。
 // 後読みで開始位置そのものを絞る方式と違い、直前の文字を見ないので他の分岐が直前で終わる
 // ケース（`https://x:1evil.com` 等）を誤ってブロックしない
-const WIDE_BARE_DOMAIN_MAX_LABELS = 20
+export const WIDE_BARE_DOMAIN_MAX_LABELS = 20
 
 // www.・ベアドメイン分岐には URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たせない。ics の
 // サニタイズは難読化された scheme（`hxxps://evil.com`）や http(s) 以外のスキーム（`ftp://evil.com`）の
