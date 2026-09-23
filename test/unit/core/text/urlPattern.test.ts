@@ -145,11 +145,34 @@ describe('WIDE_URL_PATTERN', () => {
   it('ホストが記号カテゴリの文字で書かれていても、受け皿としてスキーム以降全体に一致する', () => {
     expect(matchAllWide('https://ⓔⓥⓘⓛ.com')).toEqual(['https://ⓔⓥⓘⓛ.com'])
   })
+
+  it('日本語文の直後のドット区切りドメインにも一致する', () => {
+    expect(matchAllWide('受付終了.evil.com')).toEqual(['evil.com'])
+  })
+
+  it('`//` から始まる scheme 省略の URL は、ホスト部だけベアドメインとして一致する', () => {
+    expect(matchAllWide('//evil.xyz/a を見て')).toEqual(['evil.xyz/a'])
+  })
+
+  it('別の分岐がホストの途中（ポート番号の数字）で終わっても、続く文字列を別のベアドメインとして取りこぼさない', () => {
+    // scheme 分岐は URL_TAIL のポートで `https://x:1` までしか消費しないため、続く `evil.com/path` を
+    // ベアドメイン分岐が拾えないと外部リンクが本文に残る（§7.2 の外部リンク 0 本が崩れる）
+    expect(matchAllWide('https://x:1evil.com/path を見て')).toEqual([
+      'https://x:1',
+      'evil.com/path',
+    ])
+  })
+
+  it('複数の URL が区切り文字を挟まず並んでいても、それぞれ本数どおりに一致する', () => {
+    expect(matchAllWide('https://evil.com/x,www.evil2.com')).toEqual([
+      'https://evil.com/x',
+      'www.evil2.com',
+    ])
+  })
 })
 
 describe('WIDE_URL_PATTERN: 長い入力での性能', () => {
-  // ベアドメイン分岐は URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たないため、対策が
-  // 無いとドット区切りの繰り返し入力で O(n^2) になる（Issue #19）
+  // ベアドメイン分岐は中間ラベルの繰り返し回数に上限を設けて O(n^2) を防いでいる
   matchAllWide('a.') // JIT ウォームアップ
 
   it.each([
@@ -166,11 +189,6 @@ describe('WIDE_URL_PATTERN: 長い入力での性能', () => {
     const start = performance.now()
     matchAllWide(input)
     expect(performance.now() - start).toBeLessThan(50)
-  })
-
-  it('日本語文の直後のドット区切りドメインは、繰り返し入力の中でも置換対象のまま残る', () => {
-    // 後読みで開始位置を絞っても、単語文字ではない文字の直後のドットまでは塞がないことの確認
-    expect(matchAllWide('受付終了.evil.com')).toEqual(['evil.com'])
   })
 })
 
@@ -214,6 +232,9 @@ describe('URL_PATTERN と WIDE_URL_PATTERN の本数の一致', () => {
       'https://例え.日本/x を見て',
       'www.日本語.jp',
       'https://user:pw@evil.com/x',
+      'https://evil.com/x,www.evil2.com',
+      'https://exａmple.com/x',
+      'https://x:1evil.com/path',
     ]
     for (const input of inputs) {
       expect(matchAll(replaceUrlsWide(input, '[リンク]'))).toEqual([])
@@ -226,5 +247,10 @@ describe('URL_PATTERN と WIDE_URL_PATTERN の本数の一致', () => {
 
     expect(matchAll('ftp://evil.com/x')).toHaveLength(0)
     expect(matchAllWide('ftp://evil.com/x')).toHaveLength(1)
+
+    // 全角英数字を含むホストは、ASCII 部分だけが URL_PATTERN のベアドメインとして単独一致する
+    // ケースがあるため単純な優劣にはならないが、WIDE_URL_PATTERN の合計本数は URL_PATTERN 以上になる
+    expect(matchAll('https://evil.com/x,www.evil2.com')).toHaveLength(1)
+    expect(matchAllWide('https://evil.com/x,www.evil2.com')).toHaveLength(2)
   })
 })

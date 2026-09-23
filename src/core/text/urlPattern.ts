@@ -91,12 +91,12 @@ const WIDE_URL_CHARS = String.raw`[\w\-./?=&%#:]`
 // スキーム付き・www. 付き共通のホスト以降（ポート・パス）
 const WIDE_URL_TAIL = String.raw`${WIDE_HOST}(?::\d+)?(?:[/?#]${WIDE_URL_CHARS}*)?`
 
-// ベアドメイン規則は obfuscated scheme や ftp 等の直後でもホスト部を拾えるよう後読みを持たないため、
-// ドット区切りが連続する入力（`a.a.a...`）では開始位置ごとに末尾までなめて O(n^2) になる。直前の
-// 1〜2 文字が「単語文字・ハイフン」またはその直後のドットなら、前の開始位置で試して失敗した分岐の
-// 焼き直しでしかないため試さない。直前が日本語文などの非単語文字＋ドットの場合はブロックしないので、
-// `受付終了.evil.com` のような検出範囲は変わらない
-const WIDE_NOT_MID_DOT_RUN = String.raw`(?<![\w-])(?<![\w-]\.)`
+// ベアドメイン規則の中間ラベル（`(?:\.[\w-]+)*`）は無制限だと、ドット区切りが連続する入力
+// （`a.a.a...`）で開始位置ごとに末尾までなめるバックトラックになり O(n^2) になる。実在のホスト名で
+// ここまでのラベル数はまず無いので、繰り返し回数の上限で個々の開始位置のバックトラックを打ち切る。
+// 後読みで開始位置そのものを絞る方式と違い、直前の文字を見ないので他の分岐が直前で終わる
+// ケース（`https://x:1evil.com` 等）を誤ってブロックしない
+const WIDE_BARE_DOMAIN_MAX_LABELS = 20
 
 /**
  * URL 判定の正規表現を毎回生成する。スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの
@@ -113,7 +113,7 @@ function freshWideUrlPattern(): RegExp {
     // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
     String.raw`${httpsScheme}:\/\/\/*(?:${USERINFO}@)?${WIDE_URL_TAIL}` +
     String.raw`|${wwwLiteral}\.${WIDE_URL_TAIL}` +
-    String.raw`|${WIDE_NOT_MID_DOT_RUN}[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_TLDS_CASE_INSENSITIVE})(?!\w)(?:\/${WIDE_URL_CHARS}*)?|[a-zA-Z]{2,}\/${WIDE_URL_CHARS}*)` +
+    String.raw`|[\w-]+(?:\.[\w-]+){0,${WIDE_BARE_DOMAIN_MAX_LABELS}}\.(?:(?:${ALLOWED_BARE_TLDS_CASE_INSENSITIVE})(?!\w)(?:\/${WIDE_URL_CHARS}*)?|[a-zA-Z]{2,}\/${WIDE_URL_CHARS}*)` +
     // 上の選択肢は左から順に試すので、精密なホスト規則に一致する通常の URL はここまでで消費し尽くす。
     // ここまで一致しなかった場合だけ受け皿としてスキーム以降を丸ごと拾う。囲み英数字（Unicode カテゴリ
     // So）や IPv6 の zone id 等、精密なホスト規則をすり抜ける非 ASCII ホストを取りこぼさないため

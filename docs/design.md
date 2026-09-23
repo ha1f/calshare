@@ -470,7 +470,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 
 1. 入力の改行は `\r\n` `\n` のどちらも受け付ける。先頭に空行があっても無視し、最初の空でない行をパース対象（1 行目）にする。それより後ろの行は trim して `memo` の末尾に付ける（1 行目由来のメモがあれば改行で結合）。
 2. 1 行目を正規化する（全角英数字・記号 → 半角、全角スペース → 半角、`：` → `:`、`／` → `/`、`．` → `.`、C0 制御文字とゼロ幅文字（U+200B〜U+200D, U+FEFF）を除去）。`-` `−` `–` `～` `〜` の範囲記号は文字列を書き換えず、日付・時刻の正規表現側の文字クラスとして扱う（手順 4・5）。行全体を `〜` に書き換えると、日付・時刻と無関係なハイフン（電話番号 `03-1234-5678`、英語表記 `Re-union` 等）まで壊れるため
-3. **URL** を 1 行目から取り除き、メモの先頭に移す。URL の判定は `src/core/text/urlPattern.ts` の 1 本の正規表現 `URL_PATTERN` に集約し、`countUrls`（§9.2）と ics のサニタイズ（§7.2）も同じ定義を参照する。判定対象は (a) `https?://` 付き、(b) `www.` 始まり（ホスト名は ASCII の語・ハイフンのみ）、(c) ベアドメイン `[\w-]+(\.[\w-]+)*\.[a-z]{2,}` のうち **`/` が続く（`example.xyz/path`）か、末尾ラベルが `co|com|jp|net|org|io|me|ly|app|dev|link` のいずれかで、かつその直後に英数字・ハイフンが続かない（`example.com` `example.co.jp` `bit.ly` は該当、`example.company` は非該当）** のもの（末尾ラベルが英字 2 文字以上というだけでは `Node.js` `Vue.js` `Next.js` のような製品名が URL に数えられ、ics で「[リンク]」に置換されてしまう。`9.20` のような数字はドメインにしない）の 3 形式。(b)(c) はいずれも、単語の途中（ドット区切り語の一部）や `hxxps://` のような難読化された scheme の直後からは拾わない。`hxxps://` `hxxp://www...` のような難読化表記自体も対象にしない（受け手のカレンダーアプリもリンク化しないため）。
+3. **URL** を 1 行目から取り除き、メモの先頭に移す。URL の判定は `src/core/text/urlPattern.ts` の正規表現 `URL_PATTERN` に集約し、`countUrls`（§9.2）も同じ定義を参照する（ics のサニタイズが参照する定義は次段落の `WIDE_URL_PATTERN` で、非対称性がある）。判定対象は (a) `https?://` 付き、(b) `www.` 始まり（ホスト名は ASCII の語・ハイフンのみ）、(c) ベアドメイン `[\w-]+(\.[\w-]+)*\.[a-z]{2,}` のうち **`/` が続く（`example.xyz/path`）か、末尾ラベルが `co|com|jp|net|org|io|me|ly|app|dev|link` のいずれかで、かつその直後に英数字・ハイフンが続かない（`example.com` `example.co.jp` `bit.ly` は該当、`example.company` は非該当）** のもの（末尾ラベルが英字 2 文字以上というだけでは `Node.js` `Vue.js` `Next.js` のような製品名が URL に数えられ、ics で「[リンク]」に置換されてしまう。`9.20` のような数字はドメインにしない）の 3 形式。(b)(c) はいずれも、単語の途中（ドット区切り語の一部）や `hxxps://` のような難読化された scheme の直後からは拾わない。`hxxps://` `hxxp://www...` のような難読化表記自体も対象にしない（受け手のカレンダーアプリもリンク化しないため）。
    > ics のサニタイズ（§7.2）は `URL_PATTERN` より広く一致してよい。`URL_PATTERN` は「本文からの URL 抽出」が目的で誤検出（製品名等）を避ける必要があるのに対し、ics 側は「§7.2 の外部リンク 0 本」が目的で、広く一致しすぎても文字列が過剰に「[リンク]」へ置換されるだけでリンクは増えない。この非対称性のため `src/core/text/urlPattern.ts` は 2 本の正規表現を持つ: 抽出用の `URL_PATTERN`（本節の 3 形式のみ）と、ics のサニタイズ専用の `WIDE_URL_PATTERN`（IDN・全角ホスト・IPv6 リテラル・userinfo・記号カテゴリホストの受け皿に加え、obfuscated scheme や `ftp://` 等の他スキームの直後でもホスト部だけは拾う）。`sanitizeIcsText` は `WIDE_URL_PATTERN` を呼ぶだけで独自の判定を持たない（Issue #19）。
 4. **日付トークン**を検出する。複数見つかった場合は、出現順に検証し、最初に有効な（カレンダー上に存在し、規則 D2・D3 も満たす）ものを採用する。それより前にあった無効な候補は消費せず、通常の文字として残す（規則 D6・D7）。有効な候補が 1 つも無ければ、最初に見つかった無効な候補について `invalid_date` を issue に入れる。日付範囲 `M/D〜M/D` は 1 トークン。
 5. **時刻トークン**（範囲・単発）を検出する。日付トークンと同様に、出現順に検証し最初に有効なものを採用する（規則 T6）。
@@ -1548,8 +1548,10 @@ export function validateEventFields(rawText: string, fields: EventFields, now: D
 export function countUrls(texts: (string | null)[]): number    // core/text/urlPattern.ts の URL_PATTERN を使う
 
 // core/text/urlPattern.ts
-export const URL_PATTERN: RegExp                               // §5.2 の 3 形式。g フラグ付きで使う側が lastIndex を管理しない（毎回 new RegExp）
+export const URL_PATTERN: RegExp                               // §5.2 の 3 形式（抽出用）。g フラグ付きで使う側が lastIndex を管理しない（毎回 new RegExp）
 export function replaceUrls(text: string, replacement: string): string
+export const WIDE_URL_PATTERN: RegExp                          // ics のサニタイズ専用（置換用、§5.2・§7.2）。URL_PATTERN より広く一致する
+export function replaceUrlsWide(text: string, replacement: string): string
 
 // core/change/buildChangeSnapshot.ts（T3）
 /** 編集前後を比べ、タイトル・日時・場所のいずれかが変わっていれば変更前の日時 + titleChanged / locationChanged を返す。メモだけの変更は null（§3.5） */
