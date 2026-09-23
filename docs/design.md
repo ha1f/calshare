@@ -1552,6 +1552,7 @@ export const URL_PATTERN: RegExp                               // §5.2 の 3 �
 export function replaceUrls(text: string, replacement: string): string
 export const WIDE_URL_PATTERN: RegExp                          // ics のサニタイズ専用（置換用、§5.2・§7.2）。URL_PATTERN より広く一致する
 export function replaceUrlsWide(text: string, replacement: string): string
+export const WIDE_BARE_DOMAIN_MAX_LABELS: number               // テスト専用。ベアドメインで許容する中間ラベル数の上限
 
 // core/change/buildChangeSnapshot.ts（T3）
 /** 編集前後を比べ、タイトル・日時・場所のいずれかが変わっていれば変更前の日時 + titleChanged / locationChanged を返す。メモだけの変更は null（§3.5） */

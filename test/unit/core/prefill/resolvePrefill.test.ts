@@ -177,4 +177,10 @@ describe('resolvePrefill', () => {
     expect(result.fields.title).toBe('懇親会 メモ')
     expect(result.rawText).toBe('懇親会 メモ')
   })
+
+  it('text が CRLF を含む場合は 1 つの改行として空白に変換する', () => {
+    const result = resolvePrefill({ text: '懇親会\r\nメモ' }, ctx)
+    expect(result.fields.title).toBe('懇親会 メモ')
+    expect(result.rawText).toBe('懇親会 メモ')
+  })
 })
