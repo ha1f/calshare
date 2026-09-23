@@ -102,7 +102,7 @@ const WIDE_BARE_DOMAIN_MAX_LABELS = 20
  * URL 判定の正規表現を毎回生成する。スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの
  * 3 形式に加え、ホストが精密な規則に一致しない場合の受け皿としてスキーム付き URL 全体も対象にする。
  * TLD の前方一致（`co` が `com` の一部になる等）を防ぐため直後に単語文字が続かないことを確認する。
- * スキーム・www. 分岐には URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たせない。ics の
+ * www.・ベアドメイン分岐には URL_PATTERN の NOT_AFTER_SCHEME に相当する後読みを持たせない。ics の
  * サニタイズは obfuscated scheme（`hxxps://evil.com`）や http(s) 以外のスキーム（`ftp://evil.com`）の
  * 直後でもホスト部だけは「[リンク]」に置換したいため（§7.2 の外部リンク 0 本の対象を広げる）
  */
@@ -129,7 +129,9 @@ function freshWideUrlPattern(): RegExp {
  * ics のサニタイズ（§7.2）専用の広い判定。URL_PATTERN の 3 形式に加え、非 ASCII ホスト（IDN・全角
  * 英数字）・IPv6 リテラル・userinfo・記号カテゴリのホストの受け皿を持つ。ics は「外部リンクを常に
  * 0 本にする」ことが目的で、過剰一致は「[リンク]」への置換が増えるだけでリンクは増えないため、誤検出を
- * 避けたい URL_PATTERN より広く一致してよい（§5.2）。抽出用途にはこちらを使わない
+ * 避けたい URL_PATTERN より広く一致してよい（§5.2）。抽出用途にはこちらを使わない。
+ * g フラグ付きのインスタンスを直接使い回すと lastIndex が残るため、使う側は
+ * `new RegExp(WIDE_URL_PATTERN.source, WIDE_URL_PATTERN.flags)` で毎回新しいインスタンスを作る
  */
 export const WIDE_URL_PATTERN = freshWideUrlPattern()
 
