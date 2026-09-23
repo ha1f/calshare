@@ -3,6 +3,7 @@ import { countUrls, validateEventFields } from '../../../../src/core/validate/va
 import type { EventFields } from '../../../../src/core/types'
 import { jstDate } from '../../../../src/core/time/jst'
 import {
+  MAX_INPUT_LENGTH,
   MAX_LOCATION_LENGTH,
   MAX_MEMO_LENGTH,
   MAX_MEMO_URLS,
@@ -81,6 +82,39 @@ describe('validateEventFields', () => {
         code: 'INPUT_TOO_LONG',
       })
     })
+
+    it('location がちょうど上限なら ok', () => {
+      const fields = baseFields({ location: 'a'.repeat(MAX_LOCATION_LENGTH) })
+      expect(validateEventFields('本文', fields, NOW, { mode: 'create' })).toEqual({ ok: true })
+    })
+
+    it('memo がちょうど上限なら ok', () => {
+      const fields = baseFields({ memo: 'a'.repeat(MAX_MEMO_LENGTH) })
+      expect(validateEventFields('本文', fields, NOW, { mode: 'create' })).toEqual({ ok: true })
+    })
+
+    it('rawText が上限を超えたら INPUT_TOO_LONG', () => {
+      const rawText = 'a'.repeat(MAX_INPUT_LENGTH + 1)
+      expect(validateEventFields(rawText, baseFields(), NOW, { mode: 'create' })).toEqual({
+        ok: false,
+        code: 'INPUT_TOO_LONG',
+      })
+    })
+
+    it('rawText がちょうど上限なら ok', () => {
+      const rawText = 'a'.repeat(MAX_INPUT_LENGTH)
+      expect(validateEventFields(rawText, baseFields(), NOW, { mode: 'create' })).toEqual({
+        ok: true,
+      })
+    })
+
+    it('絵文字はサロゲートペア 2 文字として数える', () => {
+      const fields = baseFields({ title: '🎉'.repeat(200) })
+      expect(validateEventFields('本文', fields, NOW, { mode: 'create' })).toEqual({
+        ok: false,
+        code: 'INPUT_TOO_LONG',
+      })
+    })
   })
 
   describe('INVALID_RANGE', () => {
@@ -152,6 +186,14 @@ describe('validateEventFields', () => {
       })
       expect(validateEventFields('本文', fields, NOW, { mode: 'create' })).toEqual({ ok: true })
     })
+
+    it('start / end が Invalid Date なら INVALID_RANGE', () => {
+      const fields = baseFields({ start: new Date(NaN), end: new Date(NaN) })
+      expect(validateEventFields('本文', fields, NOW, { mode: 'create' })).toEqual({
+        ok: false,
+        code: 'INVALID_RANGE',
+      })
+    })
   })
 
   describe('PAST_EVENT', () => {
@@ -167,14 +209,48 @@ describe('validateEventFields', () => {
     })
 
     it('更新時に日時を変更していなければ end < now でも ok', () => {
+      const start = jstDate(2026, 9, 1, 19, 0)
+      const end = jstDate(2026, 9, 1, 21, 0)
+      const previous = baseFields({ start, end, memo: '編集前のメモ' })
+      const fields = baseFields({
+        start: jstDate(2026, 9, 1, 19, 0),
+        end: jstDate(2026, 9, 1, 21, 0),
+        memo: '編集後のメモ',
+      })
+      const result = validateEventFields('本文', fields, NOW, { mode: 'update', previous })
+      expect(result).toEqual({ ok: true })
+    })
+
+    it('end === now なら ok（strict な過去判定は end < now のみ）', () => {
+      const fields = baseFields({ start: jstDate(2026, 9, 20, 8, 0), end: NOW })
+      expect(validateEventFields('本文', fields, NOW, { mode: 'create' })).toEqual({ ok: true })
+    })
+
+    it('end が now の 1ms 前なら PAST_EVENT', () => {
+      const fields = baseFields({
+        start: jstDate(2026, 9, 20, 8, 0),
+        end: new Date(NOW.getTime() - 1),
+      })
+      expect(validateEventFields('本文', fields, NOW, { mode: 'create' })).toEqual({
+        ok: false,
+        code: 'PAST_EVENT',
+      })
+    })
+
+    it('更新で下書き（日時未確定）から過去日時に変えると PAST_EVENT', () => {
+      const previous = baseFields({ start: null, end: null })
       const fields = baseFields({
         start: jstDate(2026, 9, 1, 19, 0),
         end: jstDate(2026, 9, 1, 21, 0),
       })
-      const result = validateEventFields('本文', fields, NOW, {
-        mode: 'update',
-        previous: fields,
-      })
+      const result = validateEventFields('本文', fields, NOW, { mode: 'update', previous })
+      expect(result).toEqual({ ok: false, code: 'PAST_EVENT' })
+    })
+
+    it('更新で日時ありから下書き（日時未確定）に変えると ok', () => {
+      const previous = baseFields()
+      const fields = baseFields({ start: null, end: null })
+      const result = validateEventFields('本文', fields, NOW, { mode: 'update', previous })
       expect(result).toEqual({ ok: true })
     })
 

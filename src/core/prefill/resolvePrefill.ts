@@ -8,11 +8,11 @@ export interface PrefillParams {
   dates?: string // 開始/終了。ISO basic UTC（Google の render?action=TEMPLATE と同形式）。終日は YYYYMMDD/YYYYMMDD
   location?: string
   details?: string // メモ
-  q?: string // 自然文。構造化パラメータが無いときだけ使う
+  q?: string // 自然文。構造化パラメータに使える値が無いときだけ使う
 }
 
 export interface PrefillResult {
-  rawText: string // textarea の初期値。構造化パラメータがあれば text（無ければ空文字）、q のみなら q そのもの
+  rawText: string // textarea の初期値。構造化パラメータがあれば text を 1 行にしたもの（無ければ空文字）、q のみなら q そのもの
   fields: Partial<EventFields>
   manualKeys: FieldKey[] // 構造化パラメータで来た項目は manual 扱いで固定する
 }
@@ -84,32 +84,36 @@ function parseDatesParam(dates: string): DatesResolution | null {
   return null
 }
 
-function hasStructuredParams(params: PrefillParams): boolean {
-  return (
-    params.text !== undefined ||
-    params.dates !== undefined ||
-    params.location !== undefined ||
-    params.details !== undefined
-  )
+// Google の TEMPLATE 形式のリンクを作るツールは空の `location=` `details=` を
+// 付けたまま出すことがあるため、値が空（trim 後空文字）のパラメータも無いものとして扱う（§5.8）
+function present(v: string | undefined): v is string {
+  return v !== undefined && v.trim() !== ''
+}
+
+/** text は 1 行のタイトル用パラメータなので、改行は空白に変換してから使う（§5.8） */
+function toSingleLine(text: string): string {
+  return text.split(/\r?\n/).join(' ').trim()
 }
 
 function resolveStructuredPrefill(params: PrefillParams): PrefillResult {
   const fields: Partial<EventFields> = {}
   const manualKeys: FieldKey[] = []
+  let rawText = ''
 
-  if (params.text !== undefined) {
-    fields.title = params.text
+  if (present(params.text)) {
+    rawText = toSingleLine(params.text)
+    fields.title = rawText
     manualKeys.push('title')
   }
-  if (params.location !== undefined) {
+  if (present(params.location)) {
     fields.location = params.location
     manualKeys.push('location')
   }
-  if (params.details !== undefined) {
+  if (present(params.details)) {
     fields.memo = params.details
     manualKeys.push('memo')
   }
-  if (params.dates !== undefined) {
+  if (present(params.dates)) {
     const resolved = parseDatesParam(params.dates)
     if (resolved !== null) {
       fields.start = resolved.start
@@ -119,8 +123,7 @@ function resolveStructuredPrefill(params: PrefillParams): PrefillResult {
     }
   }
 
-  // 構造化パラメータがあるときは q を無視する（fields だけでなく rawText も、§5.8）
-  return { rawText: params.text ?? '', fields, manualKeys }
+  return { rawText, fields, manualKeys }
 }
 
 function resolveAutoPrefill(q: string, ctx: ParseContext): PrefillResult {
@@ -141,11 +144,13 @@ function resolveAutoPrefill(q: string, ctx: ParseContext): PrefillResult {
 
 /**
  * `/new` のクエリ文字列から作成画面の初期値を組む（§5.8）。構造化パラメータ
- * （`text` `dates` `location` `details`）があればそれを優先し `q` は無視する。
- * `q` だけがあれば `parseEventText` の結果を auto（`manualKeys` 空）として返す
+ * （`text` `dates` `location` `details`）に使える値が 1 つでもあればそれを優先し `q` は無視する。
+ * 構造化パラメータが無い、または全て空・不正で使える値が残らなければ、
+ * `q` があれば `parseEventText` の結果を auto（`manualKeys` 空）として返す
  */
 export function resolvePrefill(params: PrefillParams, ctx: ParseContext): PrefillResult {
-  if (hasStructuredParams(params)) return resolveStructuredPrefill(params)
+  const structured = resolveStructuredPrefill(params)
+  if (structured.manualKeys.length > 0) return structured
   if (params.q !== undefined) return resolveAutoPrefill(params.q, ctx)
   return { rawText: '', fields: {}, manualKeys: [] }
 }

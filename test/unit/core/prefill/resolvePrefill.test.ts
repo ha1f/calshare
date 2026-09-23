@@ -128,4 +128,47 @@ describe('resolvePrefill', () => {
     const result = resolvePrefill({ location: '渋谷' }, ctx)
     expect(result.rawText).toBe('')
   })
+
+  describe('空文字・不正な構造化パラメータは無いものとして扱う', () => {
+    it('text が空文字なら q の解釈結果を auto で返す', () => {
+      const q = '懇親会 9/21 19時'
+      const result = resolvePrefill({ text: '', q }, ctx)
+      const parsed = parseEventText(q, ctx)
+      expect(result.manualKeys).toEqual([])
+      expect(result.fields.title).toBe(parsed.title)
+    })
+
+    it('location details が空文字なら何も無いのと同じ扱いにする', () => {
+      const result = resolvePrefill({ location: '', details: '' }, ctx)
+      expect(result).toEqual({ rawText: '', fields: {}, manualKeys: [] })
+    })
+
+    it('text が空白のみなら無視する', () => {
+      const result = resolvePrefill({ text: '   ' }, ctx)
+      expect(result).toEqual({ rawText: '', fields: {}, manualKeys: [] })
+    })
+
+    it('dates が壊れていて他の構造化パラメータも無ければ q の解釈結果を auto で返す', () => {
+      const q = '懇親会 9/21 19時'
+      const result = resolvePrefill({ dates: 'invalid', q }, ctx)
+      const parsed = parseEventText(q, ctx)
+      expect(result.manualKeys).toEqual([])
+      expect(result.fields.title).toBe(parsed.title)
+    })
+
+    it('dates が同日終日（start === end）で無効になり他の構造化パラメータも無ければ q にフォールバックする', () => {
+      const q = '懇親会 9/21 19時'
+      const result = resolvePrefill({ dates: '20260920/20260920', q }, ctx)
+      const parsed = parseEventText(q, ctx)
+      expect(result.manualKeys).toEqual([])
+      expect(result.fields.title).toBe(parsed.title)
+    })
+  })
+
+  it('text に改行を含む場合は空白に変換して 1 行にする', () => {
+    const result = resolvePrefill({ text: '懇親会\nメモ' }, ctx)
+    expect(result.fields.title).toBe('懇親会 メモ')
+    expect(result.rawText).toBe('懇親会 メモ')
+    expect(result.rawText).not.toContain('\n')
+  })
 })

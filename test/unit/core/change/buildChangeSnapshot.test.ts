@@ -97,4 +97,16 @@ describe('buildChangeSnapshot', () => {
     const next = baseFields({ location: '会場' })
     expect(buildChangeSnapshot(previous, next)?.locationChanged).toBe(true)
   })
+
+  it('location が null から空文字に変わっても変更とみなさない', () => {
+    const previous = baseFields({ location: null })
+    const next = baseFields({ location: '' })
+    expect(buildChangeSnapshot(previous, next)).toBeNull()
+  })
+
+  it('title の前後に空白が付いても変更とみなさない', () => {
+    const previous = baseFields({ title: '懇親会' })
+    const next = baseFields({ title: '懇親会 ' })
+    expect(buildChangeSnapshot(previous, next)).toBeNull()
+  })
 })

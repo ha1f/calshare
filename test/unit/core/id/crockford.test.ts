@@ -5,6 +5,7 @@ import {
   isValidPageId,
   PAGE_ID_PATTERN,
 } from '../../../../src/core/id/crockford'
+import { PAGE_ID_LENGTH } from '../../../../src/core/config/limits'
 import { RESERVED_PATHS } from '../../../../src/core/config/reservedPaths'
 
 describe('encodeCrockford', () => {
@@ -61,5 +62,22 @@ describe('isValidPageId', () => {
 
   it('PAGE_ID_PATTERN は isValidPageId と同じ文字集合・長さを表す', () => {
     expect(new RegExp(`^${PAGE_ID_PATTERN}$`).test('a1b2c3d4e5f6')).toBe(true)
+  })
+
+  it('PAGE_ID_PATTERN は CROCKFORD_ALPHABET の 32 文字を過不足なく受理する', () => {
+    const regexp = new RegExp(`^${PAGE_ID_PATTERN}$`)
+    for (const ch of CROCKFORD_ALPHABET) {
+      const s = ch.repeat(PAGE_ID_LENGTH)
+      expect(regexp.test(s)).toBe(true)
+      expect(isValidPageId(s)).toBe(true)
+    }
+    const uppercaseLetters = [...CROCKFORD_ALPHABET]
+      .filter((c) => /[a-z]/.test(c))
+      .map((c) => c.toUpperCase())
+    for (const ch of ['i', 'l', 'o', 'u', ...uppercaseLetters]) {
+      const s = ch.repeat(PAGE_ID_LENGTH)
+      expect(regexp.test(s)).toBe(false)
+      expect(isValidPageId(s)).toBe(false)
+    }
   })
 })

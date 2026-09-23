@@ -1,4 +1,5 @@
 import {
+  MAX_INPUT_LENGTH,
   MAX_LOCATION_LENGTH,
   MAX_MEMO_LENGTH,
   MAX_MEMO_URLS,
@@ -35,7 +36,8 @@ export function sameDateTime(a: EventFields, b: EventFields): boolean {
 }
 
 /**
- * 予定の入力を検証する（§5.7）。作成・更新 API がプレビューの確定値を受け取ったときに呼ぶ。
+ * 予定の入力を検証する（§5.7）。作成・更新 API がプレビューの確定値を受け取ったときに呼ぶほか、
+ * クライアントのプレビューも同じ関数で事前表示する。
  * 検証順序は EMPTY_INPUT → INPUT_TOO_LONG → INVALID_RANGE → PAST_EVENT → BEYOND_MAX_LEAD_TIME
  * → TOO_MANY_URLS で固定し、最初に見つかった違反だけを返す
  */
@@ -48,6 +50,7 @@ export function validateEventFields(
   if (rawText.trim() === '' || fields.title.trim() === '') return { ok: false, code: 'EMPTY_INPUT' }
 
   if (
+    rawText.length > MAX_INPUT_LENGTH ||
     fields.title.length > MAX_TITLE_LENGTH ||
     (fields.location !== null && fields.location.length > MAX_LOCATION_LENGTH) ||
     (fields.memo !== null && fields.memo.length > MAX_MEMO_LENGTH)
@@ -59,6 +62,9 @@ export function validateEventFields(
   const hasEnd = fields.end !== null
   if (hasStart !== hasEnd) return { ok: false, code: 'INVALID_RANGE' }
   if (fields.start !== null && fields.end !== null) {
+    if (Number.isNaN(fields.start.getTime()) || Number.isNaN(fields.end.getTime())) {
+      return { ok: false, code: 'INVALID_RANGE' }
+    }
     if (fields.end.getTime() <= fields.start.getTime()) return { ok: false, code: 'INVALID_RANGE' }
     if (fields.isAllDay && (!isJstMidnight(fields.start) || !isJstMidnight(fields.end))) {
       return { ok: false, code: 'INVALID_RANGE' }
