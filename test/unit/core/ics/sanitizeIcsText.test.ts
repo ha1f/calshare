@@ -141,7 +141,7 @@ describe('sanitizeIcsText', () => {
 
   it('ホストが絵文字・記号カテゴリの文字で書かれていても、精密なホスト規則の受け皿として置換する', () => {
     // ⓔⓥⓘⓛ.com は UTS#46 で evil.com に正規化されてブラウザで開けるが、
-    // 囲み英数字（Unicode カテゴリ So）は \p{L} に一致せずホスト規則をすり抜けていた
+    // 囲み英数字（Unicode カテゴリ So）は \p{L} に一致せずホスト規則をすり抜ける
     expect(sanitizeIcsText('https://ⓔⓥⓘⓛ.com')).toBe('[リンク]')
     expect(sanitizeIcsText('https://☃.net')).toBe('[リンク]')
     expect(sanitizeIcsText('https://😀.la')).toBe('[リンク]')

@@ -17,10 +17,10 @@ export interface IcsInput {
 
 const PRODID = '-//calshare//calshare//JA'
 
-// \n \t 以外の U+0000-U+001F と U+007F（DEL）。\r（U+000D）もここに含まれるので \r\n 正規化後の残り \r もまとめて除去できる。
-// RFC 5545 の TSAFE-CHAR は %x7F を含まない。NEL（U+0085）・LINE SEPARATOR（U+2028）・
-// PARAGRAPH SEPARATOR（U+2029）も除く。python の str.splitlines() 等、寛容な実装がこれらを
-// 行区切りとして扱うため、残すとプロパティ・VEVENT 単位への注入経路になる
+// \n \t 以外の U+0000-U+001F・U+007F（DEL、RFC 5545 の TSAFE-CHAR は含まない）・NEL（U+0085）・
+// LINE SEPARATOR（U+2028）・PARAGRAPH SEPARATOR（U+2029）。\r（U+000D）もここに含まれるので
+// \r\n 正規化後の残り \r もまとめて除去できる。python の str.splitlines() 等、寛容な実装が
+// NEL 等を行区切りとして扱うため、残すとプロパティ・VEVENT 単位への注入経路になる
 // eslint-disable-next-line no-control-regex -- ics の TEXT エスケープ仕様上、制御文字そのものを検出対象にする
 const CONTROL_CHARS_EXCEPT_TAB_LF = /[\x00-\x08\x0B-\x1F\x7F\u0085\u2028\u2029]/g
 
