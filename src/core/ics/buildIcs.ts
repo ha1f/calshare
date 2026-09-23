@@ -18,13 +18,23 @@ export interface IcsInput {
 const PRODID = '-//calshare//calshare//JA'
 
 // \n \t 以外の U+0000-U+001F と U+007F（DEL）。\r（U+000D）もここに含まれるので \r\n 正規化後の残り \r もまとめて除去できる。
-// RFC 5545 の TSAFE-CHAR は %x7F を含まない
+// RFC 5545 の TSAFE-CHAR は %x7F を含まない。NEL（U+0085）・LINE SEPARATOR（U+2028）・
+// PARAGRAPH SEPARATOR（U+2029）も除く。python の str.splitlines() 等、寛容な実装がこれらを
+// 行区切りとして扱うため、残すとプロパティ・VEVENT 単位への注入経路になる
 // eslint-disable-next-line no-control-regex -- ics の TEXT エスケープ仕様上、制御文字そのものを検出対象にする
-const CONTROL_CHARS_EXCEPT_TAB_LF = /[\x00-\x08\x0B-\x1F\x7F]/g
+const CONTROL_CHARS_EXCEPT_TAB_LF = /[\x00-\x08\x0B-\x1F\x7F\u0085\u2028\u2029]/g
 
 /** `\r\n` を `\n` に正規化し、残った `\r` と制御文字を除く。URL 判定やエスケープの前段として使う */
 function normalizeControlChars(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(CONTROL_CHARS_EXCEPT_TAB_LF, '')
+}
+
+/**
+ * uid / detailUrl のような「改行を含めない」契約の値を守る。呼び出し側の契約違反があっても
+ * UID / URL 行から独立したプロパティ行が生まれないよう、制御文字と改行を除去する
+ */
+function sanitizeIcsIdentifier(text: string): string {
+  return normalizeControlChars(text).replace(/\n/g, '')
 }
 
 // URL に使う文字のみを許可し、直後の空白や日本語を巻き込まないようにする
@@ -74,8 +84,9 @@ const URL_TAIL = String.raw`${HOST}(?::\d+)?(?:[/?#]${URL_CHARS}*)?`
 
 /**
  * URL 判定用の正規表現を毎回生成する。スキーム付き・`www.` 始まり・許可 TLD かパス付きのベアドメインの
- * 3 形式を対象にする。TLD の前方一致（`co` が `com` の一部になる等）を防ぐため TLD の直後に単語文字が
- * 続かないことを確認する。`core/text/urlPattern.ts` の共有定義への統合は Issue #19
+ * 3 形式に加え、ホストが精密な規則に一致しない場合の受け皿としてスキーム付き URL 全体も対象にする。
+ * TLD の前方一致（`co` が `com` の一部になる等）を防ぐため直後に単語文字が続かないことを確認する
+ * （`core/text/urlPattern.ts` への統合は Issue #19）。
  */
 function buildIcsUrlPattern(): RegExp {
   const httpsScheme = `${toCaseInsensitiveAscii('http')}${toCaseInsensitiveAscii('s')}?`
@@ -84,7 +95,11 @@ function buildIcsUrlPattern(): RegExp {
     // スキームの直後に `/` が連続しても許容する（`https:///evil.xyz` のような表記もリンクとして検出するため）
     String.raw`${httpsScheme}:\/\/\/*(?:${USERINFO}@)?${URL_TAIL}` +
       String.raw`|${wwwLiteral}\.${URL_TAIL}` +
-      String.raw`|[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_DOMAIN_TLDS})(?!\w)(?:\/${URL_CHARS}*)?|[a-zA-Z]{2,}\/${URL_CHARS}*)`,
+      String.raw`|[\w-]+(?:\.[\w-]+)*\.(?:(?:${ALLOWED_BARE_DOMAIN_TLDS})(?!\w)(?:\/${URL_CHARS}*)?|[a-zA-Z]{2,}\/${URL_CHARS}*)` +
+      // 上の選択肢は左から順に試すので、精密なホスト規則に一致する通常の URL はここまでで消費し尽くす。
+      // ここまで一致しなかった場合だけ受け皿としてスキーム以降を丸ごと拾う。囲み英数字（Unicode カテゴリ
+      // So）や IPv6 の zone id 等、精密なホスト規則をすり抜ける非 ASCII ホストを取りこぼさないため
+      String.raw`|${httpsScheme}:\/\/\S+`,
     // 'i' は付けない。\p{} に必要な 'u' と 'i' を組み合わせると、大文字小文字の畳み込みで
     // U+017F（ſ）・U+212A（Kelvin 記号）が ASCII の s/k として \w や [a-z] に一致してしまい、
     // ホスト名やパスの一部として本文の文字を巻き込む。スキーム・www.・TLD の大文字表記は
@@ -93,7 +108,11 @@ function buildIcsUrlPattern(): RegExp {
   )
 }
 
-/** URL を「[リンク]」に置換する。SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す */
+/**
+ * URL（暫定判定。`core/text/urlPattern.ts` の共有定義への統合は Issue #19）を「[リンク]」に置換する。
+ * 制御文字の除去を URL 判定より先に行う。順序を入れ替えると、URL の途中に制御文字を挟むことで判定を
+ * すり抜けられる。SUMMARY / LOCATION / DESCRIPTION の 3 つに同じ関数を通す。
+ */
 export function sanitizeIcsText(text: string): string {
   return normalizeControlChars(text).replace(buildIcsUrlPattern(), '[リンク]')
 }
@@ -148,6 +167,9 @@ function buildDescriptionText(memo: string | null, detailUrl: string): string {
 }
 
 export function buildIcs(input: IcsInput): string {
+  const uid = sanitizeIcsIdentifier(input.uid)
+  const detailUrl = sanitizeIcsIdentifier(input.detailUrl)
+
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -155,7 +177,7 @@ export function buildIcs(input: IcsInput): string {
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'BEGIN:VEVENT',
-    foldIcsLine(`UID:${input.uid}`),
+    foldIcsLine(`UID:${uid}`),
     `DTSTAMP:${formatBasicUtc(input.generatedAt)}`,
   ]
 
@@ -171,8 +193,8 @@ export function buildIcs(input: IcsInput): string {
   if (input.location) {
     lines.push(textPropertyLine('LOCATION', sanitizeIcsText(input.location)))
   }
-  lines.push(textPropertyLine('DESCRIPTION', buildDescriptionText(input.memo, input.detailUrl)))
-  lines.push(foldIcsLine(`URL:${input.detailUrl}`))
+  lines.push(textPropertyLine('DESCRIPTION', buildDescriptionText(input.memo, detailUrl)))
+  lines.push(foldIcsLine(`URL:${detailUrl}`))
   lines.push(`SEQUENCE:${input.sequence}`)
   lines.push('STATUS:CONFIRMED')
   lines.push('END:VEVENT')

@@ -23,6 +23,19 @@ describe('escapeIcsText', () => {
     expect(escapeIcsText(`a${String.fromCharCode(0x7f)}b`)).toBe('ab')
   })
 
+  it('NEL・LINE SEPARATOR・PARAGRAPH SEPARATOR も除去する（寛容な splitlines 実装が行区切りとして扱うため）', () => {
+    const parts = [
+      'a',
+      String.fromCharCode(0x85),
+      'ATTACH:b',
+      String.fromCharCode(0x2028),
+      'c',
+      String.fromCharCode(0x2029),
+      'd',
+    ]
+    expect(escapeIcsText(parts.join(''))).toBe('aATTACH:bcd')
+  })
+
   it('バックスラッシュを含む値を二重エスケープしない', () => {
     // 素朴に置換順序を間違えると \; が \\; になったりする
     expect(escapeIcsText('C:\\path;a,b')).toBe('C:\\\\path\\;a\\,b')
