@@ -1,11 +1,15 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// 複数の作業ツリーで同時に e2e を走らせると、既定の 8787 を掴んだ別のサーバを
+// reuseExistingServer が拾って別ビルドを検証してしまう。E2E_PORT で作業ツリーごとに分ける
+const port = Number(process.env.E2E_PORT ?? 8787)
+
 export default defineConfig({
   testDir: 'test/e2e',
-  use: { baseURL: 'http://localhost:8787' },
+  use: { baseURL: `http://localhost:${port}` },
   webServer: {
-    command: 'npm run build && npx wrangler dev --port 8787',
-    url: 'http://localhost:8787/api/health',
+    command: `npm run build && npx wrangler dev --port ${port}`,
+    url: `http://localhost:${port}/api/health`,
     reuseExistingServer: !process.env.CI,
   },
   projects: [
