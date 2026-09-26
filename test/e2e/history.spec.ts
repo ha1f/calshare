@@ -74,6 +74,13 @@ test('履歴が無いときは空状態の文言が出る', async ({ page }) => 
   await expect(page.getByTestId('history-item')).toHaveCount(0)
 })
 
+test('ヘッダの見え方が / と揃っている', async ({ page }) => {
+  await page.goto('/history')
+
+  await expect(page.locator('.app-header')).toHaveCSS('display', 'flex')
+  await expect(page.locator('.app-title')).toHaveCSS('text-decoration-line', 'none')
+})
+
 test('localStorage に不正な id を仕込んでもリンクが生成されない', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => {
@@ -93,8 +100,8 @@ test('localStorage に不正な id を仕込んでもリンクが生成されな
       createdAt: '2025-12-01T00:00:00.000Z',
       updatedAt: '2025-12-01T00:00:00.000Z',
     }
-    // title は fields 側に置く。トップレベルの title は表示に使われないため、
-    // ここに置いたままだと不正な項目が漏れて表示されても検出できない
+    // 表示に使われるのは fields.title なので、ここを書き換えないと
+    // 不正な項目が漏れて表示されても検出できない
     const invalidEntries = ['../evil-path', '//evil.example', '//evil.examp'].map((id) => ({
       ...validEntry,
       id,
@@ -141,13 +148,11 @@ test('id は有効だが fields や expiresAt が壊れている項目は表示�
       createdAt: '2025-12-01T00:00:00.000Z',
       updatedAt: '2025-12-01T00:00:00.000Z',
     }
-    // fields.start が日時として解釈できない
     const brokenFields = {
       ...validEntry,
       id: 'bbcdefghjkmn',
       fields: { ...validEntry.fields, start: 'not-a-date' },
     }
-    // expiresAt が Date として不正
     const brokenExpiresAt = { ...validEntry, id: 'cbcdefghjkmn', expiresAt: 'not-a-date' }
     localStorage.setItem(
       'calshare.history',

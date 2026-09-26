@@ -1854,7 +1854,7 @@ export default defineConfig(async () => {
 **`src/web` の雛形（T1）**
 
 - `pages/{index,new,done,history,edit}.html`: `<!doctype html>` `<html lang="ja">` `<meta charset>` viewport `<title>` `<link rel="stylesheet" href="/assets/css/base.css">` と、画面ごとのエントリ `<script type="module" src="/assets/js/{create|done|history|edit}.js">`（`index` `new` は `create.js`）を持つ最小 HTML。`index` `new` は `<textarea id="input">` を含む。`done` `history` `edit` は `<meta name="robots" content="noindex, nofollow">` を含む。エントリの JS は T14〜T17 まで存在しないので `/assets/js/*.js` は 404 になるが、T1 の smoke はスクリプトに依存しない。インラインスタイル・スクリプトは書かない（§9.1）。
-- `robots.txt`: `User-agent: *` / `Allow: /`（§9.5）。`favicon.ico`: 仮のアイコン。`img/ogp-fallback.png`: 1200×630 の仮 PNG（サービス名のテキストのみ。§14.2-2 のデザイン確定で差し替える）。`styles/base.css`: リセットと最小の余白、全画面共通のヘッダ（`.app-header` `.app-title` `.history-link`。T17 で `create.css` から移動）。
+- `robots.txt`: `User-agent: *` / `Allow: /`（§9.5）。`favicon.ico`: 仮のアイコン。`img/ogp-fallback.png`: 1200×630 の仮 PNG（サービス名のテキストのみ。§14.2-2 のデザイン確定で差し替える）。`styles/base.css`: リセットと最小の余白、`<header class="app-header">` を使う画面（index・history）向けのヘッダ（`.app-header` `.app-title` `.history-link`。T17 で `create.css` から移動）。
 - `_headers`（手書き。§9.1 の値と一致させ、T8 の unit テストで検査する）:
 
 ```
@@ -1930,7 +1930,7 @@ export default defineConfig({
 
 - 各 PR は単独でビルド・lint・該当レイヤのテストが通る。
 - 依存は base branch で表す（直列チェーン）。T1 は `main` から切り、T2 以降は直前の PR のブランチを base にする。前の PR がマージされたら base を `main` に付け替える。
-- 担当ファイルは PR 間で重複させない。例外は次の 4 つで、いずれも「1 行追加」または「雛形を埋める」だけを許す（§11.6）: (1) `server/app.ts` `server/deps.ts` `server/index.ts` へのルート／アダプタ／`scheduled` の配線、(2) T1 が最小の雛形（§11.7）として置く `src/web/pages/*.html` を T14〜T17 が埋める、(3) `wrangler.jsonc` への `crons`（T13）、`playwright.config.ts` の `webServer.command` への `seed-local-r2.mjs` の前置（T10）、`vitest.config.ts` への project 追加（T10、wasm が pool-workers で動かない場合のみ）、(4) 他 PR が定義した関数を export に変える 1 行（T17 の `readHistory`）、複数画面で共通のスタイルルールを画面固有の CSS から `base.css` に移す（T17 の `.app-header` 等）。`scripts/build-web.mjs` は `src/web/*/main.ts` を glob するので、エントリを足す PR がこれを触ることはない。触れた PR は該当行にその旨を記録する。
+- 担当ファイルは PR 間で重複させない（§11.6）。例外は次の 4 つ。(1)〜(3) は「1 行追加」または「雛形を埋める」だけ、(4) は他 PR のファイルへの小さく閉じた変更だけを許す: (1) `server/app.ts` `server/deps.ts` `server/index.ts` へのルート／アダプタ／`scheduled` の配線、(2) T1 が最小の雛形（§11.7）として置く `src/web/pages/*.html` を T14〜T17 が埋める、(3) `wrangler.jsonc` への `crons`（T13）、`playwright.config.ts` の `webServer.command` への `seed-local-r2.mjs` の前置（T10）、`vitest.config.ts` への project 追加（T10、wasm が pool-workers で動かない場合のみ）、(4) 他 PR が定義した関数を export に変える 1 行（T17 の `readHistory`）、複数画面で共通のスタイルルールを画面固有の CSS から `base.css` に切り出す（T17 の `.app-header` 等、追加と削除の対で閉じた変更）。`scripts/build-web.mjs` は `src/web/*/main.ts` を glob するので、エントリを足す PR がこれを触ることはない。触れた PR は該当行にその旨を記録する。
 - 「完了条件」に `wrangler deploy --dry-run` が含まれる PR は、スクリプトサイズ（gzip 後）を PR 説明に記録する。
 - 「要検証」の項目はその PR の完了条件に検証結果の記録を含める。
 

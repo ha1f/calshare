@@ -15,7 +15,7 @@ textarea {
   width: 100%;
 }
 
-/* 全画面共通のヘッダ（`<header class="app-header">` を持つ画面すべてで使う） */
+/* `<header class="app-header">` を使う画面（index・history）向け。画面固有の CSS に置くと、それを読み込まない画面ではヘッダが崩れる */
 .app-header {
   display: flex;
   align-items: baseline;
