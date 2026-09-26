@@ -1,19 +1,4 @@
-import { expect, test } from './fixtures'
-
-const DONE_URL_PATTERN = /\/done\?id=([0-9a-hjkmnp-tv-z]{12})$/
-
-/** トップから作成して /done に遷移させ、ページ ID を返す（他の spec と同じ手順） */
-async function createPage(page: import('@playwright/test').Page, text: string): Promise<string> {
-  await page.goto('/')
-  await page.locator('#input').fill(text)
-  await Promise.all([
-    page.waitForURL(DONE_URL_PATTERN),
-    page.getByRole('button', { name: 'URLを作る' }).click(),
-  ])
-  const match = DONE_URL_PATTERN.exec(page.url())
-  if (match === null) throw new Error('failed to extract page id from /done URL')
-  return match[1]
-}
+import { createPage, expect, test } from './fixtures'
 
 test('通報フォームから送信すると受付メッセージが出る（シナリオ9）', async ({ page }) => {
   const id = await createPage(page, '9/20 19時 渋谷で飲み会')
@@ -22,12 +7,19 @@ test('通報フォームから送信すると受付メッセージが出る（�
   await page.locator('input[name="reason"][value="inappropriate"]').check()
   await page.locator('#comment').fill('不快な内容が含まれています')
 
-  await Promise.all([
+  const [response] = await Promise.all([
     page.waitForResponse(
       (res) => res.url().endsWith(`/api/pages/${id}/reports`) && res.request().method() === 'POST',
     ),
     page.getByRole('button', { name: '報告する' }).click(),
   ])
+
+  // 受付メッセージは reason が妥当ならどの値でも出るため、本文が正しく組み立てられていることは別途見る必要がある
+  expect(response.request().postDataJSON()).toEqual({
+    reason: 'inappropriate',
+    comment: '不快な内容が含まれています',
+  })
+  expect(response.status()).toBe(200)
 
   await expect(page.locator('#report-result')).toHaveText(
     '報告を受け付けました。ご協力ありがとうございます。',

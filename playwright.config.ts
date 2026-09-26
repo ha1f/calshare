@@ -6,13 +6,15 @@ const port = Number(process.env.E2E_PORT ?? 8787)
 
 export default defineConfig({
   testDir: 'test/e2e',
-  // CI のホストランナーは手元より遅く、まれにタイミング起因で落ちることがある。
-  // ローカルでは即座に再実行して原因を見たいので retries は付けない
+  // failOnFlakyTests が再試行後の成功も flaky として job を落とすため、retries は
+  // 原因調査用の trace・スクリーンショットを残す目的だけに使う
   retries: process.env.CI ? 1 : 0,
+  failOnFlakyTests: !!process.env.CI,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: `http://localhost:${port}`,
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
   },
   webServer: {
     // PUBLIC_ORIGIN を上書きしないと wrangler.jsonc の vars.PUBLIC_ORIGIN のままになり、

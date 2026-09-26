@@ -1,24 +1,10 @@
-import { expect, test } from './fixtures'
-
-const DONE_URL_PATTERN = /\/done\?id=([0-9a-hjkmnp-tv-z]{12})$/
-
-function waitForCreateRequest(page: import('@playwright/test').Page) {
-  return page.waitForRequest((r) => r.url().endsWith('/api/pages') && r.method() === 'POST')
-}
+import { createPage, DONE_URL_PATTERN, expect, test, waitForCreateRequest } from './fixtures'
 
 test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 → 詳細の変更バナー → ics までの一連の流れ', async ({
   page,
 }) => {
   // 作成 → 完成
-  await page.goto('/')
-  await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
-  await Promise.all([
-    page.waitForURL(DONE_URL_PATTERN),
-    page.getByRole('button', { name: 'URLを作る' }).click(),
-  ])
-  const firstMatch = DONE_URL_PATTERN.exec(page.url())
-  if (firstMatch === null) throw new Error('failed to extract page id from /done URL')
-  const firstId = firstMatch[1]
+  const firstId = await createPage(page, '9/20 19時 渋谷で飲み会')
 
   // 完成 → 詳細
   const detailHref = await page.locator('#url-display').getAttribute('href')

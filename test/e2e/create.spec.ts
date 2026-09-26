@@ -1,10 +1,4 @@
-import { expect, test } from './fixtures'
-
-const DONE_URL_PATTERN = /\/done\?id=[0-9a-hjkmnp-tv-z]{12}$/
-
-function waitForCreateRequest(page: import('@playwright/test').Page) {
-  return page.waitForRequest((r) => r.url().endsWith('/api/pages') && r.method() === 'POST')
-}
+import { DONE_URL_PATTERN, expect, test, waitForCreateRequest } from './fixtures'
 
 test('入力〜プレビュー〜作成〜/done への遷移まで（シナリオ1）', async ({ page }) => {
   await page.goto('/')
@@ -72,6 +66,8 @@ test('場所を空にすると場所なしとして作成される（シナリ�
   const detailHref = await page.locator('#url-display').getAttribute('href')
   if (detailHref === null) throw new Error('url-display の href が無い')
   await page.goto(new URL(detailHref).pathname)
+  // 詳細ページが正しく描画されたことを先に確認する（404 等で空白になっても location の要素数は同じく 0 になるため）
+  await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
   await expect(page.locator('[data-section="location"]')).toHaveCount(0)
 })
 
