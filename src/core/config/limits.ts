@@ -6,6 +6,8 @@ export const DEFAULT_EVENT_DURATION_MINUTES = 60
 export const PM_HEURISTIC_MAX_HOUR = 7
 /** input イベントからプレビューを再解釈するまでのデバウンス（§6.1） */
 export const PREVIEW_DEBOUNCE_MS = 150
+/** 完成画面でコピー結果のメッセージを表示し続ける時間（§6.2） */
+export const COPY_MESSAGE_DURATION_MS = 2000
 export const MAX_INPUT_LENGTH = 2000
 /** 作成・更新・通報 API の本文の byte 上限。JSON をパースする前に弾く（§5.7 の (2)） */
 export const MAX_BODY_BYTES = 32 * 1024

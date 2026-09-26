@@ -8,12 +8,15 @@ export function canShare(): boolean {
   return typeof navigator.share === 'function'
 }
 
-/** OS の共有シートを開く。ユーザーがキャンセルすると `AbortError` が投げられるので黙って無視する */
+/**
+ * OS の共有シートを開く。呼び出し元は結果を待たずに呼ぶため、キャンセル（`AbortError`）に限らず
+ * どんな失敗も画面に伝える手段が無い。投げ直しても受け手が無く未処理の Promise 拒否になるだけなので、
+ * ここで黙って無視する
+ */
 export async function shareUrl(data: ShareData): Promise<void> {
   try {
     await navigator.share(data)
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') return
-    throw error
+  } catch {
+    // 失敗しても何もしない
   }
 }

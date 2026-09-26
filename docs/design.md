@@ -819,6 +819,7 @@ export interface HistoryEntry {
 - このパラメータは LINE の公式ドキュメントに「LINE から開く URL」への挙動として記載されているもので、LINE 内蔵ブラウザで表示中のページ内のリンクにも効くかは**バージョン依存で要検証**。保険としてバナーも出し、実機（iOS / Android の LINE）での確認を H14 に含める。
 - 同時に「うまく開けないときは右上メニューの『他のアプリで開く』を使ってください」の案内バナーを表示する。
 - UA 判定と `href` の書き換え・バナー表示は**クライアント側の JS**で行う。Cache API のキーは URL のみで、SSR の出力を UA 別に分けない（分けるとキャッシュが効かなくなる）。
+- LINE 判定（本節）と Android 判定（§7.3）は独立に行う。Android 版 LINE の UA は両方に該当し、`openExternalBrowser=1` で外部ブラウザ（Android Chrome）に渡った後も ics はダウンロードになるため、案内バナーと ics の注記を両方表示する。
 - 「LINEで送る」が渡すテキストの URL 自体に `?openExternalBrowser=1` を付けて、詳細ページごと外部ブラウザで開かせる案は §14.2 の未決事項に載せる（拡散しても無害なパラメータだが、共有 URL の見た目が長くなる）。
 
 ---
@@ -1259,6 +1260,8 @@ export const DEFAULT_EVENT_DURATION_MINUTES = 60
 export const PM_HEURISTIC_MAX_HOUR = 7
 /** input イベントからプレビューを再解釈するまでのデバウンス（§6.1） */
 export const PREVIEW_DEBOUNCE_MS = 150
+/** 完成画面でコピー結果のメッセージを表示し続ける時間（§6.2） */
+export const COPY_MESSAGE_DURATION_MS = 2000
 export const MAX_INPUT_LENGTH = 2000
 /** 作成・更新・通報 API の本文の byte 上限。JSON をパースする前に弾く（§5.7 の (2)） */
 export const MAX_BODY_BYTES = 32 * 1024

@@ -35,9 +35,9 @@ describe('shareUrl', () => {
     await expect(shareUrl({ title: 'x', url: 'https://example.com/x' })).resolves.toBeUndefined()
   })
 
-  it('AbortError 以外は投げ直す', async () => {
+  it('AbortError 以外の失敗も無視する（呼び出し元に伝える手段が無いため）', async () => {
     vi.stubGlobal('navigator', { share: vi.fn().mockRejectedValue(new Error('boom')) })
 
-    await expect(shareUrl({ title: 'x', url: 'https://example.com/x' })).rejects.toThrow('boom')
+    await expect(shareUrl({ title: 'x', url: 'https://example.com/x' })).resolves.toBeUndefined()
   })
 })

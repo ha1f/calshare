@@ -37,6 +37,13 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   const url = await page.locator('#url-display').textContent()
   expect(url).toMatch(PAGE_URL_PATTERN)
 
+  expect(await readHref(page.locator('#line-share-link'))).toBe(
+    `https://line.me/R/share?text=${encodeURIComponent(url ?? '')}`,
+  )
+  expect(await page.locator('#edit-link').getAttribute('href')).toBe(`/${id}/edit`)
+  // 基準時刻は §10.3 の 2026-09-16(水) 10:00 JST。終了 9/20 20:00 JST + 保持 7 日 = 9/27 20:00 JST
+  await expect(page.locator('#expires-notice')).toHaveText('9/27 まで表示されます')
+
   await page.getByRole('button', { name: 'コピー' }).click()
   await expect(page.locator('#copy-message')).toBeVisible()
   const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
@@ -128,4 +135,20 @@ test('navigator.share 対応の環境では共有ボタンが出てtitleとurl�
   )
   expect(calls).toHaveLength(1)
   expect((calls[0] as { title: string }).title).toBe('飲み会')
+})
+
+test('クリップボードAPIもexecCommandも失敗すると失敗メッセージを表示する', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText: () => Promise.reject(new Error('denied')) },
+      configurable: true,
+    })
+    document.execCommand = () => false
+  })
+
+  await createPage(page, '9/20 19時 渋谷で飲み会')
+
+  await page.getByRole('button', { name: 'コピー' }).click()
+  await expect(page.locator('#copy-error')).toBeVisible()
+  await expect(page.locator('#copy-message')).toBeHidden()
 })

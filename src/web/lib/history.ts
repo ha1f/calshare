@@ -52,8 +52,3 @@ export function addHistoryEntry(entry: HistoryEntry): void {
     // 書き込めない環境では履歴を諦める。作成自体は成功しているので画面遷移は続ける
   }
 }
-
-/** id から履歴を 1 件探す。完成画面が Google カレンダーリンクやトークンを引くのに使う（§6.2） */
-export function findHistoryEntry(id: string): HistoryEntry | null {
-  return readHistory().find((entry) => entry.id === id) ?? null
-}

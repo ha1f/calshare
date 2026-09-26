@@ -1,13 +1,17 @@
+import { COPY_MESSAGE_DURATION_MS } from '../../core/config/limits'
 import { isValidPageId } from '../../core/id/crockford'
 import { buildGoogleCalendarUrl } from '../../core/google/buildGoogleCalendarUrl'
 import { toJstParts } from '../../core/time/jst'
 import { fromEventFieldsJson } from '../../core/types'
+import type { EventFieldsJson } from '../../core/types'
 import { copyToClipboard } from '../lib/clipboard'
-import { findHistoryEntry } from '../lib/history'
-import { addOpenExternalBrowserParam, isLineUserAgent } from '../lib/lineUa'
+import type { HistoryEntry } from '../lib/history'
+import { applyCalendarUaHandling } from '../lib/lineUa'
 import { canShare, shareUrl } from '../lib/share'
 
-const COPY_MESSAGE_DURATION_MS = 2000
+// web/lib/history.ts の STORAGE_KEY と合わせる。history.ts は T14 所有で変更できないため、
+// この画面に必要な読み取り・検証はここで完結させる
+const HISTORY_STORAGE_KEY = 'calshare.history'
 
 /**
  * expiresAt は JST 0 時ちょうどのことがあり、そのまま暦日に変換すると実際には見えなくなる日を
@@ -30,6 +34,67 @@ function requireElement<T extends HTMLElement>(id: string): T {
   return el as T
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * localStorage の履歴から id に一致する項目を探す。§6.4 が言う「localStorage の内容も信頼しない」に
+ * 従い、fields や日時が壊れていれば見つからなかった扱いにする（この画面が例外で止まらないように）
+ */
+function findValidHistoryEntry(id: string): HistoryEntry | null {
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(HISTORY_STORAGE_KEY)
+  } catch {
+    return null
+  }
+  if (raw === null) return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+
+  const found = (parsed as unknown[]).find(
+    (v) => typeof v === 'object' && v !== null && (v as Record<string, unknown>).id === id,
+  )
+  if (found === undefined) return null
+
+  const entry = found as Record<string, unknown>
+  if (
+    typeof entry.url !== 'string' ||
+    !isHttpUrl(entry.url) ||
+    typeof entry.editToken !== 'string' ||
+    typeof entry.fields !== 'object' ||
+    entry.fields === null ||
+    typeof entry.expiresAt !== 'string' ||
+    Number.isNaN(Date.parse(entry.expiresAt)) ||
+    typeof entry.createdAt !== 'string' ||
+    Number.isNaN(Date.parse(entry.createdAt)) ||
+    typeof entry.updatedAt !== 'string' ||
+    Number.isNaN(Date.parse(entry.updatedAt))
+  ) {
+    return null
+  }
+
+  try {
+    fromEventFieldsJson(entry.fields as EventFieldsJson)
+  } catch {
+    return null
+  }
+
+  return entry as unknown as HistoryEntry
+}
+
 function main(): void {
   const id = new URLSearchParams(location.search).get('id') ?? ''
   if (!isValidPageId(id)) {
@@ -37,9 +102,9 @@ function main(): void {
     return
   }
 
-  const entry = findHistoryEntry(id)
+  const entry = findValidHistoryEntry(id)
   if (entry === null) {
-    // 直リンクや別端末で開いた場合、この端末の履歴には無い（§6.2）
+    // 直リンクや別端末で開いた場合、または履歴項目が壊れている場合はこの端末には無い扱いにする（§6.2）
     redirectTo(`/${id}`)
     return
   }
@@ -47,6 +112,7 @@ function main(): void {
   const urlDisplay = requireElement<HTMLAnchorElement>('url-display')
   const copyButton = requireElement<HTMLButtonElement>('copy-button')
   const copyMessage = requireElement<HTMLElement>('copy-message')
+  const copyError = requireElement<HTMLElement>('copy-error')
   const lineShareLink = requireElement<HTMLAnchorElement>('line-share-link')
   const shareButton = requireElement<HTMLButtonElement>('share-button')
   const calendarSection = requireElement<HTMLElement>('calendar-section')
@@ -59,20 +125,24 @@ function main(): void {
 
   urlDisplay.href = entry.url
   urlDisplay.textContent = entry.url
-  editLink.href = `/${entry.id}/edit`
+  editLink.href = `/${id}/edit`
   expiresNotice.textContent = `${formatExpiresLabel(new Date(entry.expiresAt))} まで表示されます`
   // 編集完了後の再掲時だけ出す。初回作成時には出さない（§6.2）
   resendNotice.hidden = entry.updatedAt === entry.createdAt
 
   lineShareLink.href = `https://line.me/R/share?text=${encodeURIComponent(entry.url)}`
 
+  let copyMessageTimer: ReturnType<typeof setTimeout> | undefined
   copyButton.addEventListener('click', () => {
     void copyToClipboard(entry.url).then((succeeded) => {
-      if (!succeeded) return
-      copyMessage.hidden = false
-      setTimeout(() => {
-        copyMessage.hidden = true
-      }, COPY_MESSAGE_DURATION_MS)
+      if (copyMessageTimer !== undefined) clearTimeout(copyMessageTimer)
+      copyMessage.hidden = !succeeded
+      copyError.hidden = succeeded
+      if (succeeded) {
+        copyMessageTimer = setTimeout(() => {
+          copyMessage.hidden = true
+        }, COPY_MESSAGE_DURATION_MS)
+      }
     })
   })
 
@@ -95,12 +165,9 @@ function main(): void {
       isAllDay: fields.isAllDay,
       detailUrl: entry.url,
     })
-    icsLink.href = `/${entry.id}.ics`
+    icsLink.href = `/${id}.ics`
 
-    if (isLineUserAgent(navigator.userAgent)) {
-      googleLink.href = addOpenExternalBrowserParam(googleLink.href)
-      icsLink.href = addOpenExternalBrowserParam(icsLink.href)
-    }
+    applyCalendarUaHandling(calendarSection, navigator.userAgent)
   } else {
     draftNotice.hidden = false
   }

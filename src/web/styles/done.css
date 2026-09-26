@@ -38,6 +38,17 @@
   margin: 8px 0;
 }
 
+.copy-error {
+  color: #c00;
+  margin: 8px 0;
+}
+
+.line-banner,
+.android-ics-notice {
+  font-size: 0.85em;
+  color: #a60;
+}
+
 .calendar-actions {
   margin-top: 24px;
 }
