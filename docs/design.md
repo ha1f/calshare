@@ -750,7 +750,7 @@ export const ruleBasedInterpreter: TextInterpreter = {
 ### 6.2 ② 完成（`/done?id=:id`）
 
 - 起動時にクエリの `id` を `isValidPageId`（§4.2）で検証する。不正なら `/` へ置き換え遷移する（`?id=//evil.example` のような open redirect を防ぐ）。有効なら localStorage の履歴から `id` を探し、無ければ `/{id}` へ置き換え遷移（直リンクや別端末で開いた場合）。遷移先は `new URL(path, location.origin)` で組み、`origin` が一致することを確認してから `location.replace` する。
-- 主役は URL 表示とコピーボタン。コピーは `navigator.clipboard.writeText` を第一候補に、失敗したら非表示 `<textarea>` + `document.execCommand('copy')` にフォールバックする（LINE 内蔵ブラウザ等で clipboard API が制限される環境の対策）。成功時は「コピーしました」を 2 秒表示。
+- 主役は URL 表示とコピーボタン。コピーは `navigator.clipboard.writeText` を第一候補に、失敗したら非表示 `<textarea>` + `document.execCommand('copy')` にフォールバックする（LINE 内蔵ブラウザ等で clipboard API が制限される環境の対策）。成功時は「コピーしました」を 2 秒表示。両方失敗した場合は「コピーできませんでした。URLを長押しして選択してください」を表示する。
 - 「LINEで送る」: `https://line.me/R/share?text={encodeURIComponent(url)}` を新規タブで開く。
 - 「共有」: `navigator.share` が使える環境だけ表示（フィーチャー検出。無い環境はボタンごと出さない）。`{ title, url }` を渡す。
 - 「自分のカレンダーにも入れる」: Google カレンダーリンク（§7.1）と ics リンク（`/{id}.ics`）の 2 つ。Google リンクは履歴項目の `fields`（§6.4）から `buildGoogleCalendarUrl` で組む（サーバに問い合わせない）。日時が null の下書きでは出さない。

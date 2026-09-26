@@ -9,8 +9,7 @@ import type { HistoryEntry } from '../lib/history'
 import { applyCalendarUaHandling } from '../lib/lineUa'
 import { canShare, shareUrl } from '../lib/share'
 
-// web/lib/history.ts の STORAGE_KEY と合わせる。history.ts は T14 所有で変更できないため、
-// この画面に必要な読み取り・検証はここで完結させる
+// web/lib/history.ts の STORAGE_KEY と同じ値にする。片方だけ変えると完成画面が履歴を読めなくなる
 const HISTORY_STORAGE_KEY = 'calshare.history'
 
 /**

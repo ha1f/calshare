@@ -41,7 +41,8 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
     `https://line.me/R/share?text=${encodeURIComponent(url ?? '')}`,
   )
   expect(await page.locator('#edit-link').getAttribute('href')).toBe(`/${id}/edit`)
-  // 基準時刻は §10.3 の 2026-09-16(水) 10:00 JST。終了 9/20 20:00 JST + 保持 7 日 = 9/27 20:00 JST
+  // §10.3 の基準時刻の下で作成しているため、終了 9/20 20:00 JST から
+  // RETENTION_DAYS_AFTER_LAST_EVENT 日後の暦日が期限表示に出る
   await expect(page.locator('#expires-notice')).toHaveText('9/27 まで表示されます')
 
   await page.getByRole('button', { name: 'コピー' }).click()

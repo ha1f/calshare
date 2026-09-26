@@ -30,9 +30,8 @@ export function addOpenExternalBrowserParam(href: string): string {
 
 /**
  * カレンダーボタン（`a[data-calendar]`）を含むコンテナに、LINE 内蔵ブラウザ向けの href 書き換え・
- * 案内バナーと Android 向けの ics 注記を適用する（§6.6、§7.3）。詳細ページ・完成画面の両方から呼ぶ。
- * LINE と Android は独立に判定するため、Android 版 LINE では両方が適用される。
- * ボタンが無いコンテナ（日時未定の下書き等）には何もしない
+ * 案内バナーと Android 向けの ics 注記を適用する（§6.6、§7.3）。LINE と Android は独立に判定するため、
+ * Android 版 LINE では両方が適用される。ボタンが無いコンテナ（日時未定の下書き等）には何もしない
  */
 export function applyCalendarUaHandling(container: Element, userAgent: string): void {
   const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a[data-calendar]'))
