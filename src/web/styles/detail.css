@@ -1,0 +1,70 @@
+.issuer {
+  font-size: 0.85em;
+  color: #666;
+}
+
+.change-banner {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid #c90;
+  border-radius: 4px;
+  background: #fff8e6;
+}
+
+.datetime {
+  font-size: 1.1em;
+  font-weight: bold;
+}
+
+.location a {
+  font-size: 0.9em;
+}
+
+.calendar-actions {
+  margin: 16px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.calendar-actions a {
+  padding: 10px 16px;
+  border: 1px solid #666;
+  border-radius: 4px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.calendar-notice {
+  font-size: 0.85em;
+  color: #a60;
+  width: 100%;
+}
+
+.line-banner,
+.android-ics-notice {
+  font-size: 0.85em;
+  color: #a60;
+}
+
+.calendar-actions-empty {
+  margin: 16px 0;
+  color: #666;
+}
+
+.memo {
+  white-space: pre-wrap;
+}
+
+.cta {
+  margin-top: 24px;
+}
+
+footer p {
+  font-size: 0.85em;
+  color: #666;
+}
+
+.disclaimer {
+  color: #999;
+}

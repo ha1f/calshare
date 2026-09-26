@@ -6,8 +6,34 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>calshare - 完成</title>
     <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/done.css" />
   </head>
   <body>
+    <main>
+      <p class="done-heading">URLができました</p>
+      <a id="url-display" class="url-display"></a>
+      <div class="action-row">
+        <button id="copy-button" type="button" class="action-button">コピー</button>
+        <a id="line-share-link" class="action-button" target="_blank" rel="noopener noreferrer"
+          >LINEで送る</a
+        >
+        <button id="share-button" type="button" class="action-button" hidden>共有</button>
+      </div>
+      <p id="copy-message" class="copy-message" hidden>コピーしました</p>
+
+      <section id="calendar-section" class="calendar-actions" hidden>
+        <p class="calendar-heading">自分のカレンダーにも入れる</p>
+        <a id="google-calendar-link" data-calendar="google">Googleカレンダー</a>
+        <a id="ics-link" data-calendar="ics">その他（ics）</a>
+      </section>
+      <p id="draft-notice" class="draft-notice" hidden>日時が決まったらカレンダーに追加できます</p>
+
+      <p id="expires-notice" class="expires-notice"></p>
+      <a id="edit-link" class="edit-link">あとから編集できます</a>
+      <p id="resend-notice" class="resend-notice" hidden>
+        変更を伝えたいときは同じURLを送り直してください
+      </p>
+    </main>
     <script type="module" src="/assets/js/done.js"></script>
   </body>
 </html>
