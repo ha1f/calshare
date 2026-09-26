@@ -143,23 +143,25 @@ function main(): void {
 
   async function handleSubmit(): Promise<void> {
     if (previousFields === null) return
+    if (submitButton.disabled) return
     if (debounceTimer !== undefined) clearTimeout(debounceTimer)
     apiError = null
-    await runInterpret(textarea.value)
-
-    const fields = effectiveFields(state)
-    const validation = validateEventFields(state.rawText, fields, new Date(), {
-      mode: 'update',
-      previous: previousFields,
-    })
-    if (!validation.ok) {
-      showMessage(VALIDATION_MESSAGES[validation.code])
-      return
-    }
-
     submitButton.disabled = true
-    hideMessage()
     try {
+      await runInterpret(textarea.value)
+
+      const fields = effectiveFields(state)
+      const validation = validateEventFields(state.rawText, fields, new Date(), {
+        mode: 'update',
+        previous: previousFields,
+      })
+      if (!validation.ok) {
+        submitButton.disabled = false
+        showMessage(VALIDATION_MESSAGES[validation.code])
+        return
+      }
+
+      hideMessage()
       const response = await updatePage(id, editToken, {
         rawText: state.rawText,
         fields: toEventFieldsJson(fields),

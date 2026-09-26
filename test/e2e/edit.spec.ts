@@ -36,8 +36,6 @@ async function readHistoryEntry(
   }, id)
 }
 
-// e2e は create API を叩くたびに ip:unknown のレート制限バケットを共有で消費する（§9.3・§10.4）ため、
-// この spec 全体で作成は 1 回だけにする
 test('履歴から編集して保存すると /done に再掲され、履歴と詳細ページに変更が反映される（シナリオ7）', async ({
   page,
 }) => {
@@ -88,6 +86,30 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
   await expect(page.locator('.change-banner')).toContainText('場所が変更されました')
   await expect(page.locator('.change-banner')).not.toContainText('タイトルが変更されました')
   await expect(page.locator('body')).not.toContainText('渋谷')
+})
+
+test('保存ボタンを連打しても PATCH は 1 回しか送られない', async ({ page }) => {
+  const id = await createPage(page, '9/20 19時 渋谷で飲み会')
+
+  await page.goto(`/${id}/edit`)
+  await expect(page.getByTestId('input-location')).toHaveValue('渋谷')
+
+  const patchRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'PATCH') patchRequests.push(request.url())
+  })
+
+  // 通常のクリックは別タスクに分かれ disabled が間に合うため、同一タスク内で
+  // click() を直接 3 回呼んで多重送信を再現する
+  await page.evaluate(() => {
+    const button = document.getElementById('submit') as HTMLButtonElement
+    button.click()
+    button.click()
+    button.click()
+  })
+  await page.waitForURL(new RegExp(`/done\\?id=${id}$`))
+
+  expect(patchRequests).toHaveLength(1)
 })
 
 test('localStorage にトークンが無ければ「この端末では編集できません」と出る（シナリオ8）', async ({
