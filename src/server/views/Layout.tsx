@@ -1,3 +1,4 @@
+import { html } from 'hono/html'
 import type { HtmlEscapedString } from 'hono/utils/html'
 
 /**
@@ -23,21 +24,22 @@ export interface LayoutProps {
  * `robots` メタは固定する（トップ・完成・履歴は静的アセット側で配信するので対象外、§9.5）
  */
 export function Layout({ title, cssHref, scriptSrc, head, children }: LayoutProps) {
-  return (
-    <html lang="ja">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="robots" content="noindex, nofollow" />
-        <title>{title}</title>
-        <link rel="stylesheet" href="/assets/css/base.css" />
-        {cssHref && <link rel="stylesheet" href={cssHref} />}
-        {head}
-      </head>
-      <body>
-        {children}
-        {scriptSrc && <script type="module" src={scriptSrc}></script>}
-      </body>
-    </html>
-  )
+  // hono/jsx は <html> を描画しても DOCTYPE を付けないため、html タグでリテラルとして先頭に足す
+  return html`<!DOCTYPE html>${(
+      <html lang="ja">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <meta name="robots" content="noindex, nofollow" />
+          <title>{title}</title>
+          <link rel="stylesheet" href="/assets/css/base.css" />
+          {cssHref && <link rel="stylesheet" href={cssHref} />}
+          {head}
+        </head>
+        <body>
+          {children}
+          {scriptSrc && <script type="module" src={scriptSrc}></script>}
+        </body>
+      </html>
+    )}`
 }

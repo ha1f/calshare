@@ -178,7 +178,9 @@ export function DetailPage({ page, config, now }: DetailPageProps) {
 
       <footer data-section="footer">
         <p>
-          このページは {formatMonthDayJst(page.expiresAt)} まで表示されます
+          {/* expiresAt は JST 0 時ちょうどのことがあり、そのまま暦日に変換すると
+              実際にはもう見えなくなる日を指してしまう（終日イベント等）。1ms 前の暦日を表示する */}
+          このページは {formatMonthDayJst(new Date(page.expiresAt.getTime() - 1))} まで表示されます
           {isEdited && <>、最終更新: {formatMonthDayTimeJst(page.updatedAt)}</>}
         </p>
         <p class="disclaimer">カレンダーに追加した後の変更は自動では反映されません</p>

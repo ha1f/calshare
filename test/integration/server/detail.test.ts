@@ -34,14 +34,14 @@ function eventFields(overrides: Partial<EventFields> = {}): EventFields {
 async function createPage(
   repo: PageRepository,
   id: string,
-  options: { event?: Partial<EventFields>; now?: Date } = {},
+  options: { event?: Partial<EventFields>; now?: Date; expiresAt?: Date } = {},
 ): Promise<void> {
   const input: NewPageInput = {
     id,
     editTokenHash: 'token-hash',
     rawText: '9/20 19時 渋谷で飲み会',
     event: { id: `${id}-event`, ...eventFields(options.event) },
-    expiresAt: new Date('2026-09-27T00:00:00.000Z'),
+    expiresAt: options.expiresAt ?? new Date('2026-09-27T00:00:00.000Z'),
     source: 'direct',
     creatorIpHash: 'ip-hash',
     creatorDeviceId: 'device-1',
@@ -118,6 +118,18 @@ async function collectSections(html: string): Promise<string[]> {
   return sections
 }
 
+/** CSS セレクタに一致する要素が本文にあるか。文字列一致ではなく DOM 構造上の位置を検証するのに使う */
+async function hasElementMatching(html: string, selector: string): Promise<boolean> {
+  let found = false
+  const rewriter = new HTMLRewriter().on(selector, {
+    element() {
+      found = true
+    },
+  })
+  await rewriter.transform(new Response(html)).text()
+  return found
+}
+
 async function get(deps: Deps, path: string): Promise<{ res: Response; text: string }> {
   const app = createApp(deps)
   const ctx = createExecutionContext()
@@ -154,6 +166,30 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
     ])
   })
 
+  it('発行者スロットは issuer_name が非空なら title の直後に「◯◯ 主催」を出す', async () => {
+    const { deps, repo } = buildDetailDeps()
+    const id = pageId(21)
+    await createPage(repo, id, { event: { location: null, memo: null } })
+    await env.DB.prepare('UPDATE pages SET issuer_name = ? WHERE id = ?')
+      .bind('<b>主催者</b>', id)
+      .run()
+
+    const { text } = await get(deps, `/${id}`)
+
+    expect(await collectSections(text)).toEqual([
+      'title',
+      'issuer',
+      'datetime',
+      'calendar',
+      'divider',
+      'cta',
+      'footer',
+      'report',
+    ])
+    // エスケープされたまま出る（自動リンク・生 HTML 挿入をしていないことの確認）
+    expect(text).toContain('&lt;b&gt;主催者&lt;/b&gt; 主催')
+  })
+
   it('OGP メタが正しい（og:image は publicOrigin 由来の絶対 URL で ?v=version 付き）', async () => {
     const { deps, repo } = buildDetailDeps()
     const id = pageId(1)
@@ -162,10 +198,48 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
     const { text } = await get(deps, `/${id}`)
 
     expect(text).toContain('<meta property="og:title" content="飲み会"/>')
+    expect(text).toContain(
+      '<meta property="og:description" content="9月20日(日) 19:00〜20:00 渋谷"/>',
+    )
     expect(text).toContain(`<meta property="og:image" content="${TEST_ORIGIN}/${id}/ogp.png?v=1"/>`)
     expect(text).toContain(`<meta property="og:url" content="${TEST_ORIGIN}/${id}"/>`)
     expect(text).toContain('<meta name="twitter:card" content="summary_large_image"/>')
     expect(text).toContain('<meta name="robots" content="noindex, nofollow"/>')
+  })
+
+  it('OGP の絶対 URL は publicOrigin 由来（request.url や Host ヘッダではない、§9.9）', async () => {
+    const { repo } = buildDetailDeps()
+    const id = pageId(18)
+    await createPage(repo, id)
+    const otherOrigin = 'https://calshare.example'
+    const deps = buildFakeDeps({
+      pages: repo,
+      clock: fakeClock(NOW),
+      config: {
+        publicOrigin: otherOrigin,
+        publicHost: new URL(otherOrigin).host,
+        serviceName: 'calshare',
+        ratePepper: 'test-pepper',
+      },
+    })
+
+    // リクエスト先は TEST_ORIGIN のまま。実装が request.url から絶対 URL を組んでいたら
+    // otherOrigin ではなく TEST_ORIGIN が出てしまう
+    const { text } = await get(deps, `/${id}`)
+
+    expect(text).toContain(`<meta property="og:image" content="${otherOrigin}/${id}/ogp.png?v=1"/>`)
+    expect(text).toContain(`<meta property="og:url" content="${otherOrigin}/${id}"/>`)
+    expect(text).not.toContain(TEST_ORIGIN)
+  })
+
+  it('SSR のレスポンスは <!DOCTYPE html> から始まる', async () => {
+    const { deps, repo } = buildDetailDeps()
+    const id = pageId(19)
+    await createPage(repo, id)
+
+    const { text } = await get(deps, `/${id}`)
+
+    expect(text.startsWith('<!DOCTYPE html>')).toBe(true)
   })
 
   it('存在しない・hidden・期限切れのページは同じ本文で 404（存在を区別させない、§4.1）', async () => {
@@ -267,6 +341,38 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
     expect(second.res.headers.get('Cache-Control')).toBe('public, max-age=60')
   })
 
+  it('パーセントエンコードした ID でもキャッシュキーが同じになる（D1 への直叩き対策、§2.4）', async () => {
+    const inner = createD1PageRepository(env.DB)
+    const { pages, calls } = withFindByIdCounter(inner)
+    const deps = buildFakeDeps({ pages, clock: fakeClock(NOW) })
+    const id = pageId(20) // 'm'.repeat(12)
+    await inner.create({
+      id,
+      editTokenHash: 'hash',
+      rawText: '9/20 19時 渋谷で飲み会',
+      event: { id: `${id}-event`, ...eventFields() },
+      expiresAt: new Date('2026-09-27T00:00:00.000Z'),
+      source: 'direct',
+      creatorIpHash: 'ip-hash',
+      creatorDeviceId: 'device-1',
+      now: NOW,
+    })
+    const percentEncoded = id
+      .split('')
+      .map((c) => `%${c.charCodeAt(0).toString(16)}`)
+      .join('')
+
+    const plain = await get(deps, `/${id}`)
+    const encoded = await get(deps, `/${percentEncoded}`)
+    const mixed = await get(deps, `/${id[0]}${percentEncoded.slice(3)}`)
+    const withQuery = await get(deps, `/${id}?x=1`)
+
+    expect([plain.res.status, encoded.res.status, mixed.res.status, withQuery.res.status]).toEqual([
+      200, 200, 200, 200,
+    ])
+    expect(calls()).toBe(1)
+  })
+
   it('CSP・Referrer-Policy・X-Robots-Tag が固定で付く', async () => {
     const { deps, repo } = buildDetailDeps()
     const id = pageId(7)
@@ -311,13 +417,21 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
     it('48 時間を過ぎた変更は表示されない', async () => {
       const { deps, repo } = buildDetailDeps()
       const id = pageId(9)
-      await createPage(repo, id)
+      // snapshot と日時を変えておく。同じだと dateTimeChanged が常に false になり、
+      // 48 時間判定を素通りしても（バグで無条件表示になっても）テストが偽陽性で通ってしまう
+      await createPage(repo, id, {
+        event: {
+          start: new Date('2026-09-21T10:00:00.000Z'),
+          end: new Date('2026-09-21T11:00:00.000Z'),
+        },
+      })
       const changedAt = new Date(NOW.getTime() - 48 * 60 * 60 * 1000 - 1)
       await setChangeSnapshot(id, snapshot, changedAt)
 
       const { text } = await get(deps, `/${id}`)
 
       expect(text).not.toContain('この予定は変更されました')
+      expect(await collectSections(text)).not.toContain('change-banner')
     })
 
     it('タイトル・場所の変更は事実だけを示し、旧値は DOM に出ない', async () => {
@@ -376,22 +490,30 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
 
       const { text } = await get(deps, `/${id}`)
 
-      expect(text).toContain('カレンダーに追加した後の変更は自動では反映されません')
-      expect(text).not.toContain('最新はこのページで確認してください')
+      expect(await hasElementMatching(text, '[data-section="footer"] .disclaimer')).toBe(true)
+      expect(await hasElementMatching(text, '[data-section="calendar"] .calendar-notice')).toBe(
+        false,
+      )
+      expect(text).toContain('このページは 9/27 まで表示されます')
+      expect(text).not.toContain('最終更新:')
     })
 
     it('編集済みのページはカレンダーボタン直下にも免責が出る', async () => {
       const { deps, repo } = buildDetailDeps()
       const id = pageId(12)
       await createPage(repo, id)
-      await markEdited(id, new Date(NOW.getTime() + 60 * 1000))
+      await markEdited(id, new Date('2026-09-20T00:05:00.000Z')) // 9:05 JST（ゼロ埋めの確認）
 
       const { text } = await get(deps, `/${id}`)
 
+      expect(await hasElementMatching(text, '[data-section="footer"] .disclaimer')).toBe(true)
+      expect(await hasElementMatching(text, '[data-section="calendar"] .calendar-notice')).toBe(
+        true,
+      )
       expect(text).toContain(
         'カレンダーに追加した後の変更は自動では反映されません。最新はこのページで確認してください',
       )
-      expect(text).toContain('最終更新:')
+      expect(text).toContain('このページは 9/27 まで表示されます、最終更新: 9/20 09:05')
     })
   })
 
@@ -404,5 +526,25 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
 
     expect(text).toContain('日時が決まったら追加できます')
     expect(text).not.toContain('Googleカレンダー')
+  })
+
+  it('終日イベントで expiresAt が JST 0 時ちょうどでも、期限表示は実際に見える最後の暦日になる', async () => {
+    const { deps, repo } = buildDetailDeps()
+    const id = pageId(22)
+    await createPage(repo, id, {
+      event: {
+        start: new Date('2026-09-19T15:00:00.000Z'), // 9/20 00:00 JST
+        end: new Date('2026-09-20T15:00:00.000Z'), // 9/21 00:00 JST（排他的）
+        isAllDay: true,
+      },
+      // 9/28 00:00 JST ちょうど。そのまま暦日に変換すると 9/28 になるが、
+      // isServable はこの時刻ちょうどで false になるので実際に見えるのは 9/27 まで
+      expiresAt: new Date('2026-09-27T15:00:00.000Z'),
+    })
+
+    const { text } = await get(deps, `/${id}`)
+
+    expect(text).toContain('このページは 9/27 まで表示されます')
+    expect(text).not.toContain('9/28 まで表示されます')
   })
 })

@@ -5,6 +5,7 @@ import {
   CONTENT_SECURITY_POLICY,
   REFERRER_POLICY,
   X_CONTENT_TYPE_OPTIONS,
+  X_ROBOTS_TAG,
 } from '../../../../src/server/lib/headers'
 
 // test/unit/web/headers.test.ts と同じ読み方をする（§9.1）
@@ -33,4 +34,11 @@ describe('src/web/_headers と src/server/lib/headers.ts の一致（§9.1）', 
   it('Referrer-Policy が一致する', () => {
     expect(headerValueFor('/*', 'Referrer-Policy')).toBe(REFERRER_POLICY)
   })
+
+  it.each(['/done', '/history', '/edit'])(
+    '%s の X-Robots-Tag が X_ROBOTS_TAG と一致する',
+    (path) => {
+      expect(headerValueFor(path, 'X-Robots-Tag')).toBe(X_ROBOTS_TAG)
+    },
+  )
 })

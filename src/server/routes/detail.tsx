@@ -5,7 +5,6 @@ import type { Deps } from '../deps'
 import type { Env } from '../env'
 import { withEdgeCache } from '../lib/edgeCache'
 import { isServable } from '../lib/pageAccess'
-import { applySecurityHeaders } from '../middleware/securityHeaders'
 import { DetailPage } from '../views/DetailPage'
 import { NotFound } from '../views/NotFound'
 
@@ -14,19 +13,25 @@ export function detailRoutes(deps: Deps): Hono<{ Bindings: Env }> {
 
   // catch-all（§2.2 の評価順序で最後）。ID 形式に合わないパスはこのルートに一致せず Hono の既定 404 になる
   app.get(`/:id{${PAGE_ID_PATTERN}}`, async (c) => {
-    return withEdgeCache(c.req.raw, c.executionCtx, DETAIL_CACHE_MAX_AGE_SECONDS, async () => {
-      const id = c.req.param('id')
-      const now = deps.clock.now()
-      const page = await deps.pages.findById(id)
+    const id = c.req.param('id')
+    // request.url をそのままキーにすると、Hono がデコードしてから照合する %XX 表記違いのぶんだけ
+    // キャッシュキーが割れる（同じページなのに別キー）。検証済みの id から正規化して組み直す（§2.4）
+    const cacheKeyRequest = new Request(new URL(`/${id}`, c.req.url))
+    return withEdgeCache(
+      cacheKeyRequest,
+      c.executionCtx,
+      DETAIL_CACHE_MAX_AGE_SECONDS,
+      async () => {
+        const now = deps.clock.now()
+        const page = await deps.pages.findById(id)
 
-      if (page === null || !isServable(page, now)) {
-        const res = await c.html(<NotFound serviceName={deps.config.serviceName} />, 404)
-        return applySecurityHeaders(res)
-      }
+        if (page === null || !isServable(page, now)) {
+          return c.html(<NotFound serviceName={deps.config.serviceName} />, 404)
+        }
 
-      const res = await c.html(<DetailPage page={page} config={deps.config} now={now} />)
-      return applySecurityHeaders(res)
-    })
+        return c.html(<DetailPage page={page} config={deps.config} now={now} />)
+      },
+    )
   })
 
   return app
