@@ -15,12 +15,11 @@ async function createPageAndOpenDetail(page: Page): Promise<void> {
     page.waitForURL(/\/done\?id=/),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  // main() の href 書き換えは非同期に走るため、値が付くまで待ってから読む
   await expect(page.locator('#url-display')).toHaveAttribute('href', /^https?:/)
   const detailHref = await page.locator('#url-display').getAttribute('href')
   if (detailHref === null) throw new Error('detail href missing')
-  // entry.url は config.publicOrigin（既定 8787）から組まれるため、E2E_PORT で別ポートのときは
-  // ホストが実サーバと一致しない。パス部分だけを baseURL 相手に遷移させる
+  // entry.url は wrangler.jsonc の PUBLIC_ORIGIN から組まれるため、E2E_PORT で別ポートのときは
+  // ホストが実サーバと一致しない。パス部分だけ遷移させる
   await page.goto(new URL(detailHref).pathname)
 }
 

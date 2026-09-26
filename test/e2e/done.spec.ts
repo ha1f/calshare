@@ -42,7 +42,7 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
   expect(clipboardText).toBe(url)
 
-  // main() の href 書き換えは非同期に走るため、値が付くまで待ってから読む
+  // 初期状態は href 属性が無く .href は空文字になるので、値が付くまで待ってから読む
   await expect.poll(() => readHref(page.locator('#google-calendar-link'))).not.toBe('')
   const googleUrl = new URL(await readHref(page.locator('#google-calendar-link')))
   expect(googleUrl.hostname).toBe('calendar.google.com')
@@ -51,8 +51,8 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   const icsUrl = new URL(await readHref(page.locator('#ics-link')))
   expect(icsUrl.pathname).toBe(`/${id}.ics`)
 
-  // 初回作成時には「送り直してください」は出ない。編集画面（T16）はまだ無いため、
-  // 編集完了後の状態を履歴の直接書き換えで再現してから再訪する（§6.2）
+  // 初回作成時には「送り直してください」は出ない。編集完了後の状態は、履歴の
+  // updatedAt を直接書き換えて再現してから再訪する（§6.2）
   await expect(page.locator('#resend-notice')).toBeHidden()
   await page.evaluate((pageId) => {
     const raw = localStorage.getItem('calshare.history')
@@ -65,9 +65,8 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   await page.goto(`/done?id=${id}`)
   await expect(page.locator('#resend-notice')).toBeVisible()
 
-  // entry.url は config.publicOrigin（wrangler.jsonc の PUBLIC_ORIGIN、既定 8787）から組まれるため、
-  // E2E_PORT で別ポートで動かしている場合は絶対 URL のホストが実際のサーバと一致しない。
-  // パス部分だけを baseURL 相手に遷移させる
+  // entry.url は wrangler.jsonc の PUBLIC_ORIGIN から組まれるため、E2E_PORT で別ポートで
+  // 動かしている場合は絶対 URL のホストが実際のサーバと一致しない。パス部分だけ遷移させる
   const href = await page.locator('#url-display').getAttribute('href')
   if (href === null) throw new Error('url-display の href が無い')
   await page.goto(new URL(href).pathname)
