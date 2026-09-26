@@ -1,6 +1,12 @@
+import { env, SELF } from 'cloudflare:test'
 import { describe, expect, it, vi } from 'vitest'
 import { hashEditToken } from '../../../src/core/token/hashEditToken'
-import type { GetPageResponse, UpdatePageResponse } from '../../../src/core/api/types'
+import type {
+  CreatePageRequest,
+  CreatePageResponse,
+  GetPageResponse,
+  UpdatePageResponse,
+} from '../../../src/core/api/types'
 import type { EventFieldsJson } from '../../../src/core/types'
 import type { NewPageInput, PageRepository } from '../../../src/ports/pageRepository'
 import { createApp } from '../../../src/server/app'
@@ -203,6 +209,7 @@ describe('PATCH /api/pages/:id', () => {
     const json = (await res.json()) as UpdatePageResponse
     expect(json.version).toBe(2)
     expect(json.fields.title).toBe('新宿飲み会')
+    expect(json.expiresAt).toBe('2026-09-28T12:00:00.000Z') // 新しい end 2026-09-21T12:00:00.000Z + 7 日
     expect(Object.keys(json)).not.toContain('rawText')
 
     const page = await deps.pages.findById(PAGE_ID)
@@ -243,6 +250,50 @@ describe('PATCH /api/pages/:id', () => {
       locationChanged: false,
     })
     expect(page?.changedAt).toEqual(NOW)
+  })
+
+  it('previous_snapshot と changed_at: タイトルだけ変えても titleChanged が立つ', async () => {
+    const deps = buildFakeDeps()
+    await seedPage(deps.pages)
+    const app = createApp(deps)
+
+    const res = await app.fetch(
+      patchPage(
+        PAGE_ID,
+        { rawText: '9/20 19時 渋谷で新宿飲み会', fields: validFields({ title: '新宿飲み会' }) },
+        { token: TOKEN },
+      ),
+    )
+
+    expect(res.status).toBe(200)
+    const page = await deps.pages.findById(PAGE_ID)
+    expect(page?.previousSnapshot).toEqual({
+      start: new Date('2026-09-20T10:00:00.000Z'),
+      end: new Date('2026-09-20T11:00:00.000Z'),
+      isAllDay: false,
+      titleChanged: true,
+      locationChanged: false,
+    })
+    expect(page?.changedAt).toEqual(NOW)
+  })
+
+  it('前後の空白だけの場所変更は同一視され、previous_snapshot も changed_at も変わらない', async () => {
+    const deps = buildFakeDeps()
+    await seedPage(deps.pages)
+    const app = createApp(deps)
+
+    const res = await app.fetch(
+      patchPage(
+        PAGE_ID,
+        { rawText: '9/20 19時 渋谷で飲み会', fields: validFields({ location: ' 渋谷 ' }) },
+        { token: TOKEN },
+      ),
+    )
+
+    expect(res.status).toBe(200)
+    const page = await deps.pages.findById(PAGE_ID)
+    expect(page?.previousSnapshot).toBeNull()
+    expect(page?.changedAt).toBeNull()
   })
 
   it('メモだけの変更では previous_snapshot も changed_at も変わらない', async () => {
@@ -313,6 +364,23 @@ describe('PATCH /api/pages/:id', () => {
     )
 
     expect(res.status).toBe(200)
+  })
+
+  it('タイトルを空にすると 400 EMPTY_INPUT', async () => {
+    const deps = buildFakeDeps()
+    await seedPage(deps.pages)
+    const app = createApp(deps)
+
+    const res = await app.fetch(
+      patchPage(
+        PAGE_ID,
+        { rawText: '9/20 19時 渋谷で飲み会', fields: validFields({ title: '' }) },
+        { token: TOKEN },
+      ),
+    )
+
+    expect(res.status).toBe(400)
+    expect(await errorCode(res)).toBe('EMPTY_INPUT')
   })
 
   it('日時を過去に変えると 400 PAST_EVENT', async () => {
@@ -545,5 +613,50 @@ describe('PATCH /api/pages/:id', () => {
     expect(res.status).toBe(200)
     expect(errorSpy).toHaveBeenCalledOnce()
     expect(errorSpy).toHaveBeenCalledWith('update_page_put_ics_failed', expect.anything())
+  })
+
+  it('SELF.fetch（本物のアダプタ）でも更新でき、D1 の version・changed_at と R2 の ics が更新される', async () => {
+    const start = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const end = new Date(start.getTime() + 60 * 60 * 1000)
+    const createBody: CreatePageRequest = {
+      rawText: '9/20 19時 渋谷で飲み会',
+      fields: validFields({ start: start.toISOString(), end: end.toISOString() }),
+      source: 'direct',
+    }
+    const createRes = await SELF.fetch(`${TEST_ORIGIN}/api/pages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: TEST_ORIGIN },
+      body: JSON.stringify(createBody),
+    })
+    const created = (await createRes.json()) as CreatePageResponse
+
+    const newStart = new Date(start.getTime() + 60 * 60 * 1000)
+    const newEnd = new Date(newStart.getTime() + 60 * 60 * 1000)
+    const patchRes = await SELF.fetch(`${TEST_ORIGIN}/api/pages/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: TEST_ORIGIN,
+        Authorization: `Bearer ${created.editToken}`,
+      },
+      body: JSON.stringify({
+        rawText: '9/20 20時 渋谷で新宿飲み会',
+        fields: validFields({
+          title: '新宿飲み会',
+          start: newStart.toISOString(),
+          end: newEnd.toISOString(),
+        }),
+      }),
+    })
+
+    expect(patchRes.status).toBe(200)
+    const pageRow = await env.DB.prepare('SELECT version, changed_at FROM pages WHERE id = ?')
+      .bind(created.id)
+      .first<{ version: number; changed_at: string }>()
+    expect(pageRow?.version).toBe(2)
+    expect(pageRow?.changed_at).not.toBeNull()
+
+    const icsObject = await env.BUCKET.get(`ics/${created.id}.ics`)
+    expect(await icsObject?.text()).toContain('SEQUENCE:1')
   })
 })
