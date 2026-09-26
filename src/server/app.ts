@@ -8,6 +8,7 @@ import { apiReportsRoutes } from './routes/apiReports'
 import { detailRoutes } from './routes/detail'
 import { editPageRoutes } from './routes/editPage'
 import { healthRoutes } from './routes/health'
+import { icsRoutes } from './routes/ics'
 import { reportPageRoutes } from './routes/reportPage'
 
 export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
@@ -21,6 +22,7 @@ export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
   app.route('/', apiPagesRoutes(deps))
   app.route('/', apiPagesEditRoutes(deps))
   app.route('/', apiReportsRoutes(deps))
+  app.route('/', icsRoutes(deps))
   app.route('/', editPageRoutes(deps))
   app.route('/', reportPageRoutes(deps))
   app.route('/', detailRoutes(deps))
