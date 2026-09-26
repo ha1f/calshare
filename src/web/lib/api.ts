@@ -12,17 +12,18 @@ export class ApiRequestFailedError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: ApiError['code'],
+    operation: string,
   ) {
-    super(`create page request failed: ${code}`)
+    super(`${operation} request failed: ${code}`)
   }
 }
 
-async function readApiError(response: Response): Promise<ApiRequestFailedError> {
+async function readApiError(response: Response, operation: string): Promise<ApiRequestFailedError> {
   try {
     const body = (await response.json()) as ApiError
-    return new ApiRequestFailedError(response.status, body.code)
+    return new ApiRequestFailedError(response.status, body.code, operation)
   } catch {
-    return new ApiRequestFailedError(response.status, 'INTERNAL')
+    return new ApiRequestFailedError(response.status, 'INTERNAL', operation)
   }
 }
 
@@ -33,7 +34,7 @@ export async function createPage(request: CreatePageRequest): Promise<CreatePage
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!response.ok) throw await readApiError(response)
+  if (!response.ok) throw await readApiError(response, 'create page')
   return (await response.json()) as CreatePageResponse
 }
 
@@ -42,7 +43,7 @@ export async function getPage(id: string, editToken: string): Promise<GetPageRes
   const response = await fetch(`/api/pages/${encodeURIComponent(id)}`, {
     headers: { Authorization: `Bearer ${editToken}` },
   })
-  if (!response.ok) throw await readApiError(response)
+  if (!response.ok) throw await readApiError(response, 'get page')
   return (await response.json()) as GetPageResponse
 }
 
@@ -60,6 +61,6 @@ export async function updatePage(
     },
     body: JSON.stringify(request),
   })
-  if (!response.ok) throw await readApiError(response)
+  if (!response.ok) throw await readApiError(response, 'update page')
   return (await response.json()) as UpdatePageResponse
 }

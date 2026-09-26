@@ -56,3 +56,21 @@ export function addHistoryEntry(entry: HistoryEntry): void {
     // 書き込めない環境では履歴を諦める。作成自体は成功しているので画面遷移は続ける
   }
 }
+
+/**
+ * 編集完了時に該当項目の fields / expiresAt / updatedAt だけを上書きする（§6.4）。
+ * addHistoryEntry と違い、並び順や id・url・editToken・createdAt は変えない。
+ * 該当 id が無ければ何もしない
+ */
+export function updateHistoryEntry(
+  id: string,
+  patch: Pick<HistoryEntry, 'fields' | 'expiresAt' | 'updatedAt'>,
+): void {
+  const entries = readHistory()
+  const next = entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  } catch {
+    // 書き込めない環境では履歴を諦める（addHistoryEntry と同じ方針）
+  }
+}
