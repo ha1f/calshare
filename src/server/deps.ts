@@ -6,6 +6,7 @@ import { createD1ReportRepository } from '../adapters/d1/d1ReportRepository'
 import { createWebCryptoIdGenerator } from '../adapters/id/webCryptoIdGenerator'
 import { consoleLogger } from '../adapters/logger/consoleLogger'
 import { createFakeNotifier } from '../adapters/notifier/fakeNotifier'
+import { createWebhookNotifier } from '../adapters/notifier/webhookNotifier'
 import { createFakeOgpRenderer } from '../adapters/ogp/fakeOgpRenderer'
 import { createR2ObjectStorage } from '../adapters/r2/r2ObjectStorage'
 import type { Clock } from '../ports/clock'
@@ -67,7 +68,9 @@ export function buildDeps(env: Env): Deps {
     storage: createR2ObjectStorage(env.BUCKET, clock),
     rateLimiter: createD1RateLimiter(env.DB),
     ogpRenderer: createFakeOgpRenderer(),
-    notifier: createFakeNotifier(),
+    notifier: env.REPORT_WEBHOOK_URL
+      ? createWebhookNotifier(env.REPORT_WEBHOOK_URL, consoleLogger)
+      : createFakeNotifier(),
     logger: consoleLogger,
     config: {
       publicOrigin: publicOriginUrl.origin,
