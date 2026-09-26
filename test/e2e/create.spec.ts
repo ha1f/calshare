@@ -252,13 +252,20 @@ test('先頭の空白を消さずに場所欄へ入力できる', async ({ page 
 
 test('開始欄を一時的に空にしても終了欄の入力が消えない', async ({ page }) => {
   await page.goto('/')
-  await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
+  const input = page.locator('#input')
+  await input.fill('9/20 19時 渋谷で飲み会')
 
   await page.getByTestId('view-datetime').click()
   await page.getByTestId('start-input').fill('2026-09-21T10:00')
   await page.getByTestId('end-input').fill('2026-09-21T11:00')
 
   await page.getByTestId('start-input').fill('')
+  await expect(page.getByTestId('end-input')).toHaveValue('2026-09-21T11:00')
+
+  // 開始欄を空にしたまま日時編集欄の外（textarea）を操作しても終了欄の入力は保たれる。
+  // 再解釈が完了したことをメモの更新で確認してから end-input を見る
+  await input.fill('9/20 19時 渋谷で飲み会\n会費5000円')
+  await expect(page.getByTestId('view-memo')).toHaveText('会費5000円')
   await expect(page.getByTestId('end-input')).toHaveValue('2026-09-21T11:00')
 
   await page.getByTestId('start-input').fill('2026-09-22T09:00')

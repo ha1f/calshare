@@ -50,14 +50,14 @@ function applyPrefill(state: CreateState, prefill: PrefillResult): void {
 }
 
 function main(): void {
-  const textarea = requireElement<HTMLTextAreaElement>('input')
+  const textarea = requireElement('input', HTMLTextAreaElement)
   // 静的 HTML 側は `<textarea id="input">` のまま保つ（staticAssets.test.ts が厳密一致で見ている）ため、
   // placeholder はここで付ける。見た目は create.css の #input セレクタで当てる
   textarea.placeholder = '9/20 19時 渋谷で飲み会'
 
   const previewContainer = requireElement<HTMLElement>('preview')
   const messageEl = requireElement<HTMLElement>('error-message')
-  const submitButton = requireElement<HTMLButtonElement>('submit')
+  const submitButton = requireElement('submit', HTMLButtonElement)
 
   const prefill = resolvePrefillFromSearch(location.search, { now: new Date() })
   const source: CreateSource = resolveCreateSource(location.search, prefill)

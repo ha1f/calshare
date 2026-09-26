@@ -8,7 +8,7 @@ export default defineConfig({
   testDir: 'test/e2e',
   use: { baseURL: `http://localhost:${port}` },
   webServer: {
-    // PUBLIC_ORIGIN を上書きしないと wrangler.jsonc の既定値（8787）のままになり、
+    // PUBLIC_ORIGIN を上書きしないと wrangler.jsonc の vars.PUBLIC_ORIGIN のままになり、
     // E2E_PORT で別ポートにしたときに API が返す url と実際のサーバのアドレスがずれる
     command: `npm run build && npx wrangler dev --port ${port} --var PUBLIC_ORIGIN:http://localhost:${port}`,
     url: `http://localhost:${port}/api/health`,

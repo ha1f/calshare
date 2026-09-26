@@ -1,13 +1,18 @@
 // innerHTML を使わず DOM を組み立てるための薄いヘルパー（§9.1）。
 
 /**
- * 静的 HTML に必ずある前提の要素を id で取得する。無ければ静的 HTML と JS がずれているバグなので
- * その場で例外にする（各画面の main() が想定していない `undefined` のまま処理を進めるのを防ぐ）
+ * 静的 HTML に必ずある前提の要素を id で取得する。無ければ、または `ctor` の型と違えば
+ * 静的 HTML と JS がずれているバグなのでその場で例外にする（各画面の main() が想定しない要素の
+ * まま処理を進め、後続の代入やプロパティアクセスが黙って意味を失うのを防ぐ）
  */
-export function requireElement<T extends HTMLElement>(id: string): T {
+export function requireElement<T extends HTMLElement>(
+  id: string,
+  ctor: new () => T = HTMLElement as new () => T,
+): T {
   const el = document.getElementById(id)
   if (el === null) throw new Error(`#${id} is missing`)
-  return el as T
+  if (!(el instanceof ctor)) throw new Error(`#${id} is not a ${ctor.name}`)
+  return el
 }
 
 interface ElementOptions {

@@ -103,18 +103,18 @@ function main(): void {
     return
   }
 
-  const urlDisplay = requireElement<HTMLAnchorElement>('url-display')
-  const copyButton = requireElement<HTMLButtonElement>('copy-button')
+  const urlDisplay = requireElement('url-display', HTMLAnchorElement)
+  const copyButton = requireElement('copy-button', HTMLButtonElement)
   const copyMessage = requireElement<HTMLElement>('copy-message')
   const copyError = requireElement<HTMLElement>('copy-error')
-  const lineShareLink = requireElement<HTMLAnchorElement>('line-share-link')
-  const shareButton = requireElement<HTMLButtonElement>('share-button')
+  const lineShareLink = requireElement('line-share-link', HTMLAnchorElement)
+  const shareButton = requireElement('share-button', HTMLButtonElement)
   const calendarSection = requireElement<HTMLElement>('calendar-section')
-  const googleLink = requireElement<HTMLAnchorElement>('google-calendar-link')
-  const icsLink = requireElement<HTMLAnchorElement>('ics-link')
+  const googleLink = requireElement('google-calendar-link', HTMLAnchorElement)
+  const icsLink = requireElement('ics-link', HTMLAnchorElement)
   const draftNotice = requireElement<HTMLElement>('draft-notice')
   const expiresNotice = requireElement<HTMLElement>('expires-notice')
-  const editLink = requireElement<HTMLAnchorElement>('edit-link')
+  const editLink = requireElement('edit-link', HTMLAnchorElement)
   const resendNotice = requireElement<HTMLElement>('resend-notice')
 
   urlDisplay.href = entry.url

@@ -1621,7 +1621,7 @@ export function updatePage(id: string, editToken: string, req: UpdatePageRequest
 
 - 定数は `core/config/limits.ts` にだけ置き、足場 PR で全部そろえる。他 PR は定数を足さない（必要なら足場 PR に追記してから）。
 - 共有型（`core/types.ts` `core/api/types.ts`）・ポート（`ports/*.ts`）は足場 PR で確定させ、後続 PR は変更しない。変更が必要になったら設計書を直してから単独の PR にする。`InvariantViolation` は `ports/pageRepository.ts` に置く（`server/lib/errors.ts` は T7 で作られるため、T5 が先に使えるように）。
-- 足場 PR は `adapters/ogp/fakeOgpRenderer.ts`（1×1 PNG の base64 定数を返し呼び出し回数を数える）・`adapters/notifier/fakeNotifier.ts`（no-op で呼び出しを記録）・`adapters/memory/memoryReportRepository.ts` も用意する。`server/deps.ts` の `ids` `pages` `storage` `rateLimiter` `reports` は T7 で本物のアダプタに差し替え済み（§11.7）。`ogpRenderer` `notifier` は本物のアダプタが無いため、T10・T12 で差し替える（`deps.ts` の 1 行変更）まで Fake のまま。
+- 足場 PR は `adapters/ogp/fakeOgpRenderer.ts`（1×1 PNG の base64 定数を返し呼び出し回数を数える）・`adapters/notifier/fakeNotifier.ts`（no-op で呼び出しを記録）・`adapters/memory/memoryReportRepository.ts` も用意する。`server/deps.ts` の `ids` `pages` `storage` `rateLimiter` `reports` は T7 で本物のアダプタに差し替え済み（§11.7）。`ogpRenderer` は本物のアダプタが無いため T10 で差し替える（`deps.ts` の 1 行変更）まで Fake のまま。`notifier` は T12 で実装し、`REPORT_WEBHOOK_URL` の有無で `webhookNotifier` / `fakeNotifier` を切り替える（§11.1・§11.7）。
 - `server/app.ts` は各ルート PR が `app.route()` を 1 行足すだけ。ルートの中身は `routes/*.ts` に閉じる。
 - 各アダプタ PR は本物と Fake（`adapters/memory/*`）を同じ PR で届け、同じテストスイートを両方に流す。
 - クライアント側は `web/create/*` を①と編集画面で共用し、画面固有のエントリ（`web/*/main.ts`）だけを分ける。
