@@ -31,8 +31,6 @@ const DAY_MS = 24 * HOUR_MS
 /**
  * ページ ID を一意にする。R2 はテストファイル内で状態が残るため、同じ ID を使い回すと
  * 前のテストが残した ics / ogp オブジェクトを誤って検証してしまう。
- * レート制限のバケットキーも同じ関数で作るが、こちらは D1・memory とも各テストで空の状態から始まるため
- * 必須ではなく、他のキーと混同しないための可読性目的
  */
 function uniqueId(name: string): string {
   return `${name}-${crypto.randomUUID()}`
@@ -132,7 +130,7 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
     )
   })
 
-  it('rate_limit_counters の掃除・ページ削除ループの失敗が gc_failed に伝わり、例外が再スローされる', async () => {
+  it('ページ削除が失敗しても掃除は済んでおり、pages 行を残して gc_failed をログし再スローする', async () => {
     const errorSpy = vi.fn()
     const deps = buildDeps({ logger: { info: vi.fn(), warn: vi.fn(), error: errorSpy } })
     const expiredId = uniqueId('expired')
@@ -191,13 +189,13 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
     const oldNow = new Date(NOW.getTime() - RATE_LIMIT_COUNTER_RETENTION_DAYS * DAY_MS - 1)
     const oldRule: RateLimitRule = {
       scope: 'create',
-      bucketKey: uniqueId('ip'),
+      bucketKey: 'ip-old',
       window: 'hour',
       limit: 1,
     }
     const recentRule: RateLimitRule = {
       scope: 'create',
-      bucketKey: uniqueId('ip'),
+      bucketKey: 'ip-recent',
       window: 'hour',
       limit: 1,
     }
