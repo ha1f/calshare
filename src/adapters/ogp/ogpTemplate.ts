@@ -53,7 +53,12 @@ export function ogpTemplate(input: OgpInput): SatoriNode {
           display: '-webkit-box',
           WebkitBoxOrient: 'vertical',
           WebkitLineClamp: '2',
+          // satori は WebkitLineClamp 単体では行数を制限しない。textOverflow: 'ellipsis' との
+          // 組み合わせで初めて 2 行に切り詰める（node_modules/satori/dist/standalone.js の
+          // 行数計算処理で textOverflow === 'ellipsis' を前提にしていることをソースで確認済み）
+          textOverflow: 'ellipsis',
           overflow: 'hidden',
+          wordBreak: 'break-all',
           fontSize: 64,
           fontWeight: 700,
           color: TEXT_COLOR,
@@ -77,8 +82,21 @@ export function ogpTemplate(input: OgpInput): SatoriNode {
   if (input.location !== null && input.location !== '') {
     children.push(
       node('div', { display: 'flex', flexDirection: 'row', marginTop: 16 }, [
-        text('場所: ', { fontSize: 28, color: MUTED_COLOR }),
-        text(input.location, { fontSize: 28, color: MUTED_COLOR }),
+        text('場所: ', { fontSize: 28, color: MUTED_COLOR, flexShrink: 0 }),
+        text(input.location, {
+          fontSize: 28,
+          color: MUTED_COLOR,
+          display: '-webkit-box',
+          WebkitBoxOrient: 'vertical',
+          WebkitLineClamp: '2',
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          wordBreak: 'break-all',
+          flexGrow: 1,
+          flexShrink: 1,
+          flexBasis: 0,
+          minWidth: 0,
+        }),
       ]),
     )
   }

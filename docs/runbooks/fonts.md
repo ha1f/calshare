@@ -54,11 +54,9 @@ EUC-JP 変換で一覧を導出する純粋関数で、ネットワークも乱�
 1. GitHub Actions で `Provision Cloudflare resources` を実行する（`with_font` は既定 true の
    ままでよい）。手順は `docs/runbooks/provisioning.md` を参照。
 2. `font` ジョブの Step Summary で配置が完了したことを確認する。
-3. **ライセンス同梱の確認**: `.claude/tmp/fonts/LICENSE.txt`（`download-noto-sans-jp.mjs` が
-   毎回取得し直す）が OFL 1.1 の全文であることを確認する。現時点では R2 にはサブセット OTF
-   のみを置き、リポジトリ側のライセンス同梱はソース（このドキュメントと取得スクリプトの
-   コメント）で足りるという判断にしている。R2 のフォントを外部に再配布する用途ができた
-   場合は、その配布物にもライセンスを同梱する必要がある点に注意する。
+3. **ライセンス同梱の確認**: `docs/licenses/noto-sans-jp.md`（T10 のライセンス審査記録）の
+   「残る条件」に従い、著作権表示付きの `OFL.txt`（`test/fixtures/fonts/OFL.txt` と同じ内容）を
+   本番 R2 の `fonts/OFL.txt` にも配置する。配置後、同記録を確定として再承認する。
 
 ## ローカルでの実行方法（動作確認済み）
 
@@ -103,6 +101,10 @@ design.md 側を「第 1 水準のみ」に修正した（`docs/licenses/noto-sa
 「第 2 水準の字が人名・地名で豆腐になる」という UX 上のトレードオフ自体は残っている）。
 含める場合は `generate-jis-level1.mjs` に相当する第 2 水準の生成関数を追加し、`subset.sh` の
 対象に加える（出力サイズは design.md の目安で 3〜4MB 程度に増える見込み）。
+
+一般記号・全角英数字（例: ○ 〇 ★ ※ ～(U+FF5E) －(U+FF0D)）も `subset.sh` の固定リストに無く、
+豆腐になる既知の制限として残る（例: Windows IME の「～」を含むタイトル）。第 2 水準と合わせて
+対象範囲をオーナー判断待ちとする。
 
 ## 失敗したときの見方
 

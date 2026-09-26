@@ -41,6 +41,12 @@ export function parseArgs(argv) {
   return args
 }
 
+/** wrangler の標準出力・標準エラーをそのまま端末に流す。既定の pipe だと失敗時に
+ * wrangler 側のエラーメッセージ（ログイン要求や設定不備など）が呼び出し元から見えなくなる */
+function execFileInherit(cmd, args) {
+  execFileSync(cmd, args, { stdio: 'inherit' })
+}
+
 /**
  * @param {object} options
  * @param {string} options.font
@@ -49,7 +55,7 @@ export function parseArgs(argv) {
  * @param {(path: string) => boolean} [options.existsImpl]
  */
 export function seedLocalR2(options) {
-  const { font, dryRun = false, execFileImpl = execFileSync, existsImpl = existsSync } = options
+  const { font, dryRun = false, execFileImpl = execFileInherit, existsImpl = existsSync } = options
 
   if (!existsImpl(font)) {
     throw new Error(

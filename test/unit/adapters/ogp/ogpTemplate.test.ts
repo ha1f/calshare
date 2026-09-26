@@ -47,4 +47,49 @@ describe('ogpTemplate', () => {
     const text = collectText(ogpTemplate(baseInput({ location: null }))).join('\n')
     expect(text).not.toContain('場所')
   })
+
+  it('場所の値ノードはタイトルと同じく 2 行で clamp され、ラベルは縮まない', () => {
+    const root = ogpTemplate(baseInput()) as unknown as {
+      props: {
+        children: Array<{
+          type: string
+          props: { children: unknown; style?: Record<string, unknown> }
+        }>
+      }
+    }
+    const locationRow = root.props.children.find(
+      (child) => child.type === 'div' && Array.isArray(child.props.children),
+    )
+    const [label, value] = locationRow?.props.children as Array<{
+      props: { style?: Record<string, unknown> }
+    }>
+
+    expect(label.props.style).toMatchObject({ flexShrink: 0 })
+    expect(value.props.style).toMatchObject({
+      display: '-webkit-box',
+      WebkitBoxOrient: 'vertical',
+      WebkitLineClamp: '2',
+      // satori は textOverflow: 'ellipsis' と組み合わせないと WebkitLineClamp が行数を
+      // 制限しない（node_modules/satori/dist/standalone.js の行数計算処理で確認済み）
+      textOverflow: 'ellipsis',
+      overflow: 'hidden',
+      wordBreak: 'break-all',
+    })
+  })
+
+  it('タイトルのノードも場所と同じ行数制限のスタイル一式を持つ', () => {
+    const root = ogpTemplate(baseInput()) as unknown as {
+      props: { children: Array<{ props: { children: unknown; style?: Record<string, unknown> } }> }
+    }
+    const titleNode = root.props.children.find((child) => child.props.children === '飲み会')
+
+    expect(titleNode?.props.style).toMatchObject({
+      display: '-webkit-box',
+      WebkitBoxOrient: 'vertical',
+      WebkitLineClamp: '2',
+      textOverflow: 'ellipsis',
+      overflow: 'hidden',
+      wordBreak: 'break-all',
+    })
+  })
 })

@@ -1,8 +1,9 @@
 import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm'
 import fontFixture from '../../fixtures/fonts/NotoSansJP-Regular.subset.otf'
 import satori from 'satori/standalone'
+import type { Font } from 'satori/standalone'
 import yogaWasm from 'satori/yoga.wasm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createSatoriOgpRenderer, toOgpInput } from '../../../src/adapters/ogp/satoriOgpRenderer'
 import { ogpTemplate } from '../../../src/adapters/ogp/ogpTemplate'
 import { OGP_IMAGE_HEIGHT, OGP_IMAGE_WIDTH } from '../../../src/core/config/limits'
@@ -86,13 +87,68 @@ describe('createSatoriOgpRenderer', () => {
   })
 
   it('2 回目の render はフォント・wasm を再初期化せず結果を返す（メモ化の確認）', async () => {
-    const renderer = createSatoriOgpRenderer(rendererOptions())
+    // init はモジュールスコープでメモ化されるため、このファイルの他のテストで既に
+    // 初期化済みのことがある。呼び出し回数の絶対値ではなく「1 回目と 2 回目で増えないこと」を見る
+    const options = rendererOptions()
+    const loadWasm = vi.fn(options.loadWasm)
+    const loadFont = vi.fn(options.loadFont)
+    const renderer = createSatoriOgpRenderer({ loadWasm, loadFont })
+
     await renderer.render(baseInput())
-    const start = Date.now()
+    const callsAfterFirst = { wasm: loadWasm.mock.calls.length, font: loadFont.mock.calls.length }
+
     const png = await renderer.render(baseInput({ title: '2回目' }))
     expectPng(png)
-    // 初期化済みなら数十 ms 程度で終わるはず（実測値は PR 説明に記録する）
-    expect(Date.now() - start).toBeLessThan(2000)
+    expect(loadWasm.mock.calls.length).toBe(callsAfterFirst.wasm)
+    expect(loadFont.mock.calls.length).toBe(callsAfterFirst.font)
+  })
+
+  it('場所が長くても場所の枠は 2 行分の高さを超えない（2 行 clamp の固定、レビュー指摘の反例）', async () => {
+    // satori は各テキストノードを <mask id="satori_om-id-N"><rect .../></mask> で描画し、
+    // rect の height がその要素の実際のレンダリング高さになる。見出し・タイトル・日時ラベル・
+    // 場所の順（ogpTemplate の children 順）なので 4 番目（index 3）が場所の外接矩形
+    const fonts: Font[] = [
+      { name: 'Noto Sans JP', data: fontFixture, weight: 400, style: 'normal' },
+    ]
+    const render = (input: OgpInput) =>
+      satori(ogpTemplate(input), { width: OGP_IMAGE_WIDTH, height: OGP_IMAGE_HEIGHT, fonts })
+    const rectHeights = (svg: string) =>
+      [
+        ...svg.matchAll(
+          /<mask id="satori_om-id-\d+"><rect x="[\d.]+" y="[\d.]+" width="[\d.]+" height="([\d.]+)"/g,
+        ),
+      ].map((m) => Number(m[1]))
+
+    const oneLineSvg = await render(baseInput())
+    const twoLinesHeight = rectHeights(oneLineSvg)[3] // '渋谷'（1 行）の高さ
+
+    const longLocationSvg = await render(baseInput({ location: 'あ'.repeat(200) }))
+    const longLocationHeight = rectHeights(longLocationSvg)[3]
+
+    // clamp が効いていなければ 200 文字は 6 行前後（1 行の高さの約 6 倍）になる
+    expect(longLocationHeight).toBeLessThanOrEqual(twoLinesHeight * 2 + 1)
+  })
+
+  it('タイトルが 2 行に収まる長さでも日時ラベルの位置は変わらない（2 行 clamp の固定）', async () => {
+    const fonts: Font[] = [
+      { name: 'Noto Sans JP', data: fontFixture, weight: 400, style: 'normal' },
+    ]
+    const render = (input: OgpInput) =>
+      satori(ogpTemplate(input), { width: OGP_IMAGE_WIDTH, height: OGP_IMAGE_HEIGHT, fonts })
+    const dateLabelY = (svg: string) => {
+      const rects = [...svg.matchAll(/<mask id="satori_om-id-\d+"><rect x="[\d.]+" y="([\d.]+)"/g)]
+      return rects[2]?.[1]
+    }
+
+    const oneLineTitleSvg = await render(baseInput())
+    // '亜' を width 1072px・fontSize 64 で並べるとちょうど 2 行に折り返す長さ（clamp の上限と一致）
+    const twoLineTitleSvg = await render(baseInput({ title: '亜'.repeat(32) }))
+
+    expect(dateLabelY(twoLineTitleSvg)).not.toBe(dateLabelY(oneLineTitleSvg)) // 1 行→2 行は伸びてよい
+
+    // それ以上長くしても（clamp が無ければ 4 行以上に伸びるはずが）日時ラベルの位置は 2 行分から動かない
+    const fourLineTitleSvg = await render(baseInput({ title: '亜'.repeat(64) }))
+    expect(dateLabelY(fourLineTitleSvg)).toBe(dateLabelY(twoLineTitleSvg))
   })
 })
 
@@ -110,5 +166,11 @@ describe('toOgpInput', () => {
   it('serviceName をそのまま渡す', () => {
     const input = toOgpInput(page(), 'calshare')
     expect(input.serviceName).toBe('calshare')
+  })
+
+  it('書式制御文字（RLO・ZWSP・BOM・RLM 等の Cf）を除去する', () => {
+    // U+202E RLO, U+200B ZWSP, U+FEFF BOM, U+200F RLM
+    const input = toOgpInput(page({ title: 'a‮b​c﻿d‏e' }), 'calshare')
+    expect(input.title).toBe('abcde')
   })
 })

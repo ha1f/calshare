@@ -104,7 +104,7 @@ test('CLI: 不明な引数は使い方を添えてエラー終了する', () => 
   )
 })
 
-test('CLI: --dry-run --json はフォントを読まず投入予定を JSON で表示する', () => {
+test('CLI: --dry-run --json はフォントを投入せず投入予定を JSON で表示する', () => {
   const out = execFileSync(process.execPath, [SCRIPT_PATH, '--dry-run', '--json'], {
     encoding: 'utf8',
   })

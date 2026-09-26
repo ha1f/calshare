@@ -35,7 +35,11 @@ interface Initialized {
 /**
  * wasm の初期化とフォント読み込みは初回 render 時にだけ行い、結果をモジュールスコープでメモ化する
  * （§2.5）。isolate が再利用される限り 2 回目以降の render はここを通らない。
- * 失敗した Promise はメモ化しない（次の render で再試行できるようにする）
+ * 失敗した Promise はメモ化しない（次の render で再試行できるようにする）。
+ * ただし `@resvg/resvg-wasm` の `initWasm` はプロセス内で 1 度成功すると 2 度目の呼び出しで
+ * 例外を投げる。`initSatori` と `initWasm` の一方だけが失敗した場合、次の render での再試行は
+ * 成功した側も含めて全体が失敗し続ける（本番では両方とも静的 import 済みモジュールなので
+ * 発生しない想定）。`options` は初回呼び出しの内容だけが使われ、以後の呼び出しの `options` は無視される
  */
 let initPromise: Promise<Initialized> | null = null
 
@@ -64,23 +68,29 @@ export function createSatoriOgpRenderer(options: SatoriOgpRendererOptions): OgpR
         fonts,
       })
       const resvg = new Resvg(svg, { font: { loadSystemFonts: false } })
-      const rendered = resvg.render()
-      const png = rendered.asPng()
-      rendered.free()
-      resvg.free()
-      return png
+      try {
+        const rendered = resvg.render()
+        try {
+          return rendered.asPng()
+        } finally {
+          rendered.free()
+        }
+      } finally {
+        resvg.free()
+      }
     },
   }
 }
 
-/** 絵文字・異体字セレクタ・制御文字を除去する。サブセットフォント（JIS 第 1 水準）に無い漢字までは
- * 判別できないため、そこは satori が該当グリフを描かないことで例外にならずに吸収する想定（§2.5） */
+/** 絵文字・異体字セレクタ・制御文字・書式制御文字（ZWJ・ZWSP・BOM・RLO 等の Cf）を除去する。
+ * サブセットフォント（JIS 第 1 水準）に無い漢字・記号までは判別できないため、そこは satori が
+ * 該当グリフを描かないことで例外にならずに吸収する想定（§2.5） */
 function stripUnsupportedChars(rawText: string): string {
   return rawText
     .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/[\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}]/gu, '')
-    .replace(/[\u{200D}]/gu, '') // ZWJ（絵文字の連結に使われる。他は削除済みなので単独で残ると意味を持たない）
+    .replace(/[\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}]/gu, '') // 異体字セレクタ（Mn なので \p{Cf} に含まれない）
     .replace(/\p{Cc}/gu, '')
+    .replace(/\p{Cf}/gu, '') // ZWJ・ZWSP・BOM・RLO/RLM 等
     .trim()
 }
 

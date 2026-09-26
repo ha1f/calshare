@@ -2,9 +2,14 @@ import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
-import { OGP_CACHE_MAX_AGE_SECONDS } from '../../../src/core/config/limits'
+import { createMemoryObjectStorage } from '../../../src/adapters/memory/memoryObjectStorage'
+import {
+  OGP_CACHE_MAX_AGE_SECONDS,
+  OGP_FAILURE_CACHE_SECONDS,
+} from '../../../src/core/config/limits'
 import { createApp } from '../../../src/server/app'
 import type { Deps } from '../../../src/server/deps'
+import type { Logger } from '../../../src/ports/logger'
 import type { OgpInput, OgpRenderer } from '../../../src/ports/ogpRenderer'
 import type { NewPageInput, PageRepository } from '../../../src/ports/pageRepository'
 import { buildFakeDeps } from '../helpers/fakeDeps'
@@ -45,6 +50,27 @@ async function createPage(repo: PageRepository, id: string): Promise<void> {
 
 async function hidePage(id: string): Promise<void> {
   await env.DB.prepare(`UPDATE pages SET status = 'hidden' WHERE id = ?`).bind(id).run()
+}
+
+async function expirePage(id: string, expiresAt: Date): Promise<void> {
+  await env.DB.prepare('UPDATE pages SET expires_at = ? WHERE id = ?')
+    .bind(expiresAt.toISOString(), id)
+    .run()
+}
+
+function withFindByIdCounter(inner: PageRepository): {
+  pages: PageRepository
+  calls: () => number
+} {
+  let calls = 0
+  const pages: PageRepository = {
+    ...inner,
+    async findById(id) {
+      calls++
+      return inner.findById(id)
+    },
+  }
+  return { pages, calls: () => calls }
 }
 
 function countingRenderer(): OgpRenderer & { calls: OgpInput[] } {
@@ -178,5 +204,119 @@ describe('GET /:id/ogp.png（OGP 画像、§2.5）', () => {
 
     const res = await get(deps, `/${id}/ogp.png`)
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+  })
+
+  it('期限切れのページはレンダラを呼ばずフォールバックを返す', async () => {
+    const renderer = countingRenderer()
+    const { deps, repo } = buildOgpDeps({ ogpRenderer: renderer })
+    const id = pageId(6)
+    await createPage(repo, id)
+    await expirePage(id, NOW) // isServable は expiresAt > now を要求するのでちょうど now は期限切れ扱い
+
+    const res = await get(deps, `/${id}/ogp.png`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/png')
+    expect(res.headers.get('Cache-Control')).toBe(`public, max-age=${OGP_CACHE_MAX_AGE_SECONDS}`)
+    expect(renderer.calls).toHaveLength(0)
+  })
+
+  it('失敗マーカーの TTL 経過後は再びレンダラを呼ぶ', async () => {
+    // buildFakeDeps はデフォルトの storage を自前の clock で作るため、TTL を進めるには
+    // clock と storage を同じインスタンスで揃えて override する必要がある
+    const clock = fakeClock(NOW)
+    const storage = createMemoryObjectStorage(clock)
+    const renderer = countingRenderer()
+    const repo = createD1PageRepository(env.DB)
+    const deps = buildFakeDeps({ pages: repo, clock, storage, ogpRenderer: renderer })
+    const id = pageId(7)
+    await createPage(repo, id)
+    await storage.putOgpFailureMarker(id, 1, OGP_FAILURE_CACHE_SECONDS)
+
+    const first = await get(deps, `/${id}/ogp.png`)
+    expect(first.status).toBe(200)
+    expect(renderer.calls).toHaveLength(0)
+
+    clock.set(new Date(NOW.getTime() + (OGP_FAILURE_CACHE_SECONDS + 1) * 1000))
+    // Cache API のヒットをすり抜けるよう `?v=` を変える（§2.4 の keepQuery）
+    const second = await get(deps, `/${id}/ogp.png?v=2`)
+    await expectPngBody(second)
+    expect(renderer.calls).toHaveLength(1)
+  })
+
+  it('クエリの組み合わせや ID のパーセントエンコードが違っても findById は 1 回だけ（キャッシュキーの正規化、§2.4）', async () => {
+    const inner = createD1PageRepository(env.DB)
+    const { pages, calls } = withFindByIdCounter(inner)
+    const deps = buildFakeDeps({ pages, clock: fakeClock(NOW), ogpRenderer: countingRenderer() })
+    const id = pageId(8)
+    await createPage(inner, id)
+    const percentEncoded = id
+      .split('')
+      .map((c) => `%${c.charCodeAt(0).toString(16)}`)
+      .join('')
+
+    const a = await get(deps, `/${id}/ogp.png?v=1&foo=1`)
+    const b = await get(deps, `/${id}/ogp.png?v=1&foo=2`)
+    const c = await get(deps, `/${id}/ogp.png?foo=3&v=1`)
+    const d = await get(deps, `/${percentEncoded}/ogp.png?v=1`)
+
+    expect([a.status, b.status, c.status, d.status]).toEqual([200, 200, 200, 200])
+    expect(calls()).toBe(1)
+  })
+
+  it('フォールバック PNG の本文は env.ASSETS.fetch の内容と一致する（ASSETS を包み直しているだけ）', async () => {
+    const { deps } = buildOgpDeps({ ogpRenderer: countingRenderer() })
+
+    const res = await get(deps, `/${pageId(9)}/ogp.png`)
+    const assetRes = await env.ASSETS.fetch(new URL('/assets/img/ogp-fallback.png', TEST_ORIGIN))
+
+    expect(await res.arrayBuffer()).toEqual(await assetRes.arrayBuffer())
+  })
+
+  it('R2 の読み取りが失敗してもレンダラを呼ばずフォールバックを返す（失敗マーカーは立てない）', async () => {
+    const clock = fakeClock(NOW)
+    const storage: Deps['storage'] = {
+      ...createMemoryObjectStorage(clock),
+      getOgpImage: async () => {
+        throw new Error('r2 read failed')
+      },
+    }
+    const renderer = countingRenderer()
+    const repo = createD1PageRepository(env.DB)
+    const deps = buildFakeDeps({ pages: repo, clock, storage, ogpRenderer: renderer })
+    const id = pageId(10)
+    await createPage(repo, id)
+
+    const res = await get(deps, `/${id}/ogp.png`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/png')
+    expect(renderer.calls).toHaveLength(0)
+  })
+
+  it('R2 への書き込み（putOgpImage）が失敗しても waitUntil は例外にならずログに残る', async () => {
+    const clock = fakeClock(NOW)
+    const warnings: Array<{ event: string; data?: Record<string, unknown> }> = []
+    const logger: Logger = {
+      info() {},
+      warn: (event, data) => warnings.push({ event, data }),
+      error() {},
+    }
+    const storage: Deps['storage'] = {
+      ...createMemoryObjectStorage(clock),
+      putOgpImage: async () => {
+        throw new Error('r2 write failed')
+      },
+    }
+    const renderer = countingRenderer()
+    const repo = createD1PageRepository(env.DB)
+    const deps = buildFakeDeps({ pages: repo, clock, storage, ogpRenderer: renderer, logger })
+    const id = pageId(11)
+    await createPage(repo, id)
+
+    // waitOnExecutionContext は get() の中で待つ。putOgpImage の reject を catch していなければここで投げる
+    const res = await get(deps, `/${id}/ogp.png`)
+    await expectPngBody(res)
+    expect(warnings).toEqual([
+      { event: 'ogp_store_failed', data: expect.objectContaining({ pageId: id }) },
+    ])
   })
 })

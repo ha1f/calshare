@@ -48,21 +48,36 @@ export function ogpRoutes(deps: Deps): Hono<{ Bindings: Env }> {
           return fallbackResponse(c.env, c.req.url)
         }
 
-        const cached = await deps.storage.getOgpImage(id, page.version)
-        if (cached !== null) return pngResponse(cached)
+        // R2 の読み取り失敗（一時的な障害）はレンダラの失敗とは別に扱う。失敗マーカーを
+        // 立てずにこのリクエストだけフォールバックにし、次のリクエストで再度生成を試みる
+        try {
+          const cached = await deps.storage.getOgpImage(id, page.version)
+          if (cached !== null) return pngResponse(cached)
 
-        const failed = await deps.storage.getOgpFailureMarker(id, page.version)
-        if (failed) return fallbackResponse(c.env, c.req.url)
+          const failed = await deps.storage.getOgpFailureMarker(id, page.version)
+          if (failed) return fallbackResponse(c.env, c.req.url)
+        } catch (error) {
+          deps.logger.warn('ogp_cache_read_failed', { pageId: id, error })
+          return fallbackResponse(c.env, c.req.url)
+        }
 
         try {
           const png = await deps.ogpRenderer.render(toOgpInput(page, deps.config.serviceName))
-          c.executionCtx.waitUntil(deps.storage.putOgpImage(id, page.version, png))
+          c.executionCtx.waitUntil(
+            deps.storage.putOgpImage(id, page.version, png).catch((error) => {
+              deps.logger.warn('ogp_store_failed', { pageId: id, error })
+            }),
+          )
           return pngResponse(png)
         } catch (error) {
           // Logger 側で { name, message } に正規化する（§9.6）
           deps.logger.warn('ogp_render_failed', { pageId: id, error })
           c.executionCtx.waitUntil(
-            deps.storage.putOgpFailureMarker(id, page.version, OGP_FAILURE_CACHE_SECONDS),
+            deps.storage
+              .putOgpFailureMarker(id, page.version, OGP_FAILURE_CACHE_SECONDS)
+              .catch((error) => {
+                deps.logger.warn('ogp_store_failed', { pageId: id, error })
+              }),
           )
           return fallbackResponse(c.env, c.req.url)
         }
