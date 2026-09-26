@@ -17,7 +17,10 @@ async function createPage(page: import('@playwright/test').Page, text: string): 
 
 interface HistoryEntry {
   id: string
+  url: string
+  editToken: string
   fields: { title: string; location: string | null; start: string | null }
+  expiresAt: string
   createdAt: string
   updatedAt: string
 }
@@ -39,6 +42,7 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
   page,
 }) => {
   const id = await createPage(page, '9/20 19時 渋谷で飲み会')
+  const originalEntry = await readHistoryEntry(page, id)
 
   await page.goto('/history')
   await Promise.all([
@@ -62,11 +66,18 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
     page.getByRole('button', { name: '保存する' }).click(),
   ])
 
-  // 履歴の fields / updatedAt が更新される（作成時の url・editToken・createdAt は変えない。§6.4）
+  // 履歴の fields / expiresAt が新しい日時・場所で上書きされる。expiresAt は
+  // 新しい終了（9/21 21:00 JST）+ RETENTION_DAYS_AFTER_LAST_EVENT(7日) で、
+  // 作成時の expiresAt（9/27 まで）とは異なる値になるため、上書きされたことの証拠になる。
+  // 作成時の url・editToken・createdAt は変えない（§6.4）
   const entry = await readHistoryEntry(page, id)
   expect(entry?.fields.location).toBe('新宿')
   expect(entry?.fields.start).toBe('2026-09-21T11:00:00.000Z')
-  expect(entry?.updatedAt).toBe('2026-09-16T01:00:00.000Z')
+  expect(entry?.expiresAt).toBe('2026-09-28T12:00:00.000Z')
+  expect(entry?.expiresAt).not.toBe(originalEntry?.expiresAt)
+  expect(entry?.url).toBe(originalEntry?.url)
+  expect(entry?.editToken).toBe(originalEntry?.editToken)
+  expect(entry?.createdAt).toBe(originalEntry?.createdAt)
 
   await page.goto(`/${id}`)
   await expect(page.locator('[data-section="datetime"]')).toHaveText('9月21日(月) 20:00〜21:00')

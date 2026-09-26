@@ -52,8 +52,8 @@ function main(): void {
     location.replace('/')
     return
   }
-  // 以降のネストした関数（handleSubmit・loadInitial）は非同期で後から呼ばれるため、
-  // TypeScript は pathId の null チェックをそこまで持ち越さない。string 型で束ね直す
+  // handleSubmit・loadInitial は関数宣言として巻き上げられるため、TypeScript は
+  // 上の null チェックによる絞り込みをその中まで持ち越さない。string 型で束ね直す
   const id: string = pathId
 
   const cannotEditMessage = requireElement<HTMLElement>('cannot-edit-message')

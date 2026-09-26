@@ -47,7 +47,7 @@ export function readHistory(): HistoryEntry[] {
   }
 }
 
-/** 新しい順に保存する。同じ id の既存項目は入れ替える（編集完了時の更新にも使う想定） */
+/** 新しい順に保存する。同じ id の既存項目は入れ替える。編集完了時の更新は並び順を変えない updateHistoryEntry を使う（§6.4） */
 export function addHistoryEntry(entry: HistoryEntry): void {
   const rest = readHistory().filter((e) => e.id !== entry.id)
   try {
