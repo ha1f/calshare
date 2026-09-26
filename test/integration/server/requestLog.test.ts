@@ -2,6 +2,7 @@ import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 import { consoleLogger } from '../../../src/adapters/logger/consoleLogger'
+import { PAGE_ID_PATTERN } from '../../../src/core/id/crockford'
 import { createApp } from '../../../src/server/app'
 import type { RateLimitRule } from '../../../src/ports/rateLimiter'
 import type { Deps } from '../../../src/server/deps'
@@ -9,6 +10,9 @@ import { buildFakeDeps } from '../helpers/fakeDeps'
 import { jsonRequest, TEST_ORIGIN } from '../helpers/jsonRequest'
 
 type LogLine = Record<string, unknown>
+
+// detail.tsx が `app.get(`/:id{${PAGE_ID_PATTERN}}`, ...)` で登録する実際のルート名（Hono の routePath() の戻り値）
+const DETAIL_ROUTE = `/:id{${PAGE_ID_PATTERN}}`
 
 /** app.fetch を ExecutionContext 付きで呼ぶ。ctx.waitUntil を使うルート（Cache API・通報通知）向け */
 async function fetchApp(deps: Deps, request: Request): Promise<Response> {
@@ -29,6 +33,9 @@ describe('requestLog ミドルウェア（§9.6）', () => {
   })
 
   afterEach(() => {
+    // Hono の既定 errorHandler（console.error(err) で生のスタックトレースを出す）を
+    // app.onError が置き換えていることを全テスト共通で確認する
+    expect(errorSpy).not.toHaveBeenCalled()
     vi.restoreAllMocks()
   })
 
@@ -53,9 +60,12 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     expect(completed?.durationMs as number).toBeGreaterThanOrEqual(0)
   })
 
-  it('作成ログ（page_created）に pageId と source が出る。rawText 等の入力はどのログにも出ない', async () => {
+  it('作成ログ（page_created）に pageId と source が出る。rawText・title・location・memo 等の入力はどのログにも出ない', async () => {
     const deps = buildFakeDeps({ logger: consoleLogger })
-    const secretRawText = 'ひみつのテキスト__do_not_leak__9/20 19時 渋谷で飲み会'
+    const secretRawText = '__do_not_leak_rawtext__9/20 19時 渋谷で飲み会'
+    const secretTitle = '__do_not_leak_title__'
+    const secretLocation = '__do_not_leak_location__'
+    const secretMemo = '__do_not_leak_memo__'
 
     const res = await fetchApp(
       deps,
@@ -64,9 +74,9 @@ describe('requestLog ミドルウェア（§9.6）', () => {
         body: {
           rawText: secretRawText,
           fields: {
-            title: '飲み会',
-            location: '渋谷',
-            memo: null,
+            title: secretTitle,
+            location: secretLocation,
+            memo: secretMemo,
             start: '2026-09-20T10:00:00.000Z',
             end: '2026-09-20T11:00:00.000Z',
             isAllDay: false,
@@ -88,12 +98,20 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     expect(created).toMatchObject({ level: 'info', pageId: json.id, source: 'detail_cta' })
 
     const allLines = logSpy.mock.calls.map((call) => call[0] as string)
+    const forbidden = [
+      secretRawText,
+      secretTitle,
+      secretLocation,
+      secretMemo,
+      'super-secret-token',
+      '203.0.113.7',
+      '11111111-1111-4111-8111-111111111111',
+      'secret=xyz',
+    ]
     for (const line of allLines) {
-      expect(line).not.toContain(secretRawText)
-      expect(line).not.toContain('super-secret-token')
-      expect(line).not.toContain('203.0.113.7')
-      expect(line).not.toContain('11111111-1111-4111-8111-111111111111')
-      expect(line).not.toContain('secret=xyz')
+      for (const value of forbidden) {
+        expect(line).not.toContain(value)
+      }
     }
     // ルートはクエリ文字列を含まないパスパターンだけを記録する（§9.6）
     const completed = loggedLines().find((line) => line.event === 'request_completed')
@@ -137,27 +155,27 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     expect(completed).toMatchObject({ route: '/api/pages', method: 'POST', status: 429 })
   })
 
-  it('想定外の例外（catch していないルート）は unhandled_error として構造化ログに残り、生のスタックトレースは console.error に出ない', async () => {
+  it('想定外の例外（catch していないルート）は unhandled_error として構造化ログに残り、name・message 以外は出ない', async () => {
     const deps = buildFakeDeps({ logger: consoleLogger })
-    const secretInInput = 'user-controlled-input-marker'
+    // §9.6 が想定する「例外 message に入力由来の文字列が混ざる」ケース。message 自体は
+    // consoleLogger の正規化（{ name, message }、200 文字切り詰め）で残るのが仕様（§9.6・T1）
+    const inputMarkerInMessage = 'user-controlled-input-marker'
     deps.pages.findById = () => {
-      throw new Error(`boom while looking up ${secretInInput}`)
+      throw new Error(`boom while looking up ${inputMarkerInMessage}`)
     }
 
     const res = await fetchApp(deps, new Request(new URL('/aaaaaaaaaaaa', TEST_ORIGIN)))
 
     expect(res.status).toBe(500)
-    expect(errorSpy).not.toHaveBeenCalled()
 
     const failed = loggedLines().find((line) => line.event === 'unhandled_error')
-    expect(failed).toMatchObject({ level: 'error', pageId: 'aaaaaaaaaaaa' })
-    expect(failed?.route).toContain('/:id')
+    expect(failed).toMatchObject({ level: 'error', route: DETAIL_ROUTE, pageId: 'aaaaaaaaaaaa' })
     const error = failed?.error as { name: string; message: string }
+    expect(Object.keys(error).sort()).toEqual(['message', 'name'])
     expect(error.name).toBe('Error')
-    expect(error).not.toHaveProperty('stack')
+    expect(error.message).toContain(inputMarkerInMessage)
 
     const completed = loggedLines().find((line) => line.event === 'request_completed')
-    expect(completed).toMatchObject({ status: 500 })
-    expect(completed?.route).toContain('/:id')
+    expect(completed).toMatchObject({ route: DETAIL_ROUTE, status: 500 })
   })
 })
