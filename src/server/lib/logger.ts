@@ -1,3 +1,4 @@
+import { isValidPageId } from '../../core/id/crockford'
 import type { Logger } from '../../ports/logger'
 
 export interface RequestLogContext {
@@ -5,8 +6,20 @@ export interface RequestLogContext {
   method: string
   status: number
   durationMs: number
-  /** ページ ID を含むルートでのみ渡す。URL パスパラメータの `id` が対象で、拡張子などは呼び出し側で剥がさない */
+  /** 検証済みのページ ID のみを渡す。未知の文字列は resolveLoggablePageId で弾いてから渡す */
   pageId?: string
+}
+
+const ICS_EXTENSION = '.ics'
+
+/**
+ * ログに載せてよい pageId を返す。末尾の `.ics` を除いた値がページ ID の形式に一致するときだけ
+ * その値を返し、それ以外は undefined にする。URL に書かれた任意の文字列をログに残さないため。
+ */
+export function resolveLoggablePageId(rawId: string | undefined): string | undefined {
+  if (rawId === undefined) return undefined
+  const id = rawId.endsWith(ICS_EXTENSION) ? rawId.slice(0, -ICS_EXTENSION.length) : rawId
+  return isValidPageId(id) ? id : undefined
 }
 
 /**
@@ -24,9 +37,8 @@ export function logRequestCompleted(logger: Logger, context: RequestLogContext):
 }
 
 /**
- * ルートが catch していない例外を構造化ログに残す（§9.6）。Hono の既定の errorHandler は
- * `console.error(err)` で生の Error（スタックトレース込み）を出すため、Logger 経由に一本化して
- * `consoleLogger` の正規化（{ name, message }）に乗せる
+ * ルートが catch していない例外を構造化ログに残す（§9.6）。`consoleLogger` の正規化
+ * （{ name, message }、200 文字切り詰め）に乗せる
  */
 export function logUnhandledError(
   logger: Logger,

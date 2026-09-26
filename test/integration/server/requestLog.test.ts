@@ -1,4 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
+import { HTTPException } from 'hono/http-exception'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 import { consoleLogger } from '../../../src/adapters/logger/consoleLogger'
@@ -33,9 +34,6 @@ describe('requestLog ミドルウェア（§9.6）', () => {
   })
 
   afterEach(() => {
-    // Hono の既定 errorHandler（console.error(err) で生のスタックトレースを出す）を
-    // app.onError が置き換えていることを全テスト共通で確認する
-    expect(errorSpy).not.toHaveBeenCalled()
     vi.restoreAllMocks()
   })
 
@@ -158,7 +156,7 @@ describe('requestLog ミドルウェア（§9.6）', () => {
   it('想定外の例外（catch していないルート）は unhandled_error として構造化ログに残り、name・message 以外は出ない', async () => {
     const deps = buildFakeDeps({ logger: consoleLogger })
     // §9.6 が想定する「例外 message に入力由来の文字列が混ざる」ケース。message 自体は
-    // consoleLogger の正規化（{ name, message }、200 文字切り詰め）で残るのが仕様（§9.6・T1）
+    // consoleLogger（既存実装）の正規化（{ name, message }、200 文字切り詰め）で残るのが仕様
     const inputMarkerInMessage = 'user-controlled-input-marker'
     deps.pages.findById = () => {
       throw new Error(`boom while looking up ${inputMarkerInMessage}`)
@@ -177,5 +175,75 @@ describe('requestLog ミドルウェア（§9.6）', () => {
 
     const completed = loggedLines().find((line) => line.event === 'request_completed')
     expect(completed).toMatchObject({ route: DETAIL_ROUTE, status: 500 })
+
+    // Hono の既定 errorHandler（console.error(err) で生のスタックトレースを出す）を
+    // app.onError が置き換えていることをここで確認する
+    expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  it('PAGE_ID_PATTERN の制約が無いルート（POST /api/pages/:id/reports）では、URL の任意文字列が pageId としてログに出ない', async () => {
+    const deps = buildFakeDeps({ logger: consoleLogger })
+    const bogusId = 'x'.repeat(5000)
+
+    const res = await fetchApp(
+      deps,
+      jsonRequest(`/api/pages/${bogusId}/reports`, {
+        method: 'POST',
+        body: { reason: 'spam', comment: null },
+      }),
+    )
+
+    expect(res.status).toBe(404)
+    const completed = loggedLines().find((line) => line.event === 'request_completed')
+    expect(completed).toMatchObject({ route: '/api/pages/:id/reports', status: 404 })
+    expect(completed).not.toHaveProperty('pageId')
+    for (const line of logSpy.mock.calls.map((call) => call[0] as string)) {
+      expect(line).not.toContain(bogusId)
+    }
+  })
+
+  it('制御文字やエンコードされたマーカーを含む :id もログに残らない', async () => {
+    const deps = buildFakeDeps({ logger: consoleLogger })
+
+    const res = await fetchApp(
+      deps,
+      jsonRequest('/api/pages/%0A%FF%3Cscript%3EEDIT_TOKEN_LEAK/reports', {
+        method: 'POST',
+        body: { reason: 'spam', comment: null },
+      }),
+    )
+
+    expect(res.status).toBe(404)
+    const completed = loggedLines().find((line) => line.event === 'request_completed')
+    expect(completed).toMatchObject({ status: 404 })
+    expect(completed).not.toHaveProperty('pageId')
+    for (const line of logSpy.mock.calls.map((call) => call[0] as string)) {
+      expect(line).not.toContain('EDIT_TOKEN_LEAK')
+    }
+  })
+
+  it('HTTPException は Hono 既定の応答（getResponse）で返り、unhandled_error にならない', async () => {
+    const deps = buildFakeDeps({ logger: consoleLogger })
+    deps.pages.findById = () => {
+      throw new HTTPException(403, { message: 'forbidden' })
+    }
+
+    const res = await fetchApp(deps, new Request(new URL('/aaaaaaaaaaaa', TEST_ORIGIN)))
+
+    expect(res.status).toBe(403)
+    expect(loggedLines().find((line) => line.event === 'unhandled_error')).toBeUndefined()
+    const completed = loggedLines().find((line) => line.event === 'request_completed')
+    expect(completed).toMatchObject({ route: DETAIL_ROUTE, status: 403 })
+    expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  it('GET /:id.ics の pageId は拡張子を除いた ID になり、detail などの他ルートと同じ値になる', async () => {
+    const deps = buildFakeDeps({ logger: consoleLogger })
+
+    const res = await fetchApp(deps, new Request(new URL('/aaaaaaaaaaaa.ics', TEST_ORIGIN)))
+
+    expect(res.status).toBe(404)
+    const completed = loggedLines().find((line) => line.event === 'request_completed')
+    expect(completed).toMatchObject({ pageId: 'aaaaaaaaaaaa' })
   })
 })
