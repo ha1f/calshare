@@ -7,8 +7,9 @@ CI を前提にする以上、private リポジトリのままでは GitHub Acti
 Dependabot・secret scanning などのセキュリティ機能も無償で使える。
 
 このリポジトリの可視性（visibility）を private → public に変える操作そのものはオーナーしか
-できない（アカウントに対する不可逆な公開判断のため）。この runbook は、public 化した直後に
-必要になる設定を土台として作り、オーナーの作業を最小の手順に絞る。
+できない（コードを世に出す判断そのものであり、公開している間に取られたクローンやフォークは
+private に戻しても消せないため）。この runbook は、public 化した直後に必要になる設定を
+土台として作り、オーナーの作業を最小の手順に絞る。
 
 ## 自動化されていること
 
@@ -19,6 +20,7 @@ Dependabot・secret scanning などのセキュリティ機能も無償で使え
   - Private vulnerability reporting の有効化
   - `main` ブランチの保護（必須ステータスチェック `ci`、force push 禁止、削除禁止。
     個人開発のため `required_pull_request_reviews` は付けていない）
+  - Actions の一般設定（`enabled`・`allowed_actions`）の確認（表示のみ）
   - Actions の Default workflow permissions が `read` になっているかの確認（`write` のままなら
     `read` に変更する）
   - fork PR のワークフロー承認設定の確認（表示のみ。変更はオーナー判断）
@@ -50,7 +52,7 @@ Dependabot・secret scanning などのセキュリティ機能も無償で使え
   選択肢と推奨、影響はそちらを参照。
 - **docs/concept.md（収益計画を含む）と docs/legal を public のままにするか**: 同じ Issue に
   「判断が必要な事項」として並べてある。
-- **fork PR のワークフロー承認設定**: `harden-public-repo.sh` の手順7で現在値を表示するのみで、
+- **fork PR のワークフロー承認設定**: `harden-public-repo.sh` の手順8で現在値を表示するのみで、
   自動変更はしない。fork からの初回 PR でも承認なしに workflow を動かしてよいかはオーナー判断。
   厳しくするなら Settings > Actions > General > 「Fork pull request workflows from outside
   collaborators」で `Require approval for all outside collaborators` を選ぶ。
@@ -70,7 +72,15 @@ Dependabot・secret scanning などのセキュリティ機能も無償で使え
 - **secret scanning が既定で有効になる**（public リポジトリは無償）。push protection は
   既定では有効にならないため、`harden-public-repo.sh` の手順3で明示的に有効化する。
 - **fork からの初回コントリビューターの PR は、既定で workflow の実行に承認が必要になる**
-  （GitHub 側の既定動作）。`harden-public-repo.sh` の手順7で現在の設定を確認できる。
+  （GitHub 側の既定動作）。`harden-public-repo.sh` の手順8で現在の設定を確認できる。
+- **要対応**: `harden-public-repo.sh` の手順5で `main` に必須ステータスチェック `ci` を
+  設定すると、`provision.yml` が `GITHUB_TOKEN` で自動作成する PR（`chore/provision-ids`・
+  `chore/wrangler-domain`）は `pull_request` トリガーの CI が自動で走らないため
+  （GitHub の仕様。`GITHUB_TOKEN` で作った PR は他の workflow の起動トリガーにならない）、
+  必須チェックが「未実行」のままマージ待ちになる。`docs/runbooks/provisioning.md` に
+  既にある回避策（PR を一度 close → reopen する、または空コミットを push して CI を
+  走らせる）を使うか、`enforce_admins: false` にしてあるので admin 権限でチェックを
+  待たずにマージする。
 
 ## 失敗したときの見方
 

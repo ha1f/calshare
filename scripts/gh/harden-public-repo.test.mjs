@@ -69,6 +69,7 @@ test('CLI: --dry-run は gh を呼ばず、期待する API 呼び出しがす�
   assert.match(out, /PATCH repos\/ha1f\/calshare — secret scanning と push protection/)
   assert.match(out, /PUT repos\/ha1f\/calshare\/private-vulnerability-reporting/)
   assert.match(out, /PUT repos\/ha1f\/calshare\/branches\/main\/protection/)
+  assert.match(out, /GET repos\/ha1f\/calshare\/actions\/permissions(?!\/)/)
   assert.match(out, /GET repos\/ha1f\/calshare\/actions\/permissions\/workflow/)
   assert.match(out, /GET repos\/ha1f\/calshare\/actions\/permissions\/fork-pr-contributor-approval/)
 
