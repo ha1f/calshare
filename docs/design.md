@@ -678,6 +678,8 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 
 日時が無い（`start = null`）作成は**拒否しない**。下書きとして「作成 + 7 日」で保存する。プレビューには「日時を認識できませんでした。タップして直せます（このままだと7日で消えます）」を出す。`past_date` / `beyond_max_lead_time` の issue があるときは「過去の日付のようです」「作成できるのは13ヶ月先までです」をプレビューに出し、日時項目は空で表示する。
 
+検証を通った場合、`POST /api/pages` と `PATCH /api/pages/:id` はどちらも 200 で `CreatePageResponse` / `UpdatePageResponse`（§11.3）を返す（作成を示す 201 は使わない）。
+
 ### 5.8 プリフィルの優先順位
 
 ```typescript
@@ -1209,7 +1211,7 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 │   ├── server/
 │   │   ├── index.ts               # export default { fetch, scheduled }
 │   │   ├── app.ts                 # createApp(deps): Hono。サブアプリを app.route() で 1 行ずつマウント
-│   │   ├── deps.ts                # Env → Deps の組み立て（本物のアダプタ。ogpRenderer と notifier のみ Fake を配線。§11.7）
+│   │   ├── deps.ts                # Env → Deps の組み立て（本物のアダプタ。ogpRenderer のみ Fake を配線。notifier は REPORT_WEBHOOK_URL の有無で決まる。§11.7）
 │   │   ├── env.ts                 # Env 型（バインディング・vars・secrets。§11.7）
 │   │   ├── lib/{edgeCache,headers,ipHash,deviceCookie,logger,errors,pageAccess,assets,ics}.ts
 │   │   │                          # pageAccess: isServable。assets: ASSETS から HTML / PNG を取り Response を包み直す（§2.2）
