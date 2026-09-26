@@ -1121,8 +1121,11 @@ npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}
 
 ```
 ci.yml（pull_request / push main。ステップの詳細は §11.7）
-  npm ci → lint → typecheck → test:unit → build → test:integration → wrangler deploy --dry-run → playwright install → test:e2e
-  （build は test:integration より前。test:integration が env.ASSETS.fetch() で dist/ を読むため。確認済み・T1）
+  npm ci → lint → typecheck → test:unit → build → test:integration → wrangler deploy --dry-run → playwright install
+  → wrangler d1 migrations apply calshare --local → test:e2e
+  （build は test:integration より前。test:integration が env.ASSETS.fetch() で dist/ を読むため。確認済み・T1。
+  wrangler dev はローカル D1 にマイグレーションを自動適用しないため、test:e2e の webServer が使う .wrangler/state を
+  先に用意する。T14 で e2e が初めて POST /api/pages を実行して判明した。確認済み・T14）
 deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§13 H9・§12 T19 を参照）
   gate ジョブ: リポジトリ変数 DEPLOY_ENABLED が true でなければここで終了する（H9 の公開承認そのもの）
   deploy ジョブ: 変数 PUBLIC_DOMAIN が未設定なら失敗させて止める（sameOrigin の検証が本番 Origin
