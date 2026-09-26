@@ -1116,7 +1116,7 @@ npm run build             # node scripts/build-web.mjs（src/web → dist/）
 npm run test:unit         # vitest run --project unit
 npm run test:integration  # vitest run --project integration（vitest-pool-workers）。Static Assets（env.ASSETS.fetch）を
                            # dist/ から検証するテストがあるため、先に npm run build が必要（確認済み・T1）
-npm run test:e2e          # playwright test（webServer で build → wrangler dev を自動起動）
+npm run test:e2e          # playwright test（webServer で build → wrangler dev を自動起動。E2E_PORT=8791 のように指定すると別ポートで起動し、複数の作業ツリーで同時に走らせられる）
 npm run test              # unit + integration
 npm run lint              # eslint . && prettier --check .
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
