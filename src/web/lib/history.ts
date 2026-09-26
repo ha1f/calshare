@@ -30,8 +30,12 @@ function isHistoryEntry(value: unknown): value is HistoryEntry {
   )
 }
 
-/** localStorage が使えない環境（プライベートモード等）でも例外で画面を壊さないための読み取り */
-function readHistory(): HistoryEntry[] {
+/**
+ * 保存されている順のまま返す（新しい順になるのは addHistoryEntry が新規項目を先頭に足すため）。
+ * localStorage が使えない環境（プライベートモード等）でも例外で画面を壊さない。
+ * id が不正な項目はここで除く（§6.4。詳細・編集へのリンクを組めないため）
+ */
+export function readHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw === null) return []
