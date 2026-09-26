@@ -22,6 +22,12 @@
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "calshare" }],
   "vars": { "PUBLIC_ORIGIN": "http://localhost:8787", "SERVICE_NAME": "calshare" },
+  // .wasm は既定の CompiledWasm ルールで import できる（server/deps.ts が動的 import で使う）。
+  // .otf は既定ルールに無いため、test/integration/ogp/satoriOgpRenderer.test.ts が
+  // フィクスチャフォントを import するために追加する（本番コードは R2 からフォントを読むので対象外）
+  // fallthrough: false は「同じ Data 型の既定ルール（**/*.bin）を無効にする」という wrangler の
+  // 警告を消すため。プロジェクトで .bin は使っていないので無効化して問題ない
+  "rules": [{ "type": "Data", "globs": ["**/*.otf"], "fallthrough": false }],
   // JST 04:00 に GC を実行する（§2.6）
   "triggers": { "crons": ["0 19 * * *"] },
 }
