@@ -22,4 +22,6 @@
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "calshare" }],
   "vars": { "PUBLIC_ORIGIN": "http://localhost:8787", "SERVICE_NAME": "calshare" },
+  // JST 04:00 に GC を実行する（§2.6）
+  "triggers": { "crons": ["0 19 * * *"] },
 }
