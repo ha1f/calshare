@@ -47,6 +47,7 @@ test('日時を手動修正すると入力欄を変えても上書きされず�
 
   await page.getByTestId('reset-datetime').click()
   await expect(page.getByTestId('view-datetime')).toHaveText('9月20日(日) 19:00〜20:00')
+  await expect(page.getByTestId('start-input')).toBeHidden()
 })
 
 test('場所を空にすると場所なしとして作成される（シナリオ4後半: 空にすると使わない）', async ({
