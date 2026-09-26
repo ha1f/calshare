@@ -942,9 +942,10 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 - メモの改行は「文字列を `\n` で分割し、各要素の間に `<br>` 要素を挟む」JSX で表現する。HTML 文字列の組み立ては一切行わない。
 - クライアント側の描画（①②④・編集画面）は `textContent` / `createElement` のみを使い `innerHTML` に文字列を入れない（ESLint で禁止）。
 - OGP 画像の入力はテキストノードとしてのみ扱い、文字列連結で SVG / CSS を組まない（§2.5）。
-- レスポンスヘッダ（SSR・API は Worker の `securityHeaders` ミドルウェア、静的ページは `_headers` ファイル。§2.2）:
+- レスポンスヘッダ（SSR は `server/lib/headers.ts` の定数を `server/middleware/securityHeaders.ts` の `applySecurityHeaders(res)` で付与、静的ページは `_headers` ファイル。§2.2）:
   - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'`
   - `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`
+  - **実装時の訂正**: `applySecurityHeaders` は Hono の `app.use()` によるグローバルミドルウェアではなく、各ルートが自分のレスポンスに対して直接呼ぶ関数にした（`middleware/{rateLimit,sameOrigin}.ts` が採る規約と同じ、§11.6）。詳細ページは `withEdgeCache` の `produce()` の中でヘッダを付けてから Cache API に保存する必要があり、外側の一律ミドルウェアでは付け忘れなくキャッシュ後のレスポンスにも及ぼせないため。この結果、`POST /api/pages` 等の `/api/*` は本節のヘッダを持たない（別タスクの課題として残す）。
   - インラインスタイルは使わず、ビルド時に `/assets/*.css` へ出す（`'unsafe-inline'` を外すため）。`base-uri 'none'` は万一 HTML 注入があっても `<base href>` で `/assets/*.js` を外部に向けられないようにする。
   - CSP 文字列は `src/server/lib/headers.ts` の 1 定数にする（T8）。静的ページ用の `src/web/_headers` は**手書きの静的ファイル**（T1、内容は §11.7）で、ビルド時に TS 定数から生成しない（`.mjs` のビルドスクリプトから TS の定数を読むには一度バンドルするか JSON に逃がす必要があり、足場が複雑になる）。二重管理のずれは `test/unit/server/lib/headers.test.ts`（T8）で「`_headers` に書かれた各ヘッダの値と `headers.ts` の定数が一致する」ことを検査して CI で検出する。T1 の時点では `headers.ts` が無いので、`test/unit/web/headers.test.ts` で `_headers` の形式（§11.7 の各ヘッダが載っている）だけを検査する。
 
