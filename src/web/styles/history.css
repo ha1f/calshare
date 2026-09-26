@@ -1,0 +1,57 @@
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.history-item.is-expired {
+  color: #999;
+  border-color: #ddd;
+}
+
+.history-title {
+  flex: 1;
+  min-width: 8em;
+  color: inherit;
+  font-weight: bold;
+}
+
+.history-datetime {
+  font-size: 0.9em;
+  color: #666;
+}
+
+.is-expired .history-datetime {
+  color: inherit;
+}
+
+.history-edit-link {
+  font-size: 0.9em;
+  color: #06c;
+}
+
+.is-expired .history-edit-link {
+  color: inherit;
+}
+
+.history-expired-badge {
+  font-size: 0.85em;
+  color: #c00;
+}
+
+.empty-message {
+  color: #666;
+}
