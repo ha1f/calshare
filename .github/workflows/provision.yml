@@ -32,7 +32,7 @@ jobs:
     outputs:
       domain: ${{ steps.resolve-domain.outputs.domain }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Node のバージョンを決める
         id: node-version
@@ -82,7 +82,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Node のバージョンを決める
         id: node-version
@@ -141,7 +141,7 @@ jobs:
     needs: resources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Node のバージョンを決める
         id: node-version
@@ -210,7 +210,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Node のバージョンを決める
         id: node-version
@@ -279,7 +279,7 @@ jobs:
     if: inputs.with_font
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Node のバージョンを決める
         id: node-version
