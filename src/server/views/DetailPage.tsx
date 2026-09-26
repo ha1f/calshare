@@ -75,7 +75,9 @@ export function DetailPage({ page, config, now }: DetailPageProps) {
   const dateLabel = formatDateLabel(event)
   const location = nonBlank(event.location)
   const memo = nonBlank(event.memo)
-  const isEdited = page.updatedAt.getTime() !== page.createdAt.getTime()
+  // E2E_FIXED_NOW（固定時計）の下では作成と更新の now() が同一になり updatedAt が進まないため、
+  // 更新回数を表す version で判定する（§8）
+  const isEdited = page.version > 1
   const showChangeBanner =
     page.changedAt !== null &&
     now.getTime() - page.changedAt.getTime() <= CHANGE_BANNER_HOURS * HOUR_MS

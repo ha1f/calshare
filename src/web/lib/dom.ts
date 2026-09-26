@@ -15,6 +15,18 @@ export function requireElement<T extends HTMLElement>(
   return el
 }
 
+/**
+ * 内容に応じてテキストエリアの高さを伸ばす（§6.1「自動リサイズの textarea」）。
+ * 一度 `auto` に縮めてから `scrollHeight` に合わせないと、行を消したときに縮まない
+ */
+export function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto'
+  // box-sizing: border-box では height が border 込みの外寸になる一方、scrollHeight は border を
+  // 含まないため、border 分を足さないと内容がちょうど border の幅だけはみ出してスクロールする
+  const borderHeight = textarea.offsetHeight - textarea.clientHeight
+  textarea.style.height = `${textarea.scrollHeight + borderHeight}px`
+}
+
 interface ElementOptions {
   className?: string
   text?: string

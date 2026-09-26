@@ -64,14 +64,12 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   expect(icsUrl.pathname).toBe(`/${id}.ics`)
 
   // 初回作成時には「送り直してください」は出ない。編集完了後の状態は、履歴の
-  // updatedAt を直接書き換えて再現してから再訪する（§6.2）
+  // version を直接書き換えて再現してから再訪する（§6.2・§8）
   await expect(page.locator('#resend-notice')).toBeHidden()
   await page.evaluate((pageId) => {
     const raw = localStorage.getItem('calshare.history')
     const entries: Array<Record<string, unknown>> = raw === null ? [] : JSON.parse(raw)
-    const updated = entries.map((entry) =>
-      entry.id === pageId ? { ...entry, updatedAt: '2026-09-17T00:00:00.000Z' } : entry,
-    )
+    const updated = entries.map((entry) => (entry.id === pageId ? { ...entry, version: 2 } : entry))
     localStorage.setItem('calshare.history', JSON.stringify(updated))
   }, id)
   await page.goto(`/done?id=${id}`)

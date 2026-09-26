@@ -121,8 +121,9 @@ function main(): void {
   urlDisplay.textContent = entry.url
   editLink.href = `/${id}/edit`
   expiresNotice.textContent = `${formatExpiresLabel(new Date(entry.expiresAt))} まで表示されます`
-  // 編集完了後の再掲時だけ出す。初回作成時には出さない（§6.2）
-  resendNotice.hidden = entry.updatedAt === entry.createdAt
+  // 編集完了後の再掲時だけ出す（§6.2）。E2E_FIXED_NOW の下では updatedAt が createdAt と
+  // 同じままになるため version で判定する（§8）。version を持たない履歴項目は未編集として扱う
+  resendNotice.hidden = !(typeof entry.version === 'number' && entry.version > 1)
 
   lineShareLink.href = `https://line.me/R/share?text=${encodeURIComponent(entry.url)}`
 

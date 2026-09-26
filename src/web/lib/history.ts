@@ -12,6 +12,7 @@ export interface HistoryEntry {
   expiresAt: string
   createdAt: string
   updatedAt: string
+  version: number
 }
 
 function isHistoryEntry(value: unknown): value is HistoryEntry {
@@ -58,13 +59,13 @@ export function addHistoryEntry(entry: HistoryEntry): void {
 }
 
 /**
- * 編集完了時に該当項目の fields / expiresAt / updatedAt だけを上書きする（§6.4）。
+ * 編集完了時に該当項目の fields / expiresAt / updatedAt / version だけを上書きする（§6.4）。
  * addHistoryEntry と違い、並び順や id・url・editToken・createdAt は変えない。
  * 該当 id が無ければ何もしない
  */
 export function updateHistoryEntry(
   id: string,
-  patch: Pick<HistoryEntry, 'fields' | 'expiresAt' | 'updatedAt'>,
+  patch: Pick<HistoryEntry, 'fields' | 'expiresAt' | 'updatedAt' | 'version'>,
 ): void {
   const entries = readHistory()
   const next = entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))

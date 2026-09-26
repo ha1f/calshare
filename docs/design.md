@@ -768,7 +768,7 @@ export const ruleBasedInterpreter: TextInterpreter = {
 - 「自分のカレンダーにも入れる」: Google カレンダーリンク（§7.1）と ics リンク（`/{id}.ics`）の 2 つ。Google リンクは履歴項目の `fields`（§6.4）から `buildGoogleCalendarUrl` で組む（サーバに問い合わせない）。日時が null の下書きでは出さない。
 - 期限表示「M/D まで表示されます」（`expiresAt` を JST で整形）。
 - 「あとから編集できます」→ `/{id}/edit`。
-- 「変更を伝えたいときは同じ URL を送り直してください」は**編集完了後の再掲時だけ**表示する（履歴項目の `updatedAt ≠ createdAt` で判定。§8）。初回作成時には出さない（まだ変更していない段階で変更の注意を出すのは過剰）。
+- 「変更を伝えたいときは同じ URL を送り直してください」は**編集完了後の再掲時だけ**表示する（履歴項目の `version > 1` で判定。§8）。初回作成時には出さない（まだ変更していない段階で変更の注意を出すのは過剰）。`updatedAt ≠ createdAt` では判定しない。`E2E_FIXED_NOW`（固定時計）の下では作成と更新の `now()` が同一になり `updatedAt` が進まないため。
 - 広告枠は Phase 1 では実装しない。
 - 表示に使う `url` は `https://{PUBLIC_ORIGIN}/{id}`（API レスポンスの `url` をそのまま使う）。
 
@@ -779,12 +779,12 @@ export const ruleBasedInterpreter: TextInterpreter = {
 3. **変更バナー**（`changed_at` から 48 時間以内のみ。§8）。日時が変わった場合は「この予定は変更されました 日時: 9/20(日) 19:00 → 9/21(月) 20:00」。タイトル・場所が変わった場合は「タイトルが変更されました」「場所が変更されました」と事実だけ示し、**旧値は出さない**（§3.5）
 4. 日時（終日は「9月20日(日)」のみ。時刻ありは「9月20日(日) 19:00〜21:00」。既定の終了も同じ形（「19:00〜20:00」）。複数日は「9月20日(日)〜9月21日(月)」。下書きは「日時未定」）
 5. 場所（あれば）。直下に「地図で見る ↗」（`https://www.google.com/maps/search/?api=1&query={encodeURIComponent(location)}`。固定パターンの自前リンクであり、ユーザー入力を URL 化するものではない）
-6. カレンダー追加ボタン 2 個（「Googleカレンダー」「その他（ics）」）。日時が null のときは非表示にし「日時が決まったら追加できます」を出す。`updated_at ≠ created_at` のときだけ直下に「カレンダーに追加した後の変更は自動では反映されません。最新はこのページで確認してください」を出す（未編集のページでは 11 のフッターにだけ置く。§8）
+6. カレンダー追加ボタン 2 個（「Googleカレンダー」「その他（ics）」）。日時が null のときは非表示にし「日時が決まったら追加できます」を出す。`version > 1`（編集済み）のときだけ直下に「カレンダーに追加した後の変更は自動では反映されません。最新はこのページで確認してください」を出す（未編集のページでは 11 のフッターにだけ置く。§8）。`updated_at ≠ created_at` では判定しない（`E2E_FIXED_NOW` の下では作成・更新の `now()` が同一になり `updated_at` が進まないため）
 7. メモ（改行のみ `<br>` に変換。URL があっても自動リンクしない。§9.2）
 8. 区切り
 9. 「あなたも予定URLを作れます」+「作ってみる」CTA（`href="/new?ref=detail_cta"`。広告より上。`ref` は作成画面が `source = 'detail_cta'` に変換して作成 API に送る。§6.1）
 10. 広告枠（Phase 1 は DOM に何も出さない。テンプレートにコメントのみ）
-11. 期限表示「このページは M/D まで表示されます」。`M/D` は `expires_at` の 1ms 前が属する JST 暦日（`expires_at` は JST 0 時ちょうどのことがあり、そのまま暦日に変換すると実際に見えなくなる日を指してしまうため）。`updated_at ≠ created_at` なら続けて「最終更新: M/D HH:mm」（`formatDateLabel` と同じ 0 埋め）。その下に小さく「カレンダーに追加した後の変更は自動では反映されません」（免責の常設位置はここ）
+11. 期限表示「このページは M/D まで表示されます」。`M/D` は `expires_at` の 1ms 前が属する JST 暦日（`expires_at` は JST 0 時ちょうどのことがあり、そのまま暦日に変換すると実際に見えなくなる日を指してしまうため）。`version > 1` なら続けて「最終更新: M/D HH:mm」（`formatDateLabel` と同じ 0 埋め）。その下に小さく「カレンダーに追加した後の変更は自動では反映されません」（免責の常設位置はここ）
 12. 「不適切なページを報告」リンク（`/{id}/report`。小さくフッター相当）
 
 `<head>`: `<meta name="robots" content="noindex, nofollow">`、`og:title`（タイトル）、`og:description`（日時 + 場所の 1 行）、`og:image`（`https://{PUBLIC_ORIGIN}/{id}/ogp.png?v={version}`。version を含めるのは SNS 側の画像キャッシュを編集後に更新させるため、§2.4）、`og:url`、`twitter:card=summary_large_image`。絶対 URL は必ず `config.publicOrigin` から組み立て、`request.url` や `Host` ヘッダは使わない（§9.9）。
@@ -806,10 +806,11 @@ export interface HistoryEntry {
   expiresAt: string          // ISO8601 UTC
   createdAt: string
   updatedAt: string
+  version: number            // 完成画面・詳細ページの「編集済みか」の判定に使う（version > 1。§6.2・§6.3・§8）
 }
 ```
 
-- 一覧は `fields.title`・日時（`fields.start` `fields.end` `fields.isAllDay` から `formatDateLabel`）・詳細ページへのリンク・編集リンク（`/{id}/edit`）。作成時点のスナップショットであり、その後の編集や期限延長は反映されない（サーバに問い合わせないトレードオフ）。編集完了時（§6.5）には該当項目の `fields` `expiresAt` `updatedAt` を上書きする。
+- 一覧は `fields.title`・日時（`fields.start` `fields.end` `fields.isAllDay` から `formatDateLabel`）・詳細ページへのリンク・編集リンク（`/{id}/edit`）。作成時点のスナップショットであり、その後の編集や期限延長は反映されない（サーバに問い合わせないトレードオフ）。編集完了時（§6.5）には該当項目の `fields` `expiresAt` `updatedAt` `version` を上書きする。
 - 一覧の編集リンクと詳細リンクは `isValidPageId` を通した `id` だけから組む（localStorage の内容も信頼しない）。
 - 期限切れの項目はグレー表示し、「期限切れ」と出す。
 - 端末を変えると空になる。Phase 1 では「ログインしますか」は出さない。
@@ -938,9 +939,9 @@ export function foldIcsLine(line: string): string
 
 Phase 1 は購読を持たないため、**変更は取り込み済みの相手に自動では伝わらない**。これを前提に「伝わらないことを隠さず、詳細ページを正にする」方針を採り、次の 5 点を実装する。
 
-1. **詳細ページに免責を置く**: フッター（期限表示の下、§6.3 の 11）に「カレンダーに追加した後の変更は自動では反映されません」を常設し、`updated_at ≠ created_at` のページではカレンダーボタン直下（§6.3 の 6）にも昇格させる。concept §10 が求める「詳細ページに明示」はこれで満たす。未編集のページの主要部分には出さない（concept §03 の「スクリーンショットして LINE に貼れる見やすさ」を損なわないため）。
+1. **詳細ページに免責を置く**: フッター（期限表示の下、§6.3 の 11）に「カレンダーに追加した後の変更は自動では反映されません」を常設し、`version > 1`（編集済み）のページではカレンダーボタン直下（§6.3 の 6）にも昇格させる。concept §10 が求める「詳細ページに明示」はこれで満たす。未編集のページの主要部分には出さない（concept §03 の「スクリーンショットして LINE に貼れる見やすさ」を損なわないため）。
 2. **変更バナーで差分を見せる**: タイトル・日時・場所のいずれかを編集したとき、変更前の**日時**を `previous_snapshot` に保存し、`changed_at` から `CHANGE_BANNER_HOURS = 48` 時間は「この予定は変更されました 日時: … → …」を日時の上（§6.3 の 3）に出す。タイトル・場所は「変更されました」の事実だけを示し旧値は出さない（§3.5 の理由）。再訪した受け手が何が変わったか一目で分かる手段で、コストはカラム 2 本とテンプレート 1 箇所。メモだけの変更ではバナーを出さない。
-3. **「最終更新」を常時表示する**: `updated_at ≠ created_at` なら期限表示の横に「最終更新: M/D HH:mm」（§6.3 の 11）。48 時間を過ぎた後もこれは残る。
+3. **「最終更新」を常時表示する**: `version > 1` なら期限表示の横に「最終更新: M/D HH:mm」（§6.3 の 11）。48 時間を過ぎた後もこれは残る。
 4. **同じ URL を送り直す動線**: 編集完了後の完成画面（②の再掲）に「変更を伝えたいときは同じ URL を送り直してください」。初回作成時には出さない。URL は編集しても変わらない。
 5. **ics の UID を固定し SEQUENCE を増分する**: 相手が同じ ics を再取得した場合に限り、多くのクライアント（Apple Calendar 等）は更新として扱う。Google カレンダーの手動取り込みは重複することがあるので「効けば儲けもの」の副次策として扱い、UI 文言で自動通知のように誇張しない。
 
@@ -1110,7 +1111,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 4. プレビューの日時をタップして手動修正 → 入力欄を変えても日時は上書きされない → 「自動に戻す」で自動解釈に戻る。別途、`9/20 19時 車で移動` の場所を空にして作成 → 詳細ページに場所が出ない
 5. `9/20 19時 渋谷` → 「場所にする」で場所 = 渋谷、タイトルが日時表現になる
 6. 2 行入力（`9/20 19時 渋谷で飲み会\n会費5000円`）→ プレビューのメモに `会費5000円` → 詳細ページにメモが表示され、URL を含めても `<a>` にならない
-7. 履歴ページに作成したページが出る → 編集リンクから編集画面 → 日時を変更して保存 → `/done` 再掲（「同じ URL を送り直してください」が出る）→ 詳細ページに変更バナー（旧日時 → 新日時）と「最終更新」が出る。場所も変えた場合はバナーに「場所が変更されました」とだけ出て旧場所の文字列が DOM に無い（既知の制約: `buildDeps` は毎リクエストで `fakeClock(new Date(E2E_FIXED_NOW))` を返すため、作成と更新の `now()` が同一になり `updatedAt` が進まない。そのため e2e では「同じ URL を送り直してください」の表示・詳細ページの「最終更新」表示・履歴 `updatedAt` の更新を固定できていない。T19 で対応する）
+7. 履歴ページに作成したページが出る → 編集リンクから編集画面 → 日時を変更して保存 → `/done` 再掲（「同じ URL を送り直してください」が出る）→ 詳細ページに変更バナー（旧日時 → 新日時）と「最終更新」が出る。場所も変えた場合はバナーに「場所が変更されました」とだけ出て旧場所の文字列が DOM に無い。`buildDeps` は毎リクエストで `fakeClock(new Date(E2E_FIXED_NOW))` を返すため、作成と更新の `now()` が同一になり `updatedAt` は進まない。「同じ URL を送り直してください」・詳細ページの「最終更新」表示はどちらも `updatedAt` ではなく `version > 1` で判定する（§6.2・§6.3・§8）ため、固定時計の下でも編集後に正しく出る
 8. localStorage を消した状態で `/:id/edit` を開く → 「この端末では編集できません」
 9. 通報フォームから送信 → 「報告を受け付けました」
 10. LINE UA のモバイルプロジェクト: 詳細ページのカレンダーボタン `href` を `new URL()` でパースし `searchParams.get('openExternalBrowser') === '1'`、かつ Google 側の `action=TEMPLATE` が壊れていない。案内バナーが出る
@@ -1963,8 +1964,8 @@ export default defineConfig({
 | T12 | `feat/reports` | feat: 通報（フォーム・API・Webhook 通知） | T11 | `src/server/routes/{apiReports.ts,reportPage.tsx}` `src/server/views/ReportPage.tsx` `src/adapters/notifier/webhookNotifier.ts` `src/web/report/main.ts` `src/core/config/limits.ts`（`REPORT_COUNT_WARNING_THRESHOLD` `WEBHOOK_FETCH_TIMEOUT_MS` を追記） `src/server/app.ts`（2 行） `src/server/deps.ts`（1 行）`test/integration/server/reports.test.ts` `test/unit/adapters/notifier/*` | 通報で `reports` 1 行（`deps.reports.insertIfNotDuplicate`）・`report_count` +1・Fake Notifier が `activePagesFromSameCreator` 付きで呼ばれる、`reason` 不正は 400、`comment` 501 文字は 400、同一 ip_hash の 24 時間重複は無視、429、`text/plain` は 415、`Origin` 不一致は 403 で `reports` に入らない、hidden／期限切れは 404、Webhook 失敗でも 200、フォームの noindex とインラインスクリプト無し。unit: `webhookNotifier` の payload で `@everyone` と `https://` が無効化され（Discord: `allowed_mentions` とコードブロック、Slack: エスケープと `mrkdwn: false`）、コメントが 200 文字に切られ、URL は詳細ページの 1 本だけ。Webhook 種別が URL のホストで決まる（`discord.com` / `discordapp.com` → Discord、`hooks.slack.com` → Slack、未知のホストは送らず warn。§9.4） | integration green |
 | T13 | `feat/gc-cron` | feat: 保持期限切れの GC（Cron Trigger） | T12 | `src/server/scheduled/gc.ts` `src/server/index.ts`（`scheduled` 配線）`wrangler.jsonc`（`crons`）`test/integration/scheduled/gc.test.ts` | 期限切れが D1・R2（`ics/{id}.ics` と `ogp/{id}/*`）から消え有効なものは残る、ちょうど期限の境界、バッチ繰り返し（101 件以上）、`rate_limit_counters` の掃除、48 時間より古い `previous_snapshot` の NULL 化、ログの件数 | integration green |
 | T14 | `feat/web-create` | feat: 作成画面（textarea・ライブプレビュー・タップ編集・プリフィル・流入元） | T13 | `src/web/pages/{index,new}.html` `src/web/create/*` `src/web/lib/{history,api,dom}.ts` `src/web/styles/create.css` `test/e2e/create.spec.ts` | e2e §10.3 の 1・4（「自動に戻す」と「空にすると使わない」）・5・6・11・12（`source` が `prefill` / `detail_cta` / `direct` で送られる。リクエスト本文を Playwright で捕捉）。`core/` バンドルがブラウザで動く。プレビューが `TextInterpreter` 経由で呼ばれる（unit 相当の e2e ではなくコードレビューで確認） | e2e green。`npm run build` の `dist/assets/js/create.js` が 60KB（gzip）以下。HTML にインラインスタイル・スクリプトが無く、アセット参照が絶対パス |
-| T15 | `feat/web-done` | feat: 完成画面（コピー・LINE・共有）と LINE / Android 向け JS | T14 | `src/web/pages/done.html` `src/web/done/main.ts` `src/web/lib/{clipboard,share,lineUa}.ts` `src/web/detail/main.ts` `src/web/styles/{done,detail}.css` `src/core/config/limits.ts`（`COPY_MESSAGE_DURATION_MS` を追記） `test/e2e/{done,line,redirect}.spec.ts` `test/unit/web/lib/{clipboard,share,lineUa}.test.ts` | e2e §10.3 の 1（コピー）・2・3・10・13。`navigator.share` 非対応時にボタンが出ない。直リンク時に `/:id` へ遷移、不正 `id` は `/` へ。Google リンクが履歴の `fields` から組める。「送り直してください」は `updatedAt ≠ createdAt` のときだけ。`openExternalBrowser=1` が `searchParams.set` で付き `action=TEMPLATE` が壊れない | e2e green |
-| T16 | `feat/web-edit` | feat: 編集画面（localStorage のトークンで編集） | T15 | `src/web/pages/edit.html` `src/web/edit/main.ts` `src/web/styles/edit.css` `test/e2e/edit.spec.ts` `test/unit/web/lib/{api,history}.test.ts`。`src/web/lib/api.ts` `src/web/lib/history.ts` は T14 が置いたファイルで、`getPage` / `updatePage` は T14 時点で既にある。本タスクの担当ファイルとして割り当てられており、`api.ts` は `ApiRequestFailedError` の message を作成専用の文言から呼び出し元が操作名を渡せる形に汎用化し、`history.ts` に編集完了時専用の `updateHistoryEntry`（fields / expiresAt / updatedAt だけを差し替え、並び順は変えない。§6.4）を追加した | e2e §10.3 の 7・8。保存後に `/done` 再掲、履歴の `fields` `updatedAt` の更新。`pathname` の `id` が不正なら `/` へ | e2e green |
+| T15 | `feat/web-done` | feat: 完成画面（コピー・LINE・共有）と LINE / Android 向け JS | T14 | `src/web/pages/done.html` `src/web/done/main.ts` `src/web/lib/{clipboard,share,lineUa}.ts` `src/web/detail/main.ts` `src/web/styles/{done,detail}.css` `src/core/config/limits.ts`（`COPY_MESSAGE_DURATION_MS` を追記） `test/e2e/{done,line,redirect}.spec.ts` `test/unit/web/lib/{clipboard,share,lineUa}.test.ts` | e2e §10.3 の 1（コピー）・2・3・10・13。`navigator.share` 非対応時にボタンが出ない。直リンク時に `/:id` へ遷移、不正 `id` は `/` へ。Google リンクが履歴の `fields` から組める。「送り直してください」は `version > 1` のときだけ。`openExternalBrowser=1` が `searchParams.set` で付き `action=TEMPLATE` が壊れない | e2e green |
+| T16 | `feat/web-edit` | feat: 編集画面（localStorage のトークンで編集） | T15 | `src/web/pages/edit.html` `src/web/edit/main.ts` `src/web/styles/edit.css` `test/e2e/edit.spec.ts` `test/unit/web/lib/{api,history}.test.ts`。`src/web/lib/api.ts` `src/web/lib/history.ts` は T14 が置いたファイルで、`getPage` / `updatePage` は T14 時点で既にある。本タスクの担当ファイルとして割り当てられており、`api.ts` は `ApiRequestFailedError` の message を作成専用の文言から呼び出し元が操作名を渡せる形に汎用化し、`history.ts` に編集完了時専用の `updateHistoryEntry`（fields / expiresAt / updatedAt / version だけを差し替え、並び順は変えない。§6.4）を追加した | e2e §10.3 の 7・8。保存後に `/done` 再掲、履歴の `fields` `updatedAt` `version` の更新。`pathname` の `id` が不正なら `/` へ | e2e green |
 | T17 | `feat/web-history` | feat: 作成履歴画面 | T16 | `src/web/pages/history.html` `src/web/history/main.ts` `src/web/styles/history.css` `src/web/lib/history.ts`（`readHistory` を export に変更。元は T14 が private で定義） `src/web/styles/base.css`（`.app-header` `.app-title` `.history-link` を追加）`src/web/styles/create.css`（同 3 ルールを削除。§12 冒頭の例外(4)） `test/e2e/history.spec.ts` | 作成後に一覧に出る、期限切れのグレー表示、空状態の文言、localStorage に不正な `id` を仕込んでもリンクが生成されない | e2e green |
 | T18 | `feat/observability` | feat: 構造化ログとリクエストログミドルウェア | T17 | `src/server/lib/logger.ts` `src/server/middleware/requestLog.ts` `src/server/app.ts`（`requestLog` の登録と `app.onError` の 2 箇所。後者は Hono の既定 errorHandler の `console.error(err)` を構造化ログに置き換えるために追加）`src/server/routes/apiPages.ts`（1 行。作成成功時に `page_created` を出す）`test/integration/server/requestLog.test.ts` | §9.6 の表: ログに生 IP・トークン・クエリ・本文が出ない（`console.log` をスパイ）、ルート名と所要時間が出る、作成ログに `source` が出る、429 のログに `exceeded` のバケット種別が出る、catch していないルートの例外は `app.onError` 経由で `unhandled_error`（`{ name, message }` に正規化、生のスタックトレースは出さない）として残る | integration green |
 | T19 | `feat/e2e-and-deploy` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ） | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない）。**必須**: シナリオ 7 の「同じ URL を送り直してください」・詳細ページの「最終更新」・履歴 `updatedAt` の更新を e2e で固定する（現状 `buildDeps` の `fakeClock` が毎リクエスト同じ Date を返し `now()` が進まないため未検証。`buildClock` を Worker 起動からの経過時間で進める等の対応が必要。§10.3 シナリオ 7 参照） | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |

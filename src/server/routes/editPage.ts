@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { PAGE_ID_PATTERN } from '../../core/id/crockford'
 import type { Deps } from '../deps'
 import type { Env } from '../env'
+import { fetchAsset } from '../lib/assets'
 import { X_ROBOTS_TAG } from '../lib/headers'
 
 /**
@@ -13,10 +14,7 @@ export function editPageRoutes(_deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
 
   app.get(`/:id{${PAGE_ID_PATTERN}}/edit`, async (c) => {
-    const assetUrl = new URL('/edit', c.req.url)
-    const assetResponse = await c.env.ASSETS.fetch(assetUrl)
-    // ASSETS から返る Response のヘッダは変更不可なので、包み直してから X-Robots-Tag を足す（§2.2・§9.5）
-    const response = new Response(assetResponse.body, assetResponse)
+    const response = await fetchAsset(c.env.ASSETS, new URL('/edit', c.req.url))
     response.headers.set('X-Robots-Tag', X_ROBOTS_TAG)
     return response
   })

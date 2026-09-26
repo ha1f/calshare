@@ -35,6 +35,7 @@ const ENTRY_A: HistoryEntry = {
   expiresAt: '2026-09-27T00:00:00.000Z',
   createdAt: '2026-09-16T01:00:00.000Z',
   updatedAt: '2026-09-16T01:00:00.000Z',
+  version: 1,
 }
 
 const ENTRY_B: HistoryEntry = {
@@ -49,7 +50,7 @@ afterEach(() => {
 })
 
 describe('updateHistoryEntry', () => {
-  it('fields / expiresAt / updatedAt だけ上書きし、並び順・他の項目は変えない', () => {
+  it('fields / expiresAt / updatedAt / version だけ上書きし、並び順・他の項目は変えない', () => {
     vi.stubGlobal('localStorage', fakeLocalStorage())
     addHistoryEntry(ENTRY_B)
     addHistoryEntry(ENTRY_A)
@@ -58,6 +59,7 @@ describe('updateHistoryEntry', () => {
       fields: { ...ENTRY_B.fields, location: '新宿' },
       expiresAt: '2026-10-01T00:00:00.000Z',
       updatedAt: '2026-09-21T00:00:00.000Z',
+      version: 2,
     })
 
     const entries = readHistory()
@@ -67,6 +69,7 @@ describe('updateHistoryEntry', () => {
     expect(updated?.fields.location).toBe('新宿')
     expect(updated?.expiresAt).toBe('2026-10-01T00:00:00.000Z')
     expect(updated?.updatedAt).toBe('2026-09-21T00:00:00.000Z')
+    expect(updated?.version).toBe(2)
     expect(updated?.url).toBe(ENTRY_B.url)
     expect(updated?.editToken).toBe(ENTRY_B.editToken)
     expect(updated?.createdAt).toBe(ENTRY_B.createdAt)
@@ -80,6 +83,7 @@ describe('updateHistoryEntry', () => {
       fields: ENTRY_A.fields,
       expiresAt: ENTRY_A.expiresAt,
       updatedAt: '2026-09-21T00:00:00.000Z',
+      version: 2,
     })
 
     expect(readHistory()).toEqual([ENTRY_A])
@@ -100,6 +104,7 @@ describe('updateHistoryEntry', () => {
         fields: ENTRY_A.fields,
         expiresAt: ENTRY_A.expiresAt,
         updatedAt: ENTRY_A.updatedAt,
+        version: ENTRY_A.version,
       }),
     ).not.toThrow()
   })
