@@ -31,6 +31,11 @@ function isHistoryEntry(value: unknown): value is HistoryEntry {
   )
 }
 
+/** localStorage の内容は信頼しない（§6.4）。version が数値でない項目は未編集として 1 を補う */
+function withNormalizedVersion(entry: HistoryEntry): HistoryEntry {
+  return typeof entry.version === 'number' ? entry : { ...entry, version: 1 }
+}
+
 /**
  * 保存されている順のまま返す（新しい順になるのは addHistoryEntry が新規項目を先頭に足すため）。
  * localStorage が使えない環境（プライベートモード等）でも例外で画面を壊さない。
@@ -42,7 +47,7 @@ export function readHistory(): HistoryEntry[] {
     if (raw === null) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(isHistoryEntry)
+    return parsed.filter(isHistoryEntry).map(withNormalizedVersion)
   } catch {
     return []
   }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { ApiErrorCode } from '../../../../src/core/api/types'
 import { apiErrorMessage, VALIDATION_MESSAGES } from '../../../../src/web/lib/messages'
 
 describe('apiErrorMessage', () => {
@@ -24,6 +25,21 @@ describe('apiErrorMessage', () => {
 
   it('overrides に無いコードは通常どおりフォールバックする', () => {
     expect(apiErrorMessage('NOT_FOUND', { UNAUTHORIZED: '編集トークンが無効です' })).toBe(
+      'エラーが発生しました。しばらくしてからやり直してください',
+    )
+  })
+
+  it('Object.prototype のキーに一致するコードでもプロトタイプの値を返さない', () => {
+    expect(apiErrorMessage('constructor' as ApiErrorCode)).toBe(
+      'エラーが発生しました。しばらくしてからやり直してください',
+    )
+    expect(apiErrorMessage('toString' as ApiErrorCode, {})).toBe(
+      'エラーが発生しました。しばらくしてからやり直してください',
+    )
+  })
+
+  it('overrides のコードが undefined の場合は通常どおりフォールバックする', () => {
+    expect(apiErrorMessage('UNAUTHORIZED', { UNAUTHORIZED: undefined })).toBe(
       'エラーが発生しました。しばらくしてからやり直してください',
     )
   })

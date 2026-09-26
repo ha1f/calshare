@@ -49,6 +49,26 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('readHistory', () => {
+  it('version を持たない項目は 1 として返す', () => {
+    vi.stubGlobal('localStorage', fakeLocalStorage())
+    const withoutVersion: Record<string, unknown> = { ...ENTRY_A }
+    delete withoutVersion.version
+    // history.ts の STORAGE_KEY と同じ値
+    localStorage.setItem('calshare.history', JSON.stringify([withoutVersion]))
+
+    expect(readHistory()).toEqual([{ ...ENTRY_A, version: 1 }])
+  })
+
+  it('version が数値でない項目は 1 として返す', () => {
+    vi.stubGlobal('localStorage', fakeLocalStorage())
+    const invalidVersion = { ...ENTRY_A, version: '2' }
+    localStorage.setItem('calshare.history', JSON.stringify([invalidVersion]))
+
+    expect(readHistory()).toEqual([{ ...ENTRY_A, version: 1 }])
+  })
+})
+
 describe('updateHistoryEntry', () => {
   it('fields / expiresAt / updatedAt / version だけ上書きし、並び順・他の項目は変えない', () => {
     vi.stubGlobal('localStorage', fakeLocalStorage())

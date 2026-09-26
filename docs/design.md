@@ -806,7 +806,7 @@ export interface HistoryEntry {
   expiresAt: string          // ISO8601 UTC
   createdAt: string
   updatedAt: string
-  version: number            // 完成画面・詳細ページの「編集済みか」の判定に使う（version > 1。§6.2・§6.3・§8）
+  version: number            // 完成画面の「送り直してください」の判定に使う（version > 1。§6.2）
 }
 ```
 
@@ -1968,7 +1968,7 @@ export default defineConfig({
 | T16 | `feat/web-edit` | feat: 編集画面（localStorage のトークンで編集） | T15 | `src/web/pages/edit.html` `src/web/edit/main.ts` `src/web/styles/edit.css` `test/e2e/edit.spec.ts` `test/unit/web/lib/{api,history}.test.ts`。`src/web/lib/api.ts` `src/web/lib/history.ts` は T14 が置いたファイルで、`getPage` / `updatePage` は T14 時点で既にある。本タスクの担当ファイルとして割り当てられており、`api.ts` は `ApiRequestFailedError` の message を作成専用の文言から呼び出し元が操作名を渡せる形に汎用化し、`history.ts` に編集完了時専用の `updateHistoryEntry`（fields / expiresAt / updatedAt / version だけを差し替え、並び順は変えない。§6.4）を追加した | e2e §10.3 の 7・8。保存後に `/done` 再掲、履歴の `fields` `updatedAt` `version` の更新。`pathname` の `id` が不正なら `/` へ | e2e green |
 | T17 | `feat/web-history` | feat: 作成履歴画面 | T16 | `src/web/pages/history.html` `src/web/history/main.ts` `src/web/styles/history.css` `src/web/lib/history.ts`（`readHistory` を export に変更。元は T14 が private で定義） `src/web/styles/base.css`（`.app-header` `.app-title` `.history-link` を追加）`src/web/styles/create.css`（同 3 ルールを削除。§12 冒頭の例外(4)） `test/e2e/history.spec.ts` | 作成後に一覧に出る、期限切れのグレー表示、空状態の文言、localStorage に不正な `id` を仕込んでもリンクが生成されない | e2e green |
 | T18 | `feat/observability` | feat: 構造化ログとリクエストログミドルウェア | T17 | `src/server/lib/logger.ts` `src/server/middleware/requestLog.ts` `src/server/app.ts`（`requestLog` の登録と `app.onError` の 2 箇所。後者は Hono の既定 errorHandler の `console.error(err)` を構造化ログに置き換えるために追加）`src/server/routes/apiPages.ts`（1 行。作成成功時に `page_created` を出す）`test/integration/server/requestLog.test.ts` | §9.6 の表: ログに生 IP・トークン・クエリ・本文が出ない（`console.log` をスパイ）、ルート名と所要時間が出る、作成ログに `source` が出る、429 のログに `exceeded` のバケット種別が出る、catch していないルートの例外は `app.onError` 経由で `unhandled_error`（`{ name, message }` に正規化、生のスタックトレースは出さない）として残る | integration green |
-| T19 | `feat/e2e-and-deploy` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ） | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない）。**必須**: シナリオ 7 の「同じ URL を送り直してください」・詳細ページの「最終更新」・履歴 `updatedAt` の更新を e2e で固定する（現状 `buildDeps` の `fakeClock` が毎リクエスト同じ Date を返し `now()` が進まないため未検証。`buildClock` を Worker 起動からの経過時間で進める等の対応が必要。§10.3 シナリオ 7 参照） | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
+| T19 | `feat/e2e-and-deploy` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ） | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない）。シナリオ 7 の「同じ URL を送り直してください」・詳細ページの「最終更新」は version 判定により固定時計の下でも `test/e2e/edit.spec.ts` で固定済み（§10.3 シナリオ 7 参照）。履歴 `updatedAt` の上書き自体は `test/unit/web/lib/history.test.ts` で検証済みだが、固定時計の下で値が進むことは e2e では検証しない | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
 
 並列に着手したい場合: T2〜T4（core）は互いにファイルが重ならないので、同時に着手して T2 → T3 → T4 の順にスタックできる。T14〜T17（web）も同様。ただし base は常に直前の PR にし、ダイヤモンドを作らない。
 

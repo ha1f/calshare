@@ -86,7 +86,9 @@ function findValidHistoryEntry(id: string): HistoryEntry | null {
     return null
   }
 
-  return entry as unknown as HistoryEntry
+  // localStorage の内容は信頼しない（§6.4）。version が数値でない項目は未編集として 1 を補う
+  const version = typeof entry.version === 'number' ? entry.version : 1
+  return { ...entry, version } as unknown as HistoryEntry
 }
 
 function main(): void {
@@ -122,8 +124,8 @@ function main(): void {
   editLink.href = `/${id}/edit`
   expiresNotice.textContent = `${formatExpiresLabel(new Date(entry.expiresAt))} まで表示されます`
   // 編集完了後の再掲時だけ出す（§6.2）。E2E_FIXED_NOW の下では updatedAt が createdAt と
-  // 同じままになるため version で判定する（§8）。version を持たない履歴項目は未編集として扱う
-  resendNotice.hidden = !(typeof entry.version === 'number' && entry.version > 1)
+  // 同じままになるため version で判定する（§8）
+  resendNotice.hidden = !(entry.version > 1)
 
   lineShareLink.href = `https://line.me/R/share?text=${encodeURIComponent(entry.url)}`
 

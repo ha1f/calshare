@@ -19,8 +19,13 @@ export function apiErrorMessage(
   code: ApiErrorCode,
   overrides: Partial<Record<ApiErrorCode, string>> = {},
 ): string {
-  if (code in overrides) return overrides[code] as string
+  if (Object.hasOwn(overrides, code)) {
+    const override = overrides[code]
+    if (override !== undefined) return override
+  }
   if (code === 'RATE_LIMITED') return 'しばらく時間をおいてから試してください'
-  if (code in VALIDATION_MESSAGES) return VALIDATION_MESSAGES[code as ValidationErrorCode]
+  if (Object.hasOwn(VALIDATION_MESSAGES, code)) {
+    return VALIDATION_MESSAGES[code as ValidationErrorCode]
+  }
   return 'エラーが発生しました。しばらくしてからやり直してください'
 }
