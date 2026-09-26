@@ -46,8 +46,10 @@ function main(): void {
   const pageId = form.dataset.pageId
   if (!pageId) return
 
-  // ボタンは type="button" なので form submit（GET でコメントがクエリ文字列に残る）は発生しない
-  submitButton.addEventListener('click', () => {
+  form.addEventListener('submit', (event) => {
+    // 素の form submit（GET でコメントがクエリ文字列に残る）を必ず止めてから JSON で送る
+    event.preventDefault()
+
     const body = buildRequestBody(form)
     if (!body) return
 

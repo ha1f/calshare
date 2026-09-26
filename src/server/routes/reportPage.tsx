@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { html, raw } from 'hono/html'
+import { html } from 'hono/html'
 import { PAGE_ID_PATTERN } from '../../core/id/crockford'
 import type { PageRecord } from '../../ports/pageRepository'
 import type { Deps } from '../deps'
@@ -23,7 +23,8 @@ export function reportPageRoutes(deps: Deps): Hono<{ Bindings: Env }> {
 
     // noindex は meta タグと X-Robots-Tag の両方で示す（§9.5）
     c.header('X-Robots-Tag', 'noindex, nofollow')
-    return c.html(html`${raw('<!DOCTYPE html>')}${(<ReportPage pageId={page.id} />)}`)
+    const content = <ReportPage pageId={page.id} serviceName={deps.config.serviceName} />
+    return c.html(html`<!DOCTYPE html>${content}`)
   })
 
   return app

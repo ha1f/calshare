@@ -28,7 +28,7 @@ export interface Deps {
   storage: ObjectStorage
   rateLimiter: RateLimiter
   ogpRenderer: OgpRenderer // T10 までは fakeOgpRenderer（固定 PNG）を使う
-  notifier: Notifier // T12 までは fakeNotifier（no-op）。T12 以降も REPORT_WEBHOOK_URL が無ければ fakeNotifier（§9.4）
+  notifier: Notifier // REPORT_WEBHOOK_URL が無ければ fakeNotifier（no-op）。§9.4
   logger: Logger
   config: {
     publicOrigin: string // env.PUBLIC_ORIGIN
@@ -55,7 +55,7 @@ function buildClock(env: Env): Clock {
   return fakeClock(fixed)
 }
 
-/** Env → Deps。ogpRenderer と notifier は本物のアダプタが無いため Fake のまま */
+/** Env → Deps。ogpRenderer は本物のアダプタが無いため Fake のまま。notifier は REPORT_WEBHOOK_URL があるときだけ webhookNotifier、無ければ fakeNotifier（§9.4） */
 export function buildDeps(env: Env): Deps {
   const clock = buildClock(env)
   // origin は末尾スラッシュの有無に関わらず一致させたいので URL#origin で正規化する（§9.8 の比較対象）

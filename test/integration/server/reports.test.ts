@@ -1,9 +1,10 @@
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { createD1ReportRepository } from '../../../src/adapters/d1/d1ReportRepository'
 import { createFakeNotifier } from '../../../src/adapters/notifier/fakeNotifier'
-import { RATE_LIMITS } from '../../../src/core/config/limits'
+import { RATE_LIMITS, REPORT_DEDUPE_HOURS } from '../../../src/core/config/limits'
 import type { NewPageInput, PageRecord, PageRepository } from '../../../src/ports/pageRepository'
 import { createApp } from '../../../src/server/app'
 import { buildFakeDeps } from '../helpers/fakeDeps'
@@ -172,6 +173,34 @@ describe('POST /api/pages/:id/reports', () => {
     expect(res.status).toBe(200)
   })
 
+  it('comment キーを省略しても 200 になり、Notifier には null で渡る', async () => {
+    const notifier = createFakeNotifier()
+    const deps = buildFakeDeps({ notifier })
+    await deps.pages.create(pageInput())
+    const app = createApp(deps)
+
+    // JSON.stringify は値が undefined のキーを落とすので、これで「comment キー無し」を再現する
+    const res = await fetchAndDrain(
+      app,
+      postReport('page00000001', validBody({ comment: undefined })),
+    )
+
+    expect(res.status).toBe(200)
+    expect(notifier.calls[0]?.comment).toBeNull()
+  })
+
+  it('comment が空文字列なら null として保存される', async () => {
+    const notifier = createFakeNotifier()
+    const deps = buildFakeDeps({ notifier })
+    await deps.pages.create(pageInput())
+    const app = createApp(deps)
+
+    const res = await fetchAndDrain(app, postReport('page00000001', validBody({ comment: '' })))
+
+    expect(res.status).toBe(200)
+    expect(notifier.calls[0]?.comment).toBeNull()
+  })
+
   it('同一 ip_hash・同一ページの 24 時間以内の重複は無視され、report_count も Notifier 呼び出しも増えない', async () => {
     const notifier = createFakeNotifier()
     const deps = buildFakeDeps({ notifier })
@@ -187,6 +216,29 @@ describe('POST /api/pages/:id/reports', () => {
     const page = await deps.pages.findById('page00000001')
     expect(page?.reportCount).toBe(1)
     expect(notifier.calls).toHaveLength(1)
+  })
+
+  it('24 時間の重複排除ウィンドウの境界: 経過前は重複のまま、経過後は新規に受理される', async () => {
+    const clock = fakeClock(NOW)
+    const notifier = createFakeNotifier()
+    const deps = buildFakeDeps({ clock, notifier })
+    await deps.pages.create(pageInput())
+    const app = createApp(deps)
+    const ip = { 'CF-Connecting-IP': '203.0.113.99' }
+    const dedupeWindowMs = REPORT_DEDUPE_HOURS * 60 * 60 * 1000
+
+    await fetchAndDrain(app, postReport('page00000001', validBody(), ip))
+
+    clock.set(new Date(NOW.getTime() + dedupeWindowMs - 1))
+    const stillDuplicate = await fetchAndDrain(app, postReport('page00000001', validBody(), ip))
+    expect(stillDuplicate.status).toBe(200)
+    expect((await deps.pages.findById('page00000001'))?.reportCount).toBe(1)
+
+    clock.set(new Date(NOW.getTime() + dedupeWindowMs + 1))
+    const afterWindow = await fetchAndDrain(app, postReport('page00000001', validBody(), ip))
+    expect(afterWindow.status).toBe(200)
+    expect((await deps.pages.findById('page00000001'))?.reportCount).toBe(2)
+    expect(notifier.calls).toHaveLength(2)
   })
 
   it('別 IP からの通報は重複扱いにならない', async () => {
@@ -327,26 +379,48 @@ describe('GET /:id/report', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
     const html = await res.text()
+    expect(html.startsWith('<!DOCTYPE html>')).toBe(true)
     expect(html).toContain('<meta name="robots" content="noindex, nofollow"')
     expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>[^<]/)
     expect(html).toContain('data-page-id="page00000001"')
   })
 
+  it('サービス名が config.serviceName から入り、送信ボタンは type="submit"（暗黙送信で GET にしないため method="post"）', async () => {
+    const deps = buildFakeDeps({
+      config: { ...buildFakeDeps().config, serviceName: 'テストサービス' },
+    })
+    await deps.pages.create(pageInput())
+    const app = createApp(deps)
+
+    const res = await app.fetch(new Request(`${TEST_ORIGIN}/page00000001/report`))
+    const html = await res.text()
+
+    expect(html).toContain('<title>不適切なページを報告 - テストサービス</title>')
+    expect(html).toContain('method="post"')
+    expect(html).toMatch(/<button type="submit" id="report-submit">/)
+  })
+
   it('ID の形式が不正なら 404（ルートに一致しない）', async () => {
-    const app = createApp(buildFakeDeps())
+    const deps = buildFakeDeps()
+    const findById = vi.spyOn(deps.pages, 'findById')
+    const app = createApp(deps)
 
     // 13 文字は PAGE_ID_PATTERN（12 文字固定）に一致しない
     const res = await app.fetch(new Request(`${TEST_ORIGIN}/nonexistent01/report`))
 
     expect(res.status).toBe(404)
+    expect(findById).not.toHaveBeenCalled()
   })
 
   it('ID の形式は正しいが存在しないページは 404（ルートには一致する）', async () => {
-    const app = createApp(buildFakeDeps())
+    const deps = buildFakeDeps()
+    const findById = vi.spyOn(deps.pages, 'findById')
+    const app = createApp(deps)
 
     const res = await app.fetch(new Request(`${TEST_ORIGIN}/zzzzzzzzzzzz/report`))
 
     expect(res.status).toBe(404)
+    expect(findById).toHaveBeenCalledWith('zzzzzzzzzzzz')
   })
 
   it('hidden なページは 404', async () => {

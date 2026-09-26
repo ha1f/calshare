@@ -987,7 +987,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 - 詳細ページ最下部の「不適切なページを報告」→ `/:id/report`（SSR のフォーム。理由の選択肢: スパム / 個人情報 / 不快な内容 / その他、任意の自由記述 500 文字まで）→ `web/report/main.ts` が `POST /api/pages/:id/reports` へ **JSON で送信**する（素の HTML form の POST は使わない。§9.8）。JS が無効な環境では送信できないが、通報導線はスパム対策であり主要動線ではないので許容する。
 - API は `reason` を列挙値（`spam` / `personal_info` / `inappropriate` / `other`）で検証し、`comment` は 500 文字超を 400 にする（§5.7）。hidden / 期限切れのページへの通報は 404。
-- 受理したら `ReportRepository.insertIfNotDuplicate`（§11.4）で `reports` に 1 行追加し（同一 `ip_hash`・同一ページの 24 時間以内の重複は `'duplicate'` が返り、何もせず 200。§9.3）、`report_count` を +1、Discord / Slack Webhook へ即時通知。Webhook 失敗は通報自体を失敗させない（`ctx.waitUntil` で送る）。
+- 受理したら `ReportRepository.insertIfNotDuplicate`（§11.4）で `reports` に 1 行追加し（同一 `ip_hash`・同一ページの 24 時間以内の重複は `'duplicate'` が返り、何もせず 200。§9.3）、`report_count` を +1、Discord / Slack Webhook へ即時通知。Webhook 失敗は通報自体を失敗させない（`ctx.waitUntil` で送る）。応答が無い送信先で専有し続けないよう `WEBHOOK_FETCH_TIMEOUT_MS` でタイムアウトさせる。
 - **Webhook の種別**は `REPORT_WEBHOOK_URL` のホストで判定する（vars は増やさない）: `discord.com` / `discordapp.com` → Discord、`hooks.slack.com` → Slack。どちらでもないホストは `webhookNotifier` が warn ログを出して送らない（通報の受理は成功する）。`REPORT_WEBHOOK_URL` が未設定（ローカル・CI）のときは `buildDeps` が `fakeNotifier` を配線する（§11.5）。
 - **通知本文の扱い**（`webhookNotifier`）: 通報者は匿名なので、通知はそのまま「運用者 1 人に任意のリンクを踏ませるチャネル」になりうる。次を仕様にする。
   - 本文に載せる URL は `config.publicOrigin` から組んだ詳細ページ URL の 1 本だけ。コメント内の URL は「[リンク]」に置換（`URL_PATTERN`）した上で `MAX_WEBHOOK_COMMENT_LENGTH = 200` 文字で切り詰める（全文は D1 の `reports` で見る）。
@@ -1259,6 +1259,10 @@ export const MAX_MEMO_URLS = 3
 export const MAX_REPORT_COMMENT_LENGTH = 500
 /** Webhook 通知に載せる通報コメントの最大文字数。全文は D1 の reports で見る（§9.4） */
 export const MAX_WEBHOOK_COMMENT_LENGTH = 200
+/** 通報件数がこれ以上なら Webhook 通知の本文で強調する（§9.4） */
+export const REPORT_COUNT_WARNING_THRESHOLD = 3
+/** Webhook 通知の fetch を打ち切るまでの時間。応答が無い送信先で waitUntil を専有し続けないため（§9.4） */
+export const WEBHOOK_FETCH_TIMEOUT_MS = 5000
 /** Google カレンダーリンクの details に載せるメモの最大文字数（§7.1） */
 export const MAX_CALENDAR_DETAILS_LENGTH = 500
 export const PAGE_ID_LENGTH = 12
@@ -1517,7 +1521,7 @@ export interface Deps {
   storage: ObjectStorage
   rateLimiter: RateLimiter
   ogpRenderer: OgpRenderer     // T10 までは fakeOgpRenderer（固定 PNG）を使う
-  notifier: Notifier           // T12 までは fakeNotifier（no-op）。T12 以降も REPORT_WEBHOOK_URL が無ければ fakeNotifier（§9.4）
+  notifier: Notifier           // REPORT_WEBHOOK_URL が無ければ fakeNotifier（no-op）。§9.4
   logger: Logger
   config: {
     publicOrigin: string       // new URL(env.PUBLIC_ORIGIN).origin
@@ -1526,7 +1530,7 @@ export interface Deps {
     ratePepper: string         // env.RATE_LIMIT_PEPPER
   }
 }
-/** Env → Deps。ogpRenderer と notifier は本物のアダプタが無いため Fake のまま */
+/** Env → Deps。ogpRenderer は本物のアダプタが無いため Fake のまま。notifier は REPORT_WEBHOOK_URL があるときだけ webhookNotifier、無ければ fakeNotifier（§9.4） */
 export function buildDeps(env: Env): Deps
 
 // server/app.ts

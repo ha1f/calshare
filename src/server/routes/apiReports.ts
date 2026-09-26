@@ -38,10 +38,12 @@ function parseCreateReportRequest(json: unknown): CreateReportRequest {
   if (!isReportReason(reason)) {
     throw new Error('reason must be one of spam/personal_info/inappropriate/other')
   }
-  if (comment !== null && typeof comment !== 'string') {
+  if (comment !== undefined && comment !== null && typeof comment !== 'string') {
     throw new Error('comment must be a string or null')
   }
-  return { reason, comment }
+  // comment は任意項目（§9.4）。キー省略・空文字は「無し」として null に揃える
+  const normalizedComment = comment === undefined || comment === '' ? null : comment
+  return { reason, comment: normalizedComment }
 }
 
 /**
@@ -89,8 +91,12 @@ export function apiReportsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
         throw validationApiError('INPUT_TOO_LONG')
       }
 
-      // (3) レート制限（§9.3）
+      // (3) レート制限（§9.3）。本番で IP が取れなければ warn（middleware/rateLimit.ts の
+      // resolveRequestIdentity と同じ判定）
       const rawIp = c.req.raw.headers.get('CF-Connecting-IP')
+      if (!rawIp && new URL(deps.config.publicOrigin).hostname !== 'localhost') {
+        deps.logger.warn('ip_unknown', {})
+      }
       const reporterIpHash = await ipHash(rawIp, deps.config.ratePepper)
       const now = deps.clock.now()
       await consumeReportRateLimit(deps, reporterIpHash, now)

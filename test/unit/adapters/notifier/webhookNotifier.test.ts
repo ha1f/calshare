@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createWebhookNotifier } from '../../../../src/adapters/notifier/webhookNotifier'
-import { MAX_WEBHOOK_COMMENT_LENGTH } from '../../../../src/core/config/limits'
+import {
+  MAX_WEBHOOK_COMMENT_LENGTH,
+  REPORT_COUNT_WARNING_THRESHOLD,
+} from '../../../../src/core/config/limits'
 import type { Logger } from '../../../../src/ports/logger'
 import type { ReportNotification } from '../../../../src/ports/notifier'
 
@@ -49,22 +52,38 @@ describe('createWebhookNotifier', () => {
       expect(logger.warn).not.toHaveBeenCalled()
     })
 
-    it.each([['discord.com.evil.example'], ['evil.example'], ['not a url']])(
-      '未知のホスト（%s）は warn ログを出すだけで送信しない',
-      async (url) => {
-        const logger = createLogger()
-        const notifier = createWebhookNotifier(url, logger)
+    it.each([
+      ['https://discord.com.evil.example/api/webhooks/1/x'],
+      ['https://evildiscord.com/api/webhooks/1/x'],
+      ['https://hooks.slack.com.evil.example/services/xxx'],
+      ['https://evil.example/hook'],
+    ])('ホスト名がなりすまし（%s）でも未知のホスト扱いになり送信しない', async (url) => {
+      const logger = createLogger()
+      const notifier = createWebhookNotifier(url, logger)
 
-        await notifier.notifyReport(notification())
+      await notifier.notifyReport(notification())
 
-        expect(fetchMock).not.toHaveBeenCalled()
-        expect(logger.warn).toHaveBeenCalledOnce()
-        expect(logger.warn).toHaveBeenCalledWith('report_webhook_unknown_host', expect.anything())
-        // url がそのままログに出ると、スキーム無しの秘密の Webhook URL がログに漏れる
-        const [, data] = logger.warn.mock.calls[0] as [string, Record<string, unknown>]
-        expect(JSON.stringify(data)).not.toContain(url)
-      },
-    )
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(logger.warn).toHaveBeenCalledOnce()
+      expect(logger.warn).toHaveBeenCalledWith('report_webhook_unknown_host', {
+        host: new URL(url).hostname,
+      })
+    })
+
+    it('スキームの無い不正な URL は未知のホスト扱いで warn ログを出すだけで送信しない', async () => {
+      const logger = createLogger()
+      const url = 'not a url'
+      const notifier = createWebhookNotifier(url, logger)
+
+      await notifier.notifyReport(notification())
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(logger.warn).toHaveBeenCalledOnce()
+      expect(logger.warn).toHaveBeenCalledWith('report_webhook_unknown_host', expect.anything())
+      // url がそのままログに出ると、スキーム無しの秘密の Webhook URL がログに漏れる
+      const [, data] = logger.warn.mock.calls[0] as [string, Record<string, unknown>]
+      expect(JSON.stringify(data)).not.toContain(url)
+    })
 
     it('クエリで discord.com を装っても未知のホスト扱いになる', async () => {
       const logger = createLogger()
@@ -160,14 +179,24 @@ describe('createWebhookNotifier', () => {
       )
     })
 
-    it('通報件数が 3 件以上なら強調文言が本文に含まれる', async () => {
+    it('通報件数が REPORT_COUNT_WARNING_THRESHOLD 以上なら強調文言が本文に含まれる', async () => {
       const body = await sentBody(
         'https://hooks.slack.com/services/xxx',
-        notification({ reportCount: 3 }),
+        notification({ reportCount: REPORT_COUNT_WARNING_THRESHOLD }),
       )
       const json = JSON.parse(body) as { text: string }
 
       expect(json.text).toContain('要確認')
+    })
+
+    it('通報件数が REPORT_COUNT_WARNING_THRESHOLD 未満なら強調文言を出さない', async () => {
+      const body = await sentBody(
+        'https://hooks.slack.com/services/xxx',
+        notification({ reportCount: REPORT_COUNT_WARNING_THRESHOLD - 1 }),
+      )
+      const json = JSON.parse(body) as { text: string }
+
+      expect(json.text).not.toContain('要確認')
     })
 
     it('コメントが無ければコメント行を出さない', async () => {
@@ -186,5 +215,14 @@ describe('createWebhookNotifier', () => {
     const notifier = createWebhookNotifier('https://hooks.slack.com/services/xxx', createLogger())
 
     await expect(notifier.notifyReport(notification())).rejects.toThrow()
+  })
+
+  it('fetch にタイムアウト用の signal を付ける', async () => {
+    const notifier = createWebhookNotifier('https://hooks.slack.com/services/xxx', createLogger())
+
+    await notifier.notifyReport(notification())
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 })

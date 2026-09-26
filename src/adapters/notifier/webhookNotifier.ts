@@ -1,4 +1,8 @@
-import { MAX_WEBHOOK_COMMENT_LENGTH } from '../../core/config/limits'
+import {
+  MAX_WEBHOOK_COMMENT_LENGTH,
+  REPORT_COUNT_WARNING_THRESHOLD,
+  WEBHOOK_FETCH_TIMEOUT_MS,
+} from '../../core/config/limits'
 import { replaceUrls } from '../../core/text/urlPattern'
 import type { ReportReason } from '../../core/types'
 import type { Logger } from '../../ports/logger'
@@ -15,9 +19,6 @@ const REASON_LABELS: Record<ReportReason, string> = {
   inappropriate: '不快な内容',
   other: 'その他',
 }
-
-/** 通報件数がこれ以上なら通知本文で強調する（§9.4） */
-const REPORT_COUNT_WARNING_THRESHOLD = 3
 
 function resolveWebhookKind(url: string): { kind: WebhookKind; host: string } {
   let hostname: string
@@ -86,8 +87,8 @@ function buildSlackPayload(n: ReportNotification): unknown {
   if (comment !== null) lines.push(`コメント: ${comment}`)
   return {
     text: escapeSlackText(lines.join('\n')),
-    // Slack の mrkdwn 記法（*太字* や <!everyone> 等のメンション記法）を無効にする。
-    // & < > のエスケープは <!everyone> や <url|text> のような記法そのものを別途無害化している
+    // エスケープで <!everyone> や <url|text> のような記法自体を崩し、mrkdwn: false で
+    // *太字* 等の残りの装飾記法を無効化する。両方揃って初めて無害化できる
     mrkdwn: false,
   }
 }
@@ -111,6 +112,7 @@ export function createWebhookNotifier(url: string, logger: Logger): Notifier {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS),
       })
       if (!res.ok) {
         throw new Error(`webhook responded with ${res.status}`)
