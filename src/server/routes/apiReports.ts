@@ -19,9 +19,9 @@ import {
 } from '../lib/errors'
 import { buildDetailUrl } from '../lib/ics'
 import { ipHash } from '../lib/ipHash'
+import { isServable } from '../lib/pageAccess'
 import { readJsonBody } from '../middleware/jsonBody'
 import { assertSameOriginJsonRequest } from '../middleware/sameOrigin'
-import { isReportTargetServable } from './reportPage'
 
 const REPORT_REASONS: ReportReason[] = ['spam', 'personal_info', 'inappropriate', 'other']
 
@@ -104,7 +104,7 @@ export function apiReportsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
       // (4) hidden／期限切れ／不正 ID は 404（存在しないページと区別させない、§4.1）
       const pageId = c.req.param('id')
       const page = await deps.pages.findById(pageId)
-      if (page === null || !isReportTargetServable(page, now)) {
+      if (page === null || !isServable(page, now)) {
         throw apiRequestError(404, 'NOT_FOUND', 'page not found')
       }
 

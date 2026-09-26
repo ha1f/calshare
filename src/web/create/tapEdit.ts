@@ -336,10 +336,14 @@ function buildDatetimeItem(
     editRoot.hidden = !manual
     resetLink.hidden = !manual
     if (manual) {
-      // effectiveDatetime は manual 中も現在値を返すので、入力欄を毎回この値で揃える
-      const value = effectiveDatetime(state)
-      allDayCheckbox.checked = value.isAllDay
-      fillInputsFromValue(value, value.isAllDay)
+      // 開始・終了のどちらかを編集中は入力欄を書き戻さない。開始が一時的に空だと
+      // DatetimeValue は start/end とも null になり、終了欄の入力中の文字列まで消えてしまうため
+      if (!editRoot.contains(document.activeElement)) {
+        // effectiveDatetime は manual 中も現在値を返すので、入力欄を毎回この値で揃える
+        const value = effectiveDatetime(state)
+        allDayCheckbox.checked = value.isAllDay
+        fillInputsFromValue(value, value.isAllDay)
+      }
     } else {
       const message = datetimeIssueMessage(state.parsed.issues)
       valueText.textContent = message ?? formatDateLabel(effectiveFields(state))

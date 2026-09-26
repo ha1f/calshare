@@ -5,6 +5,7 @@ import { toJstParts } from '../../core/time/jst'
 import { fromEventFieldsJson } from '../../core/types'
 import type { EventFieldsJson } from '../../core/types'
 import { copyToClipboard } from '../lib/clipboard'
+import { requireElement } from '../lib/dom'
 import type { HistoryEntry } from '../lib/history'
 import { applyCalendarUaHandling } from '../lib/lineUa'
 import { canShare, shareUrl } from '../lib/share'
@@ -25,12 +26,6 @@ function formatExpiresLabel(expiresAt: Date): string {
 function redirectTo(path: string): void {
   const url = new URL(path, location.origin)
   location.replace(url.origin === location.origin ? url.toString() : '/')
-}
-
-function requireElement<T extends HTMLElement>(id: string): T {
-  const el = document.getElementById(id)
-  if (el === null) throw new Error(`done screen: #${id} is missing`)
-  return el as T
 }
 
 function isHttpUrl(value: string): boolean {
