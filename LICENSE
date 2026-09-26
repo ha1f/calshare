@@ -1,0 +1,22 @@
+Copyright (c) 2026 はるふ (ha1f). All rights reserved.
+
+このリポジトリのソースコードと文書は、開発の透明性と CI の運用のために公開していますが、
+オープンソースライセンスの下では提供していません。著作権者の事前の書面による許可なく、
+複製、改変、再配布、公衆送信、商用利用、派生物の作成を行うことはできません。
+閲覧、および GitHub 上でのフォーク・Issue・Pull Request による本リポジトリへの
+貢献のみを許可します。
+
+第三者の成果物（npm パッケージ、フォントなど）はそれぞれのライセンスに従います。
+審査記録は docs/licenses/ を参照してください。
+
+---
+
+The source code and documents in this repository are made public for transparency of
+development and for running CI, but they are not offered under an open source license.
+Without prior written permission from the copyright holder, you may not copy, modify,
+redistribute, publicly transmit, use commercially, or create derivative works.
+Viewing, and forking on GitHub solely to contribute to this repository through Issues
+and Pull Requests, are permitted.
+
+Third-party components (npm packages, fonts, etc.) remain under their own licenses.
+See docs/licenses/ for the review records.
