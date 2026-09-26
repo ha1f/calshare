@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildDeps } from '../../../src/server/deps'
 import type { Env } from '../../../src/server/env'
 
-// DB / BUCKET / ASSETS は buildDeps の対象外（ids/pages/storage は notWired、他は buildDeps 内で読まない）なので
-// テストでは使わない値を渡せば足りる
+// DB / BUCKET は各アダプタの生成時には読まれず、メソッド呼び出し時に初めて使う。
+// ASSETS も buildDeps 内では読まないので、いずれも空オブジェクトで足りる
 function testEnv(overrides: Partial<Env>): Env {
   return {
     DB: {},

@@ -1197,9 +1197,9 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 │   ├── server/
 │   │   ├── index.ts               # export default { fetch, scheduled }
 │   │   ├── app.ts                 # createApp(deps): Hono。サブアプリを app.route() で 1 行ずつマウント
-│   │   ├── deps.ts                # Env → Deps の組み立て（本物のアダプタ。実装前のポートは Fake / notWired を配線。§11.7）
+│   │   ├── deps.ts                # Env → Deps の組み立て（本物のアダプタ。ogpRenderer と notifier のみ Fake を配線。§11.7）
 │   │   ├── env.ts                 # Env 型（バインディング・vars・secrets。§11.7）
-│   │   ├── lib/{edgeCache,headers,ipHash,deviceCookie,logger,errors,pageAccess,assets,ics,notWired}.ts
+│   │   ├── lib/{edgeCache,headers,ipHash,deviceCookie,logger,errors,pageAccess,assets,ics}.ts
 │   │   │                          # pageAccess: isServable。assets: ASSETS から HTML / PNG を取り Response を包み直す（§2.2）
 │   │   │                          # ics: PageRecord から buildIcs を呼ぶ（作成・更新・自己修復で共用）。logger: リクエスト文脈のヘルパ（T18、§9.6）
 │   │   ├── middleware/{securityHeaders,requestLog,rateLimit,sameOrigin,jsonBody}.ts
@@ -1524,14 +1524,8 @@ export interface Deps {
     ratePepper: string         // env.RATE_LIMIT_PEPPER
   }
 }
-/** Env → Deps。T1 時点の配線は §11.7。確認済み（T7）: ids / pages / storage / rateLimiter / reports は
- * webCryptoIdGenerator / d1PageRepository / r2ObjectStorage / d1RateLimiter / d1ReportRepository に差し替え済み。
- * ogpRenderer と notifier は本物のアダプタが無いため T10・T12 まで Fake のまま */
+/** Env → Deps。ogpRenderer と notifier は本物のアダプタが無いため Fake のまま */
 export function buildDeps(env: Env): Deps
-
-// server/lib/notWired.ts（T1）
-/** どのメソッドを呼んでも Error(`not wired: ${name}`) を投げる Proxy。Deps の型を満たしたまま、本物の実装が無いことを呼び出し時にわかるようにする */
-export function notWired<T extends object>(name: string): T
 
 // server/app.ts
 export function createApp(deps: Deps): Hono<{ Bindings: Env }>
@@ -1605,7 +1599,7 @@ export function updatePage(id: string, editToken: string, req: UpdatePageRequest
 
 - 定数は `core/config/limits.ts` にだけ置き、足場 PR で全部そろえる。他 PR は定数を足さない（必要なら足場 PR に追記してから）。
 - 共有型（`core/types.ts` `core/api/types.ts`）・ポート（`ports/*.ts`）は足場 PR で確定させ、後続 PR は変更しない。変更が必要になったら設計書を直してから単独の PR にする。`InvariantViolation` は `ports/pageRepository.ts` に置く（`server/lib/errors.ts` は T7 で作られるため、T5 が先に使えるように）。
-- 足場 PR は `adapters/ogp/fakeOgpRenderer.ts`（1×1 PNG の base64 定数を返し呼び出し回数を数える）・`adapters/notifier/fakeNotifier.ts`（no-op で呼び出しを記録）・`adapters/memory/memoryReportRepository.ts` も用意し、`server/deps.ts` は本物が来るまでこれらを配線する。Fake も無いポート（`ids` `pages` `storage` `rateLimiter`）には `server/lib/notWired.ts` の `notWired<T>(name)` を配線し、T7 が本物に差し替える（§11.7）。T10・T12 で本物に差し替える（`deps.ts` の 1 行変更）。
+- 足場 PR は `adapters/ogp/fakeOgpRenderer.ts`（1×1 PNG の base64 定数を返し呼び出し回数を数える）・`adapters/notifier/fakeNotifier.ts`（no-op で呼び出しを記録）・`adapters/memory/memoryReportRepository.ts` も用意する。`server/deps.ts` の `ids` `pages` `storage` `rateLimiter` `reports` は T7 で本物のアダプタに差し替え済み（§11.7）。`ogpRenderer` `notifier` は本物のアダプタが無いため、T10・T12 で差し替える（`deps.ts` の 1 行変更）まで Fake のまま。
 - `server/app.ts` は各ルート PR が `app.route()` を 1 行足すだけ。ルートの中身は `routes/*.ts` に閉じる。
 - 各アダプタ PR は本物と Fake（`adapters/memory/*`）を同じ PR で届け、同じテストスイートを両方に流す。
 - クライアント側は `web/create/*` を①と編集画面で共用し、画面固有のエントリ（`web/*/main.ts`）だけを分ける。
@@ -1721,17 +1715,20 @@ REPORT_WEBHOOK_URL=
 E2E_FIXED_NOW=2026-09-16T01:00:00Z
 ```
 
-**`buildDeps` の T1 時点の配線**
+**`buildDeps` の配線**
 
-| Deps | T1 の配線 | 本物に差し替える PR |
+| Deps | 配線 | 本物に差し替える PR |
 |---|---|---|
-| `clock` | `E2E_FIXED_NOW` があり `new URL(PUBLIC_ORIGIN).hostname === 'localhost'` なら `fakeClock(new Date(E2E_FIXED_NOW))`、それ以外は `systemClock`（`E2E_FIXED_NOW` があるのに localhost でなければ warn ログを出して無視。localhost でも `E2E_FIXED_NOW` が Invalid Date になる値なら `e2e_fixed_now_invalid` を warn して `systemClock` にする） | —（T1 で確定） |
-| `ids` `pages` `storage` `rateLimiter` | 確認済み（T7）: `webCryptoIdGenerator` / `d1PageRepository` / `r2ObjectStorage` / `d1RateLimiter` に差し替え済み | —（T7 で確定） |
-| `reports` | 確認済み（T7）: `d1ReportRepository` に差し替え済み | —（T7 で確定） |
+| `clock` | `E2E_FIXED_NOW` があり `new URL(PUBLIC_ORIGIN).hostname === 'localhost'` なら `fakeClock(new Date(E2E_FIXED_NOW))`、それ以外は `systemClock`（`E2E_FIXED_NOW` があるのに localhost でなければ warn ログを出して無視。localhost でも `E2E_FIXED_NOW` が Invalid Date になる値なら `e2e_fixed_now_invalid` を warn して `systemClock` にする） | — |
+| `ids` | `createWebCryptoIdGenerator()` | — |
+| `pages` | `createD1PageRepository(env.DB)` | — |
+| `reports` | `createD1ReportRepository(env.DB)` | — |
+| `storage` | `createR2ObjectStorage(env.BUCKET, clock)` | — |
+| `rateLimiter` | `createD1RateLimiter(env.DB)` | — |
 | `ogpRenderer` | `fakeOgpRenderer` | T10 |
 | `notifier` | `fakeNotifier` | T12（`REPORT_WEBHOOK_URL` があるときだけ `webhookNotifier`） |
-| `logger` | `consoleLogger` | —（T1 で確定） |
-| `config` | `publicOrigin` = `PUBLIC_ORIGIN`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER` | —（T1 で確定） |
+| `logger` | `consoleLogger` | — |
+| `config` | `publicOrigin` = `new URL(PUBLIC_ORIGIN).origin`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER` | — |
 
 `src/server/index.ts` は `export default { fetch: (req, env, ctx) => createApp(buildDeps(env)).fetch(req, env, ctx) }`（`scheduled` は T13 で追加）。`buildDeps` はリクエストごとに呼んでよい（アダプタの生成は軽い。wasm やフォントのメモ化はモジュールスコープで行う、§2.5）。
 
