@@ -29,5 +29,12 @@ jobs:
       # wrangler dev はローカル D1 にマイグレーションを自動適用しない（§10.5）。playwright の
       # webServer が起動する wrangler dev と同じ .wrangler/state を先に用意しておく
       - run: npx wrangler d1 migrations apply calshare --local
-      - run: npm run test:e2e
+      - id: e2e
+        run: npm run test:e2e
         timeout-minutes: 15
+      - if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

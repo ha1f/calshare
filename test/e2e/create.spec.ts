@@ -1,10 +1,4 @@
-import { expect, test } from './fixtures'
-
-const DONE_URL_PATTERN = /\/done\?id=[0-9a-hjkmnp-tv-z]{12}$/
-
-function waitForCreateRequest(page: import('@playwright/test').Page) {
-  return page.waitForRequest((r) => r.url().endsWith('/api/pages') && r.method() === 'POST')
-}
+import { DONE_URL_PATTERN, expect, test, waitForCreateRequest } from './fixtures'
 
 test('入力〜プレビュー〜作成〜/done への遷移まで（シナリオ1）', async ({ page }) => {
   await page.goto('/')
@@ -68,6 +62,13 @@ test('場所を空にすると場所なしとして作成される（シナリ�
   expect(body.fields.location).toBeNull()
 
   await page.waitForURL(DONE_URL_PATTERN)
+
+  const detailHref = await page.locator('#url-display').getAttribute('href')
+  if (detailHref === null) throw new Error('url-display の href が無い')
+  await page.goto(new URL(detailHref).pathname)
+  // 詳細ページが正しく描画されたことを先に確認する（404 等で空白になっても location の要素数は同じく 0 になるため）
+  await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
+  await expect(page.locator('[data-section="location"]')).toHaveCount(0)
 })
 
 test('「場所にする」で場所とタイトルが入れ替わる（シナリオ5）', async ({ page }) => {
@@ -88,6 +89,28 @@ test('2 行目がメモに入る（シナリオ6前半）', async ({ page }) => 
   await page.locator('#input').fill('9/20 19時 渋谷で飲み会\n会費5000円')
 
   await expect(page.getByTestId('view-memo')).toHaveText('会費5000円')
+})
+
+test('詳細ページにメモが表示され、URL を含めても自動リンクにならない（シナリオ6後半）', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.locator('#input').fill('9/20 19時 渋谷で飲み会\n会費5000円 https://example.com/pay')
+  await expect(page.getByTestId('view-memo')).toContainText('https://example.com/pay')
+
+  await Promise.all([
+    waitForCreateRequest(page),
+    page.getByRole('button', { name: 'URLを作る' }).click(),
+  ])
+  await page.waitForURL(DONE_URL_PATTERN)
+
+  const detailHref = await page.locator('#url-display').getAttribute('href')
+  if (detailHref === null) throw new Error('url-display の href が無い')
+  await page.goto(new URL(detailHref).pathname)
+
+  const memo = page.locator('[data-section="memo"]')
+  await expect(memo).toContainText('https://example.com/pay')
+  await expect(memo.locator('a')).toHaveCount(0)
 })
 
 test('13 ヶ月超の日付は下書きとして作成できる（シナリオ11）', async ({ page }) => {

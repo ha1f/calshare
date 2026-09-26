@@ -1105,20 +1105,22 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 基準時刻は §5.6 と同じ **2026-09-16(水) 10:00 JST**（`2026-09-16T01:00:00Z`）に固定する。e2e は `wrangler dev` の実時計とブラウザの `new Date()` で動くので、固定しないと 2026-09-20 を過ぎた時点で 1・3 の年が繰り上がって曜日が変わり、12 のプリフィルは `PAST_EVENT`、11 は 2026-12 以降に 13 ヶ月以内に入ってしまう。ブラウザ側は `test/e2e/fixtures.ts` の共通フィクスチャが各テストの前に `page.clock.setFixedTime(new Date('2026-09-16T01:00:00Z'))` を呼ぶ（全 spec は `@playwright/test` ではなくこのフィクスチャの `test` / `expect` を import する）。Worker 側は `.dev.vars` の `E2E_FIXED_NOW`（ISO8601）を `buildDeps` が読み、`PUBLIC_ORIGIN` のホスト名が `localhost` のときだけ固定時計を配線する（本番では無視して warn ログ。§11.5）。
 
-1. トップで `9/20 19時 渋谷で飲み会` を入力 → プレビューに 飲み会 / 9月20日(日) 19:00〜20:00 / 渋谷 が出る → 「URLを作る」→ `/done?id=` に遷移し URL とコピーボタンが出る → コピーでクリップボードに URL が入る
-2. 完成画面の URL へ遷移 → 詳細ページに §6.3 の順序で要素が並ぶ → 「作ってみる」で `/new?ref=detail_cta` に遷移する
-3. 「その他（ics）」のレスポンスが `text/calendar` で `SUMMARY:飲み会` を含む。Google ボタンの `href` を `new URL()` でパースし、ホストが `calendar.google.com`、`searchParams.get('dates')` が `20260920T100000Z/20260920T110000Z` に等しい（`href` 文字列上は `%2F` にエンコードされているため文字列一致にしない）
-4. プレビューの日時をタップして手動修正 → 入力欄を変えても日時は上書きされない → 「自動に戻す」で自動解釈に戻る。別途、`9/20 19時 車で移動` の場所を空にして作成 → 詳細ページに場所が出ない
-5. `9/20 19時 渋谷` → 「場所にする」で場所 = 渋谷、タイトルが日時表現になる
-6. 2 行入力（`9/20 19時 渋谷で飲み会\n会費5000円`）→ プレビューのメモに `会費5000円` → 詳細ページにメモが表示され、URL を含めても `<a>` にならない
-7. 履歴ページに作成したページが出る → 編集リンクから編集画面 → 日時を変更して保存 → `/done` 再掲（「同じ URL を送り直してください」が出る）→ 詳細ページに変更バナー（旧日時 → 新日時）と「最終更新」が出る。場所も変えた場合はバナーに「場所が変更されました」とだけ出て旧場所の文字列が DOM に無い。`buildDeps` は毎リクエストで `fakeClock(new Date(E2E_FIXED_NOW))` を返すため、作成と更新の `now()` が同一になり `updatedAt` は進まない。「同じ URL を送り直してください」・詳細ページの「最終更新」表示はどちらも `updatedAt` ではなく `version > 1` で判定する（§6.2・§6.3・§8）ため、固定時計の下でも編集後に正しく出る
-8. localStorage を消した状態で `/:id/edit` を開く → 「この端末では編集できません」
-9. 通報フォームから送信 → 「報告を受け付けました」
-10. LINE UA のモバイルプロジェクト: 詳細ページのカレンダーボタン `href` を `new URL()` でパースし `searchParams.get('openExternalBrowser') === '1'`、かつ Google 側の `action=TEMPLATE` が壊れていない。案内バナーが出る
-11. 13 ヶ月超の日付（`2028/1/1 予定`）→ プレビューに「作成できるのは13ヶ月先までです」、作成ボタンは下書きとして通る（日時なし）
-12. プリフィル `/new?text=飲み会&dates=20260920T100000Z/20260920T110000Z&location=渋谷` → 各項目が埋まり `manual` 表示、作成 API は押すまで呼ばれない。作成すると `source = 'prefill'` で記録される（`/new?ref=detail_cta` からの作成は `detail_cta`）
-13. `/done?id=//example.com` と `/done?id=%2F%2Fexample.com` を開く → 外部に遷移せず `/` に戻る
-14. `GET /done` `GET /new` のレスポンスヘッダに CSP と `X-Content-Type-Options` が付く（`_headers` の検証）
+1. トップで `9/20 19時 渋谷で飲み会` を入力 → プレビューに 飲み会 / 9月20日(日) 19:00〜20:00 / 渋谷 が出る → 「URLを作る」→ `/done?id=` に遷移し URL とコピーボタンが出る → コピーでクリップボードに URL が入る（`test/e2e/create.spec.ts` の「入力〜プレビュー〜作成〜/done への遷移まで（シナリオ1）」、コピー動作は `test/e2e/done.spec.ts` の「URL・コピー・カレンダーリンク・詳細ページへの遷移・送り直し案内（シナリオ1・2・3）」で固定）
+2. 完成画面の URL へ遷移 → 詳細ページに §6.3 の順序で要素が並ぶ → 「作ってみる」で `/new?ref=detail_cta` に遷移する（`test/e2e/done.spec.ts` の「URL・コピー・カレンダーリンク・詳細ページへの遷移・送り直し案内（シナリオ1・2・3）」で固定）
+3. 「その他（ics）」のレスポンスが `text/calendar` で `SUMMARY:飲み会` を含む。Google ボタンの `href` を `new URL()` でパースし、ホストが `calendar.google.com`、`searchParams.get('dates')` が `20260920T100000Z/20260920T110000Z` に等しい（`href` 文字列上は `%2F` にエンコードされているため文字列一致にしない）（Google リンクの検証は `test/e2e/done.spec.ts` の「URL・コピー・カレンダーリンク・詳細ページへの遷移・送り直し案内（シナリオ1・2・3）」、ics のレスポンス内容は `test/e2e/full.spec.ts` の通しシナリオ末尾で固定）
+4. プレビューの日時をタップして手動修正 → 入力欄を変えても日時は上書きされない → 「自動に戻す」で自動解釈に戻る。別途、`9/20 19時 渋谷で飲み会` で検出された場所（渋谷）を空にして作成 → リクエストの `fields.location` が `null`、詳細ページに `[data-section="location"]` が無い（`test/e2e/create.spec.ts` の「日時を手動修正すると入力欄を変えても上書きされず、自動に戻すで戻る（シナリオ4前半）」「場所を空にすると場所なしとして作成される（シナリオ4後半: 空にすると使わない）」で固定）
+5. `9/20 19時 渋谷` → 「場所にする」で場所 = 渋谷、タイトルが日時表現になる（`test/e2e/create.spec.ts` の「「場所にする」で場所とタイトルが入れ替わる（シナリオ5）」で固定）
+6. 2 行入力（`9/20 19時 渋谷で飲み会\n会費5000円`）→ プレビューのメモに `会費5000円` → 詳細ページにメモが表示され、URL を含めても `<a>` にならない（`test/e2e/create.spec.ts` の「2 行目がメモに入る（シナリオ6前半）」「詳細ページにメモが表示され、URL を含めても自動リンクにならない（シナリオ6後半）」で固定）
+7. 履歴ページに作成したページが出る → 編集リンクから編集画面 → 日時を変更して保存 → `/done` 再掲（「同じ URL を送り直してください」が出る）→ 詳細ページに変更バナー（旧日時 → 新日時）と「最終更新」が出る。場所も変えた場合はバナーに「場所が変更されました」とだけ出て旧場所の文字列が DOM に無い。`buildDeps` は毎リクエストで `fakeClock(new Date(E2E_FIXED_NOW))` を返すため、作成と更新の `now()` が同一になり `updatedAt` は進まない。「同じ URL を送り直してください」・詳細ページの「最終更新」表示はどちらも `updatedAt` ではなく `version > 1` で判定する（§6.2・§6.3・§8）ため、固定時計の下でも編集後に正しく出る（`test/e2e/edit.spec.ts` の「履歴から編集して保存すると /done に再掲され、履歴と詳細ページに変更が反映される（シナリオ7）」で固定）
+8. localStorage を消した状態で `/:id/edit` を開く → 「この端末では編集できません」（`test/e2e/edit.spec.ts` の「localStorage にトークンが無ければ「この端末では編集できません」と出る（シナリオ8）」で固定）
+9. 通報フォームから送信 → 「報告を受け付けました」（`test/e2e/report.spec.ts` の「通報フォームから送信すると受付メッセージが出る（シナリオ9）」で固定）
+10. LINE UA のモバイルプロジェクト: 詳細ページのカレンダーボタン `href` を `new URL()` でパースし `searchParams.has('openExternalBrowser')`、かつ Google 側の `action=TEMPLATE` が壊れていない。案内バナーが出る（`test/e2e/line.spec.ts` の「LINE / Android UA でカレンダーボタンの案内が完成画面・詳細ページの両方に出る（シナリオ10）」で固定。`has` のみで値までは見ていない）
+11. 13 ヶ月超の日付（`2028/1/1 予定`）→ プレビューに「作成できるのは13ヶ月先までです」、作成ボタンは下書きとして通る（日時なし）（`test/e2e/create.spec.ts` の「13 ヶ月超の日付は下書きとして作成できる（シナリオ11）」で固定）
+12. プリフィル `/new?text=飲み会&dates=20260920T100000Z/20260920T110000Z&location=渋谷` → 各項目が埋まり `manual` 表示、作成 API は押すまで呼ばれない。作成すると `source = 'prefill'` で記録される（`/new?ref=detail_cta` からの作成は `detail_cta`）（`test/e2e/create.spec.ts` の「プリフィルされた項目は manual 表示になり、API は押すまで呼ばれない（シナリオ12前半）」「ref=detail_cta からの作成は source が detail_cta になる（シナリオ12後半）」で固定）
+13. `/done?id=//example.com` と `/done?id=%2F%2Fexample.com` を開く → 外部に遷移せず `/` に戻る（`test/e2e/redirect.spec.ts` の「不正なid（生の // による open redirect）は / へ遷移する（シナリオ13）」「不正なid（パーセントエンコードされた // による open redirect）は / へ遷移する（シナリオ13）」で固定）
+14. `GET /done` `GET /new` のレスポンスヘッダに CSP と `X-Content-Type-Options` が付く（`_headers` の検証）（`test/e2e/report.spec.ts` の「GET /done と GET /new のレスポンスヘッダに CSP と X-Content-Type-Options が付く（シナリオ14）」で固定）
+
+上記に加えて `test/e2e/full.spec.ts` に「作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 → 詳細の変更バナー → ics」の通しシナリオを持つ（個々の画面遷移は上記の各 spec で個別に固定済みだが、画面をまたいだ一連の操作が壊れていないことをこの 1 本で確認する。T19）。詳細ページは編集しても Cache API のエントリを消さない（§2.4。最大 60 秒古い内容が返る）ため、編集前に詳細ページを開いたページを編集直後に開き直すと変更バナーが出ない。このシナリオは「作ってみる」で新たに作った 2 件目のページを編集する（1 件目は「作ってみる」の遷移確認のためだけに詳細ページを開く）ことでこれを避けている。同じ理由で `test/e2e/edit.spec.ts` のシナリオ7も編集対象のページの詳細を編集前には開いていない。
 
 ### 10.4 ローカルでの実行方法
 
@@ -1137,17 +1139,20 @@ npm run lint              # eslint . && prettier --check .
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
 ```
 
-`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` は `CF-Connecting-IP` を付けないので全テストが `ip:unknown` の単一バケットに入り、全 spec を 1 回通すだけで作成回数が上限に達する。そのため `test/e2e/fixtures.ts` はテストごとに別の送信元 IP を `CF-Connecting-IP` で名乗る（本番では Cloudflare がこのヘッダを上書きするので偽装には使えない）。それでも同じテストを何度も走らせると 429 に達することがある。そのときは `rm -rf .wrangler/state && npx wrangler d1 migrations apply calshare --local` で作り直す（CI は毎回クリーンな環境なので影響しない）。
+`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` は `CF-Connecting-IP` を付けないので全テストが `ip:unknown` の単一バケットに入り、全 spec を 1 回通すだけで作成回数が上限に達する。そのため `test/e2e/fixtures.ts` はテストごとに別の送信元 IP を `CF-Connecting-IP` で名乗る（本番では Cloudflare がこのヘッダを上書きするので偽装には使えない）。この IP はテスト ID だけでなく `test/e2e/fixtures.ts` を読み込む Node プロセスごとに生成する salt からも作るため、同じ `.wrangler/state` に対して `npm run test:e2e` を繰り返し実行しても前回の実行と IP が衝突せず、レート制限のカウンタが実行をまたいで積み上がらない。`.wrangler/state` を作り直したいときは `rm -rf .wrangler/state && npx wrangler d1 migrations apply calshare --local` する（CI は毎回クリーンな環境なので影響しない）。
 
 ### 10.5 CI（GitHub Actions）
 
 ```
 ci.yml（pull_request / push main。ステップの詳細は §11.7）
-  npm ci → lint → typecheck → test:unit → build → test:integration → wrangler deploy --dry-run → playwright install
-  → wrangler d1 migrations apply calshare --local → test:e2e
+  npm ci → lint → typecheck → test:unit → test:scripts → build → test:integration → wrangler deploy --dry-run
+  → playwright install → wrangler d1 migrations apply calshare --local → test:e2e
   （build は test:integration より前。test:integration が env.ASSETS.fetch() で dist/ を読むため。確認済み・T1。
   wrangler dev はローカル D1 にマイグレーションを自動適用しないため、test:e2e の webServer が使う .wrangler/state を
   先に用意する。T14 で e2e が初めて POST /api/pages を実行して判明した。確認済み・T14）
+  test:e2e のステップだけ失敗したときに playwright-report/ を actions/upload-artifact で artifact に残す（T19。
+  actions/checkout・actions/setup-node に加えて公式 action をもう 1 つ使う形になる。test:e2e より前のステップが
+  落ちたときは playwright-report/ が存在しないため upload しない。id: e2e の outcome で判定する）
 deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§13 H9・§12 T19 を参照）
   gate ジョブ: リポジトリ変数 DEPLOY_ENABLED が true でなければここで終了する（H9 の公開承認そのもの）
   deploy ジョブ: 変数 PUBLIC_DOMAIN が未設定なら失敗させて止める（sameOrigin の検証が本番 Origin
@@ -1157,7 +1162,8 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
     → デプロイ直後に RATE_LIMIT_PEPPER が未登録なら生成して登録する（H6 をここで完結させる。§13）
     → GitHub Secret REPORT_WEBHOOK_URL があれば同じ値で Worker のシークレットに登録する
       （H7、任意。§13）
-  サードパーティ action は使わない（actions/checkout@v4・actions/setup-node@v4 のみ。wrangler は npx wrangler@4 で都度呼ぶ）。
+  サードパーティ action は使わない（GitHub 公式の actions/checkout・actions/setup-node のみ。バージョンは
+  Dependabot が追従するためここには書かない。wrangler は npx wrangler@4 で都度呼ぶ）。
   CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID は GitHub Secrets。手順は docs/runbooks/deploy.md。
 ```
 
@@ -1968,7 +1974,7 @@ export default defineConfig({
 | T16 | `feat/web-edit` | feat: 編集画面（localStorage のトークンで編集） | T15 | `src/web/pages/edit.html` `src/web/edit/main.ts` `src/web/styles/edit.css` `test/e2e/edit.spec.ts` `test/unit/web/lib/{api,history}.test.ts`。`src/web/lib/api.ts` `src/web/lib/history.ts` は T14 が置いたファイルで、`getPage` / `updatePage` は T14 時点で既にある。本タスクの担当ファイルとして割り当てられており、`api.ts` は `ApiRequestFailedError` の message を作成専用の文言から呼び出し元が操作名を渡せる形に汎用化し、`history.ts` に編集完了時専用の `updateHistoryEntry`（fields / expiresAt / updatedAt / version だけを差し替え、並び順は変えない。§6.4）を追加した | e2e §10.3 の 7・8。保存後に `/done` 再掲、履歴の `fields` `updatedAt` `version` の更新。`pathname` の `id` が不正なら `/` へ | e2e green |
 | T17 | `feat/web-history` | feat: 作成履歴画面 | T16 | `src/web/pages/history.html` `src/web/history/main.ts` `src/web/styles/history.css` `src/web/lib/history.ts`（`readHistory` を export に変更。元は T14 が private で定義） `src/web/styles/base.css`（`.app-header` `.app-title` `.history-link` を追加）`src/web/styles/create.css`（同 3 ルールを削除。§12 冒頭の例外(4)） `test/e2e/history.spec.ts` | 作成後に一覧に出る、期限切れのグレー表示、空状態の文言、localStorage に不正な `id` を仕込んでもリンクが生成されない | e2e green |
 | T18 | `feat/observability` | feat: 構造化ログとリクエストログミドルウェア | T17 | `src/server/lib/logger.ts` `src/server/middleware/requestLog.ts` `src/server/app.ts`（`requestLog` の登録と `app.onError` の 2 箇所。後者は Hono の既定 errorHandler の `console.error(err)` を構造化ログに置き換えるために追加）`src/server/routes/apiPages.ts`（1 行。作成成功時に `page_created` を出す）`test/integration/server/requestLog.test.ts` | §9.6 の表: ログに生 IP・トークン・クエリ・本文が出ない（`console.log` をスパイ）、ルート名と所要時間が出る、作成ログに `source` が出る、429 のログに `exceeded` のバケット種別が出る、catch していないルートの例外は `app.onError` 経由で `unhandled_error`（`{ name, message }` に正規化、生のスタックトレースは出さない）として残る | integration green |
-| T19 | `feat/e2e-and-deploy` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ） | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない）。シナリオ 7 の「同じ URL を送り直してください」・詳細ページの「最終更新」は version 判定により固定時計の下でも `test/e2e/edit.spec.ts` で固定済み（§10.3 シナリオ 7 参照）。履歴 `updatedAt` の上書き自体は `test/unit/web/lib/history.test.ts` で検証済みだが、固定時計の下で値が進むことは e2e では検証しない | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
+| T19 | `feat/e2e-finish` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ）、`test/e2e/create.spec.ts` への不足分の追記（シナリオ 4・6 の詳細ページ側）、`test/e2e/fixtures.ts`（レート制限を避ける salt、`DONE_URL_PATTERN`・`createPage`・`waitForCreateRequest` の共通化）、`playwright.config.ts`、`.github/workflows/ci.yml` | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない）。シナリオ 7 の「同じ URL を送り直してください」・詳細ページの「最終更新」は version 判定により固定時計の下でも `test/e2e/edit.spec.ts` で固定済み（§10.3 シナリオ 7 参照）。履歴 `updatedAt` の上書き自体は `test/unit/web/lib/history.test.ts` で検証済みだが、固定時計の下で値が進むことは e2e では検証しない | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
 
 並列に着手したい場合: T2〜T4（core）は互いにファイルが重ならないので、同時に着手して T2 → T3 → T4 の順にスタックできる。T14〜T17（web）も同様。ただし base は常に直前の PR にし、ダイヤモンドを作らない。
 
