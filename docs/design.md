@@ -742,7 +742,7 @@ export const ruleBasedInterpreter: TextInterpreter = {
   - `auto` に戻す操作は、`manual` 中の項目の脇に出す小さな「自動に戻す」リンクに分ける。空にすることと自動に戻すことを 1 つの操作に兼ねると、誤検出した値を消せなくなるため。設定項目は増えないので原則 2 には反しない。
   - タイトル・場所・メモはテキスト入力（メモは複数行）。日時は「開始」「終了」の `datetime-local` と「終日」チェックボックス。終日にすると時刻入力を隠し日付だけにする。
   - 日時が `null`（下書き）のときは日時項目に「日時を認識できませんでした。タップして直せます」を出す。`issues` に応じた文言は §5.7。
-- `singleTokenTitle` が true で場所が null のとき、タイトル項目の脇に「場所にする」リンクを出す。タップで場所 = そのタイトル、タイトル = 日時の整形文字列（§5.5 T-c）に入れ替え、両方 `manual` にする。
+- `singleTokenTitle` が true で場所が null、かつ日時が確定している（`start` が非 null）とき、タイトル項目の脇に「場所にする」リンクを出す。タップで場所 = そのタイトル、タイトル = 日時の整形文字列（§5.5 T-c）に入れ替え、両方 `manual` にする。日時未定の下書きでは日時の整形文字列が「日時未定」になってしまうためリンクを出さない。
 - プリフィル（§5.8）は初期表示時にクエリ文字列から読む。構造化パラメータ由来の項目は `manual` で固定する（「自動に戻す」で `auto` に戻せる）。
 - 「URLを作る」押下で `POST /api/pages`。body は `{ rawText, fields: EventFieldsJson, source }`。`source` はクライアントが決める: クエリに `ref=detail_cta` があれば `'detail_cta'`、プリフィルパラメータ（§5.8）のいずれかに使える値があれば `'prefill'`（空文字は数えない）、それ以外は `'direct'`（両方あれば `detail_cta` を優先）。これが concept §02「KPI の最上位」の転換率を測る唯一の手段になる（§9.6）。成功したら localStorage の履歴（§6.4）に追記し `/done?id={id}` へ遷移する。失敗（400/429）はエラーコードに対応する文言をボタン直下に出す。
 - 二重送信防止のためボタンは送信中に無効化する。
@@ -1110,6 +1110,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 ```bash
 cp .dev.vars.example .dev.vars   # 初回のみ。手元で実時計にしたいときは E2E_FIXED_NOW の行を消す
+npx wrangler d1 migrations apply calshare --local   # 初回のみ。wrangler dev はマイグレーションを自動適用しない（§10.5）
 npm run dev               # npm run build && wrangler dev（ローカル D1/R2、.dev.vars 読み込み）
 npm run build             # node scripts/build-web.mjs（src/web → dist/）
 npm run test:unit         # vitest run --project unit
@@ -1121,12 +1122,17 @@ npm run lint              # eslint . && prettier --check .
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
 ```
 
+`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` はローカルでは IP が `ip:unknown` の単一バケットになるため、`test:e2e` を続けて何度も走らせると 429 に達することがある。そのときは `rm -rf .wrangler/state && npx wrangler d1 migrations apply calshare --local` で作り直す（CI は毎回クリーンな環境なので影響しない）。
+
 ### 10.5 CI（GitHub Actions）
 
 ```
 ci.yml（pull_request / push main。ステップの詳細は §11.7）
-  npm ci → lint → typecheck → test:unit → build → test:integration → wrangler deploy --dry-run → playwright install → test:e2e
-  （build は test:integration より前。test:integration が env.ASSETS.fetch() で dist/ を読むため。確認済み・T1）
+  npm ci → lint → typecheck → test:unit → build → test:integration → wrangler deploy --dry-run → playwright install
+  → wrangler d1 migrations apply calshare --local → test:e2e
+  （build は test:integration より前。test:integration が env.ASSETS.fetch() で dist/ を読むため。確認済み・T1。
+  wrangler dev はローカル D1 にマイグレーションを自動適用しないため、test:e2e の webServer が使う .wrangler/state を
+  先に用意する。T14 で e2e が初めて POST /api/pages を実行して判明した。確認済み・T14）
 deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§13 H9・§12 T19 を参照）
   gate ジョブ: リポジトリ変数 DEPLOY_ENABLED が true でなければここで終了する（H9 の公開承認そのもの）
   deploy ジョブ: 変数 PUBLIC_DOMAIN が未設定なら失敗させて止める（sameOrigin の検証が本番 Origin
@@ -1228,7 +1234,7 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 │       ├── img/ogp-fallback.png   # dist/assets/img/ へコピー
 │       ├── styles/*.css           # dist/assets/css/ へコピー。インラインスタイルを持たない（CSP の style-src 'self'）
 │       ├── lib/{history,api,clipboard,share,lineUa,dom}.ts
-│       ├── create/{main,preview,tapEdit,prefill,source}.ts   # ① と編集画面が共用。source: ref / プリフィルから source を決める
+│       ├── create/{main,preview,tapEdit,prefill}.ts   # ① と編集画面が共用。prefill: クエリ文字列からの初期値と流入元 source の判定
 │       ├── done/main.ts
 │       ├── history/main.ts
 │       ├── edit/main.ts
@@ -1251,6 +1257,8 @@ export const RETENTION_DAYS_FOR_DRAFT = 7
 export const DEFAULT_EVENT_DURATION_MINUTES = 60
 /** 午前・午後の語が無い 1〜N 時を午後と読む（規則 T2）。0 にするとリテラル解釈になる */
 export const PM_HEURISTIC_MAX_HOUR = 7
+/** input イベントからプレビューを再解釈するまでのデバウンス（§6.1） */
+export const PREVIEW_DEBOUNCE_MS = 150
 export const MAX_INPUT_LENGTH = 2000
 /** 作成・更新・通報 API の本文の byte 上限。JSON をパースする前に弾く（§5.7 の (2)） */
 export const MAX_BODY_BYTES = 32 * 1024

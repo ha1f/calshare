@@ -1,0 +1,124 @@
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.app-title {
+  font-weight: bold;
+  font-size: 1.2em;
+  color: inherit;
+  text-decoration: none;
+}
+
+.history-link {
+  font-size: 0.9em;
+  color: inherit;
+}
+
+#input {
+  width: 100%;
+  font-size: 1em;
+  padding: 8px;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  min-height: 4.5em; /* 自動リサイズ前（初期表示・空欄）でも 3 行分の高さを確保する */
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preview-item {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.preview-item.is-manual {
+  border-color: #666;
+}
+
+.preview-item-label {
+  font-size: 0.85em;
+  color: #666;
+  min-width: 3.5em;
+}
+
+.preview-item-view {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.preview-item-input {
+  flex: 1;
+  font: inherit;
+  padding: 4px;
+}
+
+.datetime-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+
+.datetime-label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85em;
+  gap: 2px;
+}
+
+.all-day-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+}
+
+.reset-link,
+.location-swap-link {
+  background: none;
+  border: none;
+  color: #06c;
+  font-size: 0.85em;
+  padding: 0;
+  cursor: pointer;
+}
+
+.error-message {
+  color: #c00;
+  margin: 8px 0;
+}
+
+.submit-button {
+  width: 100%;
+  padding: 12px;
+  font-size: 1.05em;
+}
+
+.submit-button:disabled {
+  opacity: 0.6;
+}
+
+.help {
+  margin-top: 24px;
+  font-size: 0.9em;
+  color: #444;
+}

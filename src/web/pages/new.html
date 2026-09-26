@@ -5,9 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>calshare - 予定を作る</title>
     <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/create.css" />
   </head>
   <body>
-    <textarea id="input"></textarea>
+    <header class="app-header">
+      <a class="app-title" href="/">calshare</a>
+      <a class="history-link" href="/history">作ったURL</a>
+    </header>
+    <main>
+      <textarea id="input"></textarea>
+      <div id="preview" class="preview"></div>
+      <button id="submit" type="button" class="submit-button">URLを作る</button>
+      <p id="error-message" class="error-message" hidden></p>
+      <section class="help">
+        <h2>使い方</h2>
+        <p>日時・場所・タイトルがわかる文章を書くと、内容を読み取って予定ページのURLを作ります。</p>
+        <p>
+          読み取った内容はタップして直せます。作成したページはカレンダーへの追加リンクを含みます。
+        </p>
+      </section>
+    </main>
     <script type="module" src="/assets/js/create.js"></script>
   </body>
 </html>

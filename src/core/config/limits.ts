@@ -4,6 +4,8 @@ export const RETENTION_DAYS_FOR_DRAFT = 7
 export const DEFAULT_EVENT_DURATION_MINUTES = 60
 /** 午前・午後の語が無い 1〜N 時を午後と読む（規則 T2）。0 にするとリテラル解釈になる */
 export const PM_HEURISTIC_MAX_HOUR = 7
+/** input イベントからプレビューを再解釈するまでのデバウンス（§6.1） */
+export const PREVIEW_DEBOUNCE_MS = 150
 export const MAX_INPUT_LENGTH = 2000
 /** 作成・更新・通報 API の本文の byte 上限。JSON をパースする前に弾く（§5.7 の (2)） */
 export const MAX_BODY_BYTES = 32 * 1024
