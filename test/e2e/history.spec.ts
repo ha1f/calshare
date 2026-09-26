@@ -93,14 +93,16 @@ test('localStorage に不正な id を仕込んでもリンクが生成されな
       createdAt: '2025-12-01T00:00:00.000Z',
       updatedAt: '2025-12-01T00:00:00.000Z',
     }
-    const invalidEntries = ['../evil-path', '//evil.example'].map((id) => ({
+    // title は fields 側に置く。トップレベルの title は表示に使われないため、
+    // ここに置いたままだと不正な項目が漏れて表示されても検出できない
+    const invalidEntries = ['../evil-path', '//evil.example', '//evil.examp'].map((id) => ({
       ...validEntry,
       id,
-      title: '不正な予定',
+      fields: { ...validEntry.fields, title: '不正な予定' },
     }))
     localStorage.setItem(
       'calshare.history',
-      JSON.stringify([invalidEntries[0], validEntry, invalidEntries[1]]),
+      JSON.stringify([invalidEntries[0], validEntry, invalidEntries[1], invalidEntries[2]]),
     )
   })
 
@@ -118,4 +120,78 @@ test('localStorage に不正な id を仕込んでもリンクが生成されな
     if (href === '/') continue
     expect(href).toMatch(new RegExp(`^/${PAGE_ID_PATTERN.source.slice(1, -1)}(/edit)?$`))
   }
+})
+
+test('id は有効だが fields や expiresAt が壊れている項目は表示から除外される', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(() => {
+    const validEntry = {
+      id: 'abcdefghjkmn',
+      url: 'https://example.test/abcdefghjkmn',
+      editToken: '0'.repeat(43),
+      fields: {
+        title: '正しい予定',
+        location: null,
+        memo: null,
+        start: null,
+        end: null,
+        isAllDay: false,
+      },
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      createdAt: '2025-12-01T00:00:00.000Z',
+      updatedAt: '2025-12-01T00:00:00.000Z',
+    }
+    // fields.start が日時として解釈できない
+    const brokenFields = {
+      ...validEntry,
+      id: 'bbcdefghjkmn',
+      fields: { ...validEntry.fields, start: 'not-a-date' },
+    }
+    // expiresAt が Date として不正
+    const brokenExpiresAt = { ...validEntry, id: 'cbcdefghjkmn', expiresAt: 'not-a-date' }
+    localStorage.setItem(
+      'calshare.history',
+      JSON.stringify([brokenFields, validEntry, brokenExpiresAt]),
+    )
+  })
+
+  await page.goto('/history')
+
+  // 壊れた 2 件は握りつぶされ、正しい項目だけが残る（画面全体は白画面にならない）
+  await expect(page.getByTestId('history-item')).toHaveCount(1)
+  await expect(page.getByTestId('history-title-link')).toHaveText('正しい予定')
+  await expect(page.getByTestId('empty-message')).toBeHidden()
+})
+
+test('空白を含まない長いタイトルでも一覧が横にはみ出さない', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 })
+  await page.goto('/')
+  await page.evaluate(() => {
+    const entry = {
+      id: 'abcdefghjkmn',
+      url: 'https://example.test/abcdefghjkmn',
+      editToken: '0'.repeat(43),
+      fields: {
+        title: 'a'.repeat(200),
+        location: null,
+        memo: null,
+        start: null,
+        end: null,
+        isAllDay: false,
+      },
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      createdAt: '2025-12-01T00:00:00.000Z',
+      updatedAt: '2025-12-01T00:00:00.000Z',
+    }
+    localStorage.setItem('calshare.history', JSON.stringify([entry]))
+  })
+
+  await page.goto('/history')
+
+  await expect(page.getByTestId('history-item')).toHaveCount(1)
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(scrollWidth).toBeLessThanOrEqual(clientWidth)
 })

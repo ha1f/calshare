@@ -27,6 +27,7 @@
   min-width: 8em;
   color: inherit;
   font-weight: bold;
+  word-break: break-all;
 }
 
 .history-datetime {

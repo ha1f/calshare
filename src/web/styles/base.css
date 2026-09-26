@@ -14,3 +14,23 @@ body {
 textarea {
   width: 100%;
 }
+
+/* 全画面共通のヘッダ（`<header class="app-header">` を持つ画面すべてで使う） */
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.app-title {
+  font-weight: bold;
+  font-size: 1.2em;
+  color: inherit;
+  text-decoration: none;
+}
+
+.history-link {
+  font-size: 0.9em;
+  color: inherit;
+}
