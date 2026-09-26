@@ -6,6 +6,7 @@ import { createD1ReportRepository } from '../adapters/d1/d1ReportRepository'
 import { createWebCryptoIdGenerator } from '../adapters/id/webCryptoIdGenerator'
 import { consoleLogger } from '../adapters/logger/consoleLogger'
 import { createFakeNotifier } from '../adapters/notifier/fakeNotifier'
+import { createWebhookNotifier } from '../adapters/notifier/webhookNotifier'
 import { createFakeOgpRenderer } from '../adapters/ogp/fakeOgpRenderer'
 import { createR2ObjectStorage } from '../adapters/r2/r2ObjectStorage'
 import type { Clock } from '../ports/clock'
@@ -27,7 +28,7 @@ export interface Deps {
   storage: ObjectStorage
   rateLimiter: RateLimiter
   ogpRenderer: OgpRenderer // T10 までは fakeOgpRenderer（固定 PNG）を使う
-  notifier: Notifier // T12 までは fakeNotifier（no-op）。T12 以降も REPORT_WEBHOOK_URL が無ければ fakeNotifier（§9.4）
+  notifier: Notifier // REPORT_WEBHOOK_URL が無ければ fakeNotifier（no-op）。§9.4
   logger: Logger
   config: {
     publicOrigin: string // env.PUBLIC_ORIGIN
@@ -54,7 +55,7 @@ function buildClock(env: Env): Clock {
   return fakeClock(fixed)
 }
 
-/** Env → Deps。ogpRenderer と notifier は本物のアダプタが無いため Fake のまま */
+/** Env → Deps。ogpRenderer は本物のアダプタが無いため Fake のまま。notifier は REPORT_WEBHOOK_URL があるときだけ webhookNotifier、無ければ fakeNotifier（§9.4） */
 export function buildDeps(env: Env): Deps {
   const clock = buildClock(env)
   // origin は末尾スラッシュの有無に関わらず一致させたいので URL#origin で正規化する（§9.8 の比較対象）
@@ -67,7 +68,9 @@ export function buildDeps(env: Env): Deps {
     storage: createR2ObjectStorage(env.BUCKET, clock),
     rateLimiter: createD1RateLimiter(env.DB),
     ogpRenderer: createFakeOgpRenderer(),
-    notifier: createFakeNotifier(),
+    notifier: env.REPORT_WEBHOOK_URL
+      ? createWebhookNotifier(env.REPORT_WEBHOOK_URL, consoleLogger)
+      : createFakeNotifier(),
     logger: consoleLogger,
     config: {
       publicOrigin: publicOriginUrl.origin,

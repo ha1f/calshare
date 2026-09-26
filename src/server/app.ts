@@ -4,9 +4,11 @@ import type { Env } from './env'
 import { securityHeaders } from './middleware/securityHeaders'
 import { apiPagesRoutes } from './routes/apiPages'
 import { apiPagesEditRoutes } from './routes/apiPagesEdit'
+import { apiReportsRoutes } from './routes/apiReports'
 import { detailRoutes } from './routes/detail'
 import { editPageRoutes } from './routes/editPage'
 import { healthRoutes } from './routes/health'
+import { reportPageRoutes } from './routes/reportPage'
 
 export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
@@ -18,7 +20,9 @@ export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
   app.route('/', healthRoutes(deps))
   app.route('/', apiPagesRoutes(deps))
   app.route('/', apiPagesEditRoutes(deps))
+  app.route('/', apiReportsRoutes(deps))
   app.route('/', editPageRoutes(deps))
+  app.route('/', reportPageRoutes(deps))
   app.route('/', detailRoutes(deps))
 
   return app

@@ -14,6 +14,10 @@ export const MAX_MEMO_URLS = 3
 export const MAX_REPORT_COMMENT_LENGTH = 500
 /** Webhook 通知に載せる通報コメントの最大文字数。全文は D1 の reports で見る（§9.4） */
 export const MAX_WEBHOOK_COMMENT_LENGTH = 200
+/** 通報件数がこれ以上なら Webhook 通知の本文で強調する（§9.4） */
+export const REPORT_COUNT_WARNING_THRESHOLD = 3
+/** Webhook 通知の fetch を打ち切るまでの時間。応答が無い送信先で waitUntil を専有し続けないため（§9.4） */
+export const WEBHOOK_FETCH_TIMEOUT_MS = 5000
 /** Google カレンダーリンクの details に載せるメモの最大文字数（§7.1） */
 export const MAX_CALENDAR_DETAILS_LENGTH = 500
 export const PAGE_ID_LENGTH = 12
