@@ -115,6 +115,8 @@ export function apiPagesRoutes(deps: Deps): Hono<{ Bindings: Env }> {
       if (!validation.ok) throw validationApiError(validation.code)
 
       const { page, editToken } = await createPageWithRetry(deps, request, identity, now)
+      // 転換率の集計に使う（§9.6）。rawText 等の入力内容はここでも出さない
+      deps.logger.info('page_created', { pageId: page.id, source: page.source })
 
       // R2 の PUT 失敗はロールバックしない。GET /:id.ics の自己修復に任せる（§2.3）
       const ics = buildIcsForPage(page, deps.config, now)
