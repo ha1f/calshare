@@ -35,6 +35,7 @@ const ENTRY_A: HistoryEntry = {
   expiresAt: '2026-09-27T00:00:00.000Z',
   createdAt: '2026-09-16T01:00:00.000Z',
   updatedAt: '2026-09-16T01:00:00.000Z',
+  version: 1,
 }
 
 const ENTRY_B: HistoryEntry = {
@@ -48,8 +49,28 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('readHistory', () => {
+  it('version を持たない項目は 1 として返す', () => {
+    vi.stubGlobal('localStorage', fakeLocalStorage())
+    const withoutVersion: Record<string, unknown> = { ...ENTRY_A }
+    delete withoutVersion.version
+    // history.ts の STORAGE_KEY と同じ値
+    localStorage.setItem('calshare.history', JSON.stringify([withoutVersion]))
+
+    expect(readHistory()).toEqual([{ ...ENTRY_A, version: 1 }])
+  })
+
+  it('version が数値でない項目は 1 として返す', () => {
+    vi.stubGlobal('localStorage', fakeLocalStorage())
+    const invalidVersion = { ...ENTRY_A, version: '2' }
+    localStorage.setItem('calshare.history', JSON.stringify([invalidVersion]))
+
+    expect(readHistory()).toEqual([{ ...ENTRY_A, version: 1 }])
+  })
+})
+
 describe('updateHistoryEntry', () => {
-  it('fields / expiresAt / updatedAt だけ上書きし、並び順・他の項目は変えない', () => {
+  it('fields / expiresAt / updatedAt / version だけ上書きし、並び順・他の項目は変えない', () => {
     vi.stubGlobal('localStorage', fakeLocalStorage())
     addHistoryEntry(ENTRY_B)
     addHistoryEntry(ENTRY_A)
@@ -58,6 +79,7 @@ describe('updateHistoryEntry', () => {
       fields: { ...ENTRY_B.fields, location: '新宿' },
       expiresAt: '2026-10-01T00:00:00.000Z',
       updatedAt: '2026-09-21T00:00:00.000Z',
+      version: 2,
     })
 
     const entries = readHistory()
@@ -67,6 +89,7 @@ describe('updateHistoryEntry', () => {
     expect(updated?.fields.location).toBe('新宿')
     expect(updated?.expiresAt).toBe('2026-10-01T00:00:00.000Z')
     expect(updated?.updatedAt).toBe('2026-09-21T00:00:00.000Z')
+    expect(updated?.version).toBe(2)
     expect(updated?.url).toBe(ENTRY_B.url)
     expect(updated?.editToken).toBe(ENTRY_B.editToken)
     expect(updated?.createdAt).toBe(ENTRY_B.createdAt)
@@ -80,6 +103,7 @@ describe('updateHistoryEntry', () => {
       fields: ENTRY_A.fields,
       expiresAt: ENTRY_A.expiresAt,
       updatedAt: '2026-09-21T00:00:00.000Z',
+      version: 2,
     })
 
     expect(readHistory()).toEqual([ENTRY_A])
@@ -100,6 +124,7 @@ describe('updateHistoryEntry', () => {
         fields: ENTRY_A.fields,
         expiresAt: ENTRY_A.expiresAt,
         updatedAt: ENTRY_A.updatedAt,
+        version: ENTRY_A.version,
       }),
     ).not.toThrow()
   })

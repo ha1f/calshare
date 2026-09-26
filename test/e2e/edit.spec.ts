@@ -23,6 +23,7 @@ interface HistoryEntry {
   expiresAt: string
   createdAt: string
   updatedAt: string
+  version: number
 }
 
 async function readHistoryEntry(
@@ -64,6 +65,10 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
     page.getByRole('button', { name: '保存する' }).click(),
   ])
 
+  // E2E_FIXED_NOW の下では作成と更新の now() が同一になり updatedAt は変わらないため、
+  // 「同じ URL を送り直してください」は version で判定する（§6.2・§8）
+  await expect(page.locator('#resend-notice')).toBeVisible()
+
   // 履歴の fields / expiresAt が新しい日時・場所で上書きされる。expiresAt は
   // 新しい終了（9/21 21:00 JST）+ RETENTION_DAYS_AFTER_LAST_EVENT(7日) で、
   // 作成時の expiresAt（9/27 まで）とは異なる値になるため、上書きされたことの証拠になる。
@@ -76,6 +81,7 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
   expect(entry?.url).toBe(originalEntry?.url)
   expect(entry?.editToken).toBe(originalEntry?.editToken)
   expect(entry?.createdAt).toBe(originalEntry?.createdAt)
+  expect(entry?.version).toBe(2)
 
   await page.goto(`/${id}`)
   await expect(page.locator('[data-section="datetime"]')).toHaveText('9月21日(月) 20:00〜21:00')
@@ -86,6 +92,10 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
   await expect(page.locator('.change-banner')).toContainText('場所が変更されました')
   await expect(page.locator('.change-banner')).not.toContainText('タイトルが変更されました')
   await expect(page.locator('body')).not.toContainText('渋谷')
+
+  // version > 1 になったページは「最終更新」とカレンダーボタン直下の免責が出る（§6.3・§8）
+  await expect(page.locator('[data-section="footer"]')).toContainText('最終更新:')
+  await expect(page.locator('[data-section="calendar"] .calendar-notice')).toBeVisible()
 })
 
 test('保存ボタンを連打しても PATCH は 1 回しか送られない', async ({ page }) => {

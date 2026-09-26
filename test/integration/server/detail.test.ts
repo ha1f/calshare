@@ -79,8 +79,9 @@ async function setChangeSnapshot(
     .run()
 }
 
+// 「最終更新」表示は version（更新回数）で判定する（§8）ため、updated_at と合わせて version も進める
 async function markEdited(id: string, updatedAt: Date): Promise<void> {
-  await env.DB.prepare('UPDATE pages SET updated_at = ? WHERE id = ?')
+  await env.DB.prepare('UPDATE pages SET updated_at = ?, version = version + 1 WHERE id = ?')
     .bind(updatedAt.toISOString(), id)
     .run()
 }
@@ -514,6 +515,30 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
         'カレンダーに追加した後の変更は自動では反映されません。最新はこのページで確認してください',
       )
       expect(text).toContain('このページは 9/27 まで表示されます、最終更新: 9/20 09:05')
+    })
+
+    it('固定時計で作成と更新の now() が同じでも version で「最終更新」を出す（§10.3 シナリオ7）', async () => {
+      const { deps, repo } = buildDetailDeps()
+      const id = pageId(3)
+      await createPage(repo, id)
+
+      // E2E_FIXED_NOW の下では作成と更新の now() が同一になり updated_at が進まない。
+      // version は now() に関係なく進むので、「最終更新」表示は version で判定できる
+      const result = await repo.update(id, {
+        rawText: '9/20 19時 渋谷で飲み会（更新）',
+        event: eventFields(),
+        expiresAt: new Date('2026-09-27T00:00:00.000Z'),
+        previousSnapshot: null,
+        now: NOW,
+      })
+      expect(result).toBe('ok')
+
+      const { text } = await get(deps, `/${id}`)
+
+      expect(await hasElementMatching(text, '[data-section="calendar"] .calendar-notice')).toBe(
+        true,
+      )
+      expect(text).toContain('最終更新:')
     })
   })
 

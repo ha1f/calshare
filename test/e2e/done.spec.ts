@@ -64,14 +64,12 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   expect(icsUrl.pathname).toBe(`/${id}.ics`)
 
   // 初回作成時には「送り直してください」は出ない。編集完了後の状態は、履歴の
-  // updatedAt を直接書き換えて再現してから再訪する（§6.2）
+  // version を直接書き換えて再現してから再訪する（§6.2・§8）
   await expect(page.locator('#resend-notice')).toBeHidden()
   await page.evaluate((pageId) => {
     const raw = localStorage.getItem('calshare.history')
     const entries: Array<Record<string, unknown>> = raw === null ? [] : JSON.parse(raw)
-    const updated = entries.map((entry) =>
-      entry.id === pageId ? { ...entry, updatedAt: '2026-09-17T00:00:00.000Z' } : entry,
-    )
+    const updated = entries.map((entry) => (entry.id === pageId ? { ...entry, version: 2 } : entry))
     localStorage.setItem('calshare.history', JSON.stringify(updated))
   }, id)
   await page.goto(`/done?id=${id}`)
@@ -99,6 +97,27 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
 
   await page.getByRole('link', { name: '作ってみる' }).click()
   await expect(page).toHaveURL(/\/new\?ref=detail_cta$/)
+})
+
+test('version を持たない履歴項目は updatedAt が createdAt と違っても未編集として扱われる', async ({
+  page,
+}) => {
+  const id = await createPage(page, '9/20 19時 渋谷で飲み会')
+
+  await page.evaluate((pageId) => {
+    const raw = localStorage.getItem('calshare.history')
+    const entries: Array<Record<string, unknown>> = raw === null ? [] : JSON.parse(raw)
+    const updated = entries.map((entry) => {
+      if (entry.id !== pageId) return entry
+      const rest: Record<string, unknown> = { ...entry, updatedAt: '2026-09-20T00:00:00.000Z' }
+      delete rest.version
+      return rest
+    })
+    localStorage.setItem('calshare.history', JSON.stringify(updated))
+  }, id)
+
+  await page.goto(`/done?id=${id}`)
+  await expect(page.locator('#resend-notice')).toBeHidden()
 })
 
 test('日時未定の下書きではカレンダー欄の代わりに案内が出て、共有ボタンも出ない', async ({

@@ -12,6 +12,7 @@ export interface HistoryEntry {
   expiresAt: string
   createdAt: string
   updatedAt: string
+  version: number
 }
 
 function isHistoryEntry(value: unknown): value is HistoryEntry {
@@ -30,6 +31,11 @@ function isHistoryEntry(value: unknown): value is HistoryEntry {
   )
 }
 
+/** localStorage の内容は信頼しない（§6.4）。version が数値でない項目は未編集として 1 を補う */
+function withNormalizedVersion(entry: HistoryEntry): HistoryEntry {
+  return typeof entry.version === 'number' ? entry : { ...entry, version: 1 }
+}
+
 /**
  * 保存されている順のまま返す（新しい順になるのは addHistoryEntry が新規項目を先頭に足すため）。
  * localStorage が使えない環境（プライベートモード等）でも例外で画面を壊さない。
@@ -41,7 +47,7 @@ export function readHistory(): HistoryEntry[] {
     if (raw === null) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(isHistoryEntry)
+    return parsed.filter(isHistoryEntry).map(withNormalizedVersion)
   } catch {
     return []
   }
@@ -58,13 +64,13 @@ export function addHistoryEntry(entry: HistoryEntry): void {
 }
 
 /**
- * 編集完了時に該当項目の fields / expiresAt / updatedAt だけを上書きする（§6.4）。
+ * 編集完了時に該当項目の fields / expiresAt / updatedAt / version だけを上書きする（§6.4）。
  * addHistoryEntry と違い、並び順や id・url・editToken・createdAt は変えない。
  * 該当 id が無ければ何もしない
  */
 export function updateHistoryEntry(
   id: string,
-  patch: Pick<HistoryEntry, 'fields' | 'expiresAt' | 'updatedAt'>,
+  patch: Pick<HistoryEntry, 'fields' | 'expiresAt' | 'updatedAt' | 'version'>,
 ): void {
   const entries = readHistory()
   const next = entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))
