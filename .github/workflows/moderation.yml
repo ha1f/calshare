@@ -50,7 +50,7 @@ jobs:
         id: node-version
         run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ steps.node-version.outputs.version }}
 
