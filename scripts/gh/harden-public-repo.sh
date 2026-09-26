@@ -8,6 +8,7 @@
 #   - PATCH /repos/{owner}/{repo}                                 secret scanning・push protection
 #   - PUT  /repos/{owner}/{repo}/private-vulnerability-reporting
 #   - PUT  /repos/{owner}/{repo}/branches/{branch}/protection
+#   - GET  /repos/{owner}/{repo}/actions/permissions            Actions 全体の有効化・許可設定
 #   - GET/PUT /repos/{owner}/{repo}/actions/permissions/workflow  Default workflow permissions
 #   - GET  /repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval
 #
@@ -30,8 +31,9 @@ public 化した直後に実行する設定（すべて冪等）:
   4. Private vulnerability reporting の有効化
   5. main ブランチの保護（必須ステータスチェック ci・force push 禁止・削除禁止。
      個人開発のため required_pull_request_reviews は付けない）
-  6. Actions の Default workflow permissions が read か確認し、read でなければ変更する
-  7. fork PR のワークフロー承認設定を確認する（表示のみ。変更はオーナー判断なので行わない）
+  6. Actions の一般設定（enabled・allowed_actions）を確認する（表示のみ）
+  7. Actions の Default workflow permissions が read か確認し、read でなければ変更する
+  8. fork PR のワークフロー承認設定を確認する（表示のみ。変更はオーナー判断なので行わない）
 
   --repo <owner/repo>  対象リポジトリ（必須）
   --dry-run            gh api を呼ばず、実行予定の API 呼び出しを表示するだけにする
@@ -145,6 +147,27 @@ do_body() {
   fi
 }
 
+# Actions が無効化されていないか、許可されている Action の範囲を表示するだけの読み取り専用チェック。
+# 変更が要る場合の判断（すべてのアクションを許可するか等）はオーナーに残す
+check_actions_permissions() {
+  local path="repos/$repo/actions/permissions"
+  if [ "$dry_run" -eq 1 ]; then
+    echo "[dry-run] GET $path — Actions の有効化状態と許可設定を確認する（表示のみ）"
+    return 0
+  fi
+  local enabled
+  if ! enabled=$(gh api "$path" --jq '.enabled' 2>&1); then
+    echo "失敗: Actions 全体設定の確認（GET $path）" >&2
+    echo "  $enabled" >&2
+    hint_for_error "$enabled"
+    failed=1
+    return 0
+  fi
+  local allowed_actions
+  allowed_actions=$(gh api "$path" --jq '.allowed_actions' 2>/dev/null || echo '不明')
+  echo "Actions の有効化: $enabled / 許可範囲（allowed_actions）: $allowed_actions"
+}
+
 check_default_workflow_permissions() {
   local path="repos/$repo/actions/permissions/workflow"
   if [ "$dry_run" -eq 1 ]; then
@@ -236,10 +259,13 @@ do_body PUT "main ブランチ保護（必須チェック ci・force push 禁止
   "allow_deletions": false
 }'
 
-note "6. Actions の Default workflow permissions"
+note "6. Actions の一般設定（確認のみ）"
+check_actions_permissions
+
+note "7. Actions の Default workflow permissions"
 check_default_workflow_permissions
 
-note "7. fork PR のワークフロー承認設定（確認のみ）"
+note "8. fork PR のワークフロー承認設定（確認のみ）"
 check_fork_pr_approval
 
 echo ""
