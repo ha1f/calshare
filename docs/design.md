@@ -1518,7 +1518,7 @@ export interface Deps {
   notifier: Notifier           // T12 までは fakeNotifier（no-op）。T12 以降も REPORT_WEBHOOK_URL が無ければ fakeNotifier（§9.4）
   logger: Logger
   config: {
-    publicOrigin: string       // env.PUBLIC_ORIGIN
+    publicOrigin: string       // new URL(env.PUBLIC_ORIGIN).origin
     publicHost: string         // new URL(env.PUBLIC_ORIGIN).host。ics の UID に使う（§7.2）
     serviceName: string        // env.SERVICE_NAME
     ratePepper: string         // env.RATE_LIMIT_PEPPER
