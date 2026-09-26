@@ -21,13 +21,9 @@ import {
   validationApiError,
 } from '../lib/errors'
 import { buildDetailUrl, buildIcsForPage } from '../lib/ics'
+import { isServable } from '../lib/pageAccess'
 import { readJsonBody } from '../middleware/jsonBody'
 import { assertSameOriginJsonRequest } from '../middleware/sameOrigin'
-
-/** hidden・期限切れのページを「存在しないページ」と同じ扱い（404）にするための判定（§4.1） */
-function isServable(page: PageRecord, now: Date): boolean {
-  return page.status === 'active' && page.expiresAt.getTime() > now.getTime()
-}
 
 /** `Authorization: Bearer <token>` からトークンを取り出す。無い・形式違いは null（§3.3） */
 function extractBearerToken(request: Request): string | null {

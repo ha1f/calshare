@@ -17,8 +17,11 @@ export default defineConfig(async () => {
           plugins: [
             cloudflareTest({
               wrangler: { configPath: './wrangler.jsonc' },
-              // .dev.vars に依存しないよう secrets はここで与える
-              miniflare: { bindings: { TEST_MIGRATIONS, RATE_LIMIT_PEPPER: 'test-pepper' } },
+              // .dev.vars に依存しないよう secrets はここで与える。E2E_FIXED_NOW は空文字で
+              // 上書きし、.dev.vars に設定があっても buildDeps が systemClock を使うようにする
+              miniflare: {
+                bindings: { TEST_MIGRATIONS, RATE_LIMIT_PEPPER: 'test-pepper', E2E_FIXED_NOW: '' },
+              },
             }),
           ],
           test: {

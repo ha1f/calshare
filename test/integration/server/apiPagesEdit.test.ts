@@ -628,6 +628,7 @@ describe('PATCH /api/pages/:id', () => {
       headers: { 'Content-Type': 'application/json', Origin: TEST_ORIGIN },
       body: JSON.stringify(createBody),
     })
+    expect(createRes.status).toBe(200)
     const created = (await createRes.json()) as CreatePageResponse
 
     const newStart = new Date(start.getTime() + 60 * 60 * 1000)

@@ -5,6 +5,7 @@ import { toJstParts } from '../../core/time/jst'
 import { fromEventFieldsJson } from '../../core/types'
 import type { EventFieldsJson } from '../../core/types'
 import { copyToClipboard } from '../lib/clipboard'
+import { requireElement } from '../lib/dom'
 import type { HistoryEntry } from '../lib/history'
 import { applyCalendarUaHandling } from '../lib/lineUa'
 import { canShare, shareUrl } from '../lib/share'
@@ -25,12 +26,6 @@ function formatExpiresLabel(expiresAt: Date): string {
 function redirectTo(path: string): void {
   const url = new URL(path, location.origin)
   location.replace(url.origin === location.origin ? url.toString() : '/')
-}
-
-function requireElement<T extends HTMLElement>(id: string): T {
-  const el = document.getElementById(id)
-  if (el === null) throw new Error(`done screen: #${id} is missing`)
-  return el as T
 }
 
 function isHttpUrl(value: string): boolean {
@@ -108,18 +103,18 @@ function main(): void {
     return
   }
 
-  const urlDisplay = requireElement<HTMLAnchorElement>('url-display')
-  const copyButton = requireElement<HTMLButtonElement>('copy-button')
+  const urlDisplay = requireElement('url-display', HTMLAnchorElement)
+  const copyButton = requireElement('copy-button', HTMLButtonElement)
   const copyMessage = requireElement<HTMLElement>('copy-message')
   const copyError = requireElement<HTMLElement>('copy-error')
-  const lineShareLink = requireElement<HTMLAnchorElement>('line-share-link')
-  const shareButton = requireElement<HTMLButtonElement>('share-button')
+  const lineShareLink = requireElement('line-share-link', HTMLAnchorElement)
+  const shareButton = requireElement('share-button', HTMLButtonElement)
   const calendarSection = requireElement<HTMLElement>('calendar-section')
-  const googleLink = requireElement<HTMLAnchorElement>('google-calendar-link')
-  const icsLink = requireElement<HTMLAnchorElement>('ics-link')
+  const googleLink = requireElement('google-calendar-link', HTMLAnchorElement)
+  const icsLink = requireElement('ics-link', HTMLAnchorElement)
   const draftNotice = requireElement<HTMLElement>('draft-notice')
   const expiresNotice = requireElement<HTMLElement>('expires-notice')
-  const editLink = requireElement<HTMLAnchorElement>('edit-link')
+  const editLink = requireElement('edit-link', HTMLAnchorElement)
   const resendNotice = requireElement<HTMLElement>('resend-notice')
 
   urlDisplay.href = entry.url

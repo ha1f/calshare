@@ -30,12 +30,16 @@ async function createPage(page: Page, text: string): Promise<string> {
 test('URL・コピー・カレンダーリンク・詳細ページへの遷移・送り直し案内（シナリオ1・2・3）', async ({
   page,
   context,
+  baseURL,
 }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const id = await createPage(page, '9/20 19時 渋谷で飲み会')
 
   const url = await page.locator('#url-display').textContent()
   expect(url).toMatch(PAGE_URL_PATTERN)
+  // API が返す url は wrangler dev に渡した PUBLIC_ORIGIN から組まれる。E2E_PORT で
+  // ポートを変えても実際に配信しているサーバのアドレスと一致することを固定する
+  expect(url?.startsWith(`${baseURL}/`)).toBe(true)
 
   expect(await readHref(page.locator('#line-share-link'))).toBe(
     `https://line.me/R/share?text=${encodeURIComponent(url ?? '')}`,
@@ -73,11 +77,10 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   await page.goto(`/done?id=${id}`)
   await expect(page.locator('#resend-notice')).toBeVisible()
 
-  // entry.url は wrangler.jsonc の PUBLIC_ORIGIN から組まれるため、E2E_PORT で別ポートで
-  // 動かしている場合は絶対 URL のホストが実際のサーバと一致しない。パス部分だけ遷移させる
   const href = await page.locator('#url-display').getAttribute('href')
   if (href === null) throw new Error('url-display の href が無い')
-  await page.goto(new URL(href).pathname)
+  expect(new URL(href).origin).toBe(baseURL)
+  await page.goto(href)
   await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
 
   const sections = await page

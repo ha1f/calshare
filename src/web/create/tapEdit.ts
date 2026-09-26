@@ -319,7 +319,12 @@ function buildDatetimeItem(
   }
 
   viewButton.addEventListener('click', () => {
-    state.datetime = { mode: 'manual', value: effectiveDatetime(state) }
+    const value = effectiveDatetime(state)
+    state.datetime = { mode: 'manual', value }
+    // 編集欄を開いた直後はまだ何も入力していないので、update() の「開始が空なら書き戻さない」
+    // 判定に関わらずここで表示を揃える
+    allDayCheckbox.checked = value.isAllDay
+    fillInputsFromValue(value, value.isAllDay)
     onChange()
     startInput.focus()
   })
@@ -339,7 +344,9 @@ function buildDatetimeItem(
       // effectiveDatetime は manual 中も現在値を返すので、入力欄を毎回この値で揃える
       const value = effectiveDatetime(state)
       allDayCheckbox.checked = value.isAllDay
-      fillInputsFromValue(value, value.isAllDay)
+      // 開始欄が未入力扱いだと DatetimeValue は start/end とも null になる。ここで
+      // 両方の入力欄を書き戻すと、終了欄にすでに入力済みの文字列まで空にしてしまうため触らない
+      if (value.start !== null) fillInputsFromValue(value, value.isAllDay)
     } else {
       const message = datetimeIssueMessage(state.parsed.issues)
       valueText.textContent = message ?? formatDateLabel(effectiveFields(state))

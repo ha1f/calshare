@@ -4,6 +4,7 @@ import { toEventFieldsJson } from '../../core/types'
 import type { CreateSource, ValidationErrorCode } from '../../core/types'
 import { validateEventFields } from '../../core/validate/validateEventFields'
 import { ApiRequestFailedError, createPage } from '../lib/api'
+import { requireElement } from '../lib/dom'
 import { addHistoryEntry } from '../lib/history'
 import { createInitialState, effectiveFields, interpret, type CreateState } from './preview'
 import { resolveCreateSource, resolvePrefillFromSearch, type PrefillResult } from './prefill'
@@ -48,33 +49,15 @@ function applyPrefill(state: CreateState, prefill: PrefillResult): void {
   }
 }
 
-function requireElement(id: string): HTMLElement {
-  const el = document.getElementById(id)
-  if (!(el instanceof HTMLElement)) throw new Error(`create screen: #${id} is missing`)
-  return el
-}
-
-function requireTextarea(id: string): HTMLTextAreaElement {
-  const el = document.getElementById(id)
-  if (!(el instanceof HTMLTextAreaElement)) throw new Error(`create screen: #${id} is missing`)
-  return el
-}
-
-function requireButton(id: string): HTMLButtonElement {
-  const el = document.getElementById(id)
-  if (!(el instanceof HTMLButtonElement)) throw new Error(`create screen: #${id} is missing`)
-  return el
-}
-
 function main(): void {
-  const textarea = requireTextarea('input')
+  const textarea = requireElement('input', HTMLTextAreaElement)
   // 静的 HTML 側は `<textarea id="input">` のまま保つ（staticAssets.test.ts が厳密一致で見ている）ため、
   // placeholder はここで付ける。見た目は create.css の #input セレクタで当てる
   textarea.placeholder = '9/20 19時 渋谷で飲み会'
 
-  const previewContainer = requireElement('preview')
-  const messageEl = requireElement('error-message')
-  const submitButton = requireButton('submit')
+  const previewContainer = requireElement<HTMLElement>('preview')
+  const messageEl = requireElement<HTMLElement>('error-message')
+  const submitButton = requireElement('submit', HTMLButtonElement)
 
   const prefill = resolvePrefillFromSearch(location.search, { now: new Date() })
   const source: CreateSource = resolveCreateSource(location.search, prefill)
@@ -86,7 +69,10 @@ function main(): void {
   // scrollHeight に合わせないと、行を消したときに縮まない
   function autoResizeTextarea(): void {
     textarea.style.height = 'auto'
-    textarea.style.height = `${textarea.scrollHeight}px`
+    // box-sizing: border-box では height が border 込みの外寸になる一方、scrollHeight は border を
+    // 含まないため、border 分を足さないと内容がちょうど border の幅だけはみ出してスクロールする
+    const borderHeight = textarea.offsetHeight - textarea.clientHeight
+    textarea.style.height = `${textarea.scrollHeight + borderHeight}px`
   }
   autoResizeTextarea()
 
