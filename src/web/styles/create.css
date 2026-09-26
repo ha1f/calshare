@@ -17,11 +17,13 @@
   color: inherit;
 }
 
-.event-input {
+#input {
   width: 100%;
   font-size: 1em;
   padding: 8px;
-  resize: vertical;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
 }
 
 .preview {

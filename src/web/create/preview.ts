@@ -2,9 +2,6 @@ import { ruleBasedInterpreter } from '../../core/interpret/ruleBasedInterpreter'
 import type { ParseContext, ParsedEvent } from '../../core/parse/types'
 import type { EventFields } from '../../core/types'
 
-/** input イベントからプレビューを更新するまでのデバウンス（§6.1） */
-export const PREVIEW_DEBOUNCE_MS = 150
-
 export interface DatetimeValue {
   start: Date | null
   end: Date | null

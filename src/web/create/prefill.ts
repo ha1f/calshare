@@ -2,7 +2,7 @@ import { resolvePrefill, type PrefillResult } from '../../core/prefill/resolvePr
 import type { ParseContext } from '../../core/parse/types'
 import type { CreateSource } from '../../core/types'
 
-const PREFILL_PARAM_NAMES = ['text', 'dates', 'location', 'details', 'q'] as const
+export type { PrefillResult }
 
 /** 値が空（trim 後空文字）のクエリパラメータは「無い」ものとして扱う（§5.8） */
 function readParam(params: URLSearchParams, name: string): string | undefined {
@@ -27,14 +27,13 @@ export function resolvePrefillFromSearch(search: string, ctx: ParseContext): Pre
 }
 
 /**
- * 作成の流入元（§6.1）。`ref=detail_cta` を優先し、次にプリフィルパラメータに使える値が
- * あれば `prefill`、それ以外は `direct`
+ * 作成の流入元（§6.1）。`ref=detail_cta` を優先し、次にプリフィルの結果に画面へ反映できた
+ * 値（`manualKeys` かこれに由来する `rawText`）があれば `prefill`、それ以外は `direct`。
+ * `dates` のように値はあってもプリフィルが不正として捨てた場合は数えない
  */
-export function resolveCreateSource(search: string): CreateSource {
+export function resolveCreateSource(search: string, prefill: PrefillResult): CreateSource {
   const params = new URLSearchParams(search)
   if (params.get('ref') === 'detail_cta') return 'detail_cta'
-  const hasUsablePrefillParam = PREFILL_PARAM_NAMES.some(
-    (name) => readParam(params, name) !== undefined,
-  )
-  return hasUsablePrefillParam ? 'prefill' : 'direct'
+  const hasUsablePrefillValue = prefill.manualKeys.length > 0 || prefill.rawText.trim() !== ''
+  return hasUsablePrefillValue ? 'prefill' : 'direct'
 }

@@ -1,17 +1,12 @@
 import type { ApiErrorCode } from '../../core/api/types'
+import { PREVIEW_DEBOUNCE_MS } from '../../core/config/limits'
 import { toEventFieldsJson } from '../../core/types'
 import type { CreateSource, ValidationErrorCode } from '../../core/types'
 import { validateEventFields } from '../../core/validate/validateEventFields'
 import { ApiRequestFailedError, createPage } from '../lib/api'
 import { addHistoryEntry } from '../lib/history'
-import {
-  createInitialState,
-  effectiveFields,
-  interpret,
-  PREVIEW_DEBOUNCE_MS,
-  type CreateState,
-} from './preview'
-import { resolveCreateSource, resolvePrefillFromSearch } from './prefill'
+import { createInitialState, effectiveFields, interpret, type CreateState } from './preview'
+import { resolveCreateSource, resolvePrefillFromSearch, type PrefillResult } from './prefill'
 import { createPreviewView } from './tapEdit'
 
 const VALIDATION_MESSAGES: Record<ValidationErrorCode, string> = {
@@ -29,8 +24,7 @@ function apiErrorMessage(code: ApiErrorCode): string {
   return 'エラーが発生しました。しばらくしてからやり直してください'
 }
 
-function applyPrefill(state: CreateState, search: string): void {
-  const prefill = resolvePrefillFromSearch(search, { now: new Date() })
+function applyPrefill(state: CreateState, prefill: PrefillResult): void {
   state.rawText = prefill.rawText
 
   if (prefill.manualKeys.includes('title') && prefill.fields.title !== undefined) {
@@ -75,19 +69,26 @@ function requireButton(id: string): HTMLButtonElement {
 function main(): void {
   const textarea = requireTextarea('input')
   // 静的 HTML 側は `<textarea id="input">` のまま保つ（staticAssets.test.ts が厳密一致で見ている）ため、
-  // 見た目に関わる属性はここで付ける
-  textarea.className = 'event-input'
-  textarea.rows = 3
+  // placeholder はここで付ける。見た目は create.css の #input セレクタで当てる
   textarea.placeholder = '9/20 19時 渋谷で飲み会'
 
   const previewContainer = requireElement('preview')
   const messageEl = requireElement('error-message')
   const submitButton = requireButton('submit')
 
-  const source: CreateSource = resolveCreateSource(location.search)
+  const prefill = resolvePrefillFromSearch(location.search, { now: new Date() })
+  const source: CreateSource = resolveCreateSource(location.search, prefill)
   const state = createInitialState()
-  applyPrefill(state, location.search)
+  applyPrefill(state, prefill)
   textarea.value = state.rawText
+
+  // 内容に応じて高さを伸ばす（§6.1「自動リサイズの textarea」）。一度縮めてから
+  // scrollHeight に合わせないと、行を消したときに縮まない
+  function autoResizeTextarea(): void {
+    textarea.style.height = 'auto'
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }
+  autoResizeTextarea()
 
   let apiError: string | null = null
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -139,6 +140,7 @@ function main(): void {
 
   textarea.addEventListener('input', () => {
     apiError = null
+    autoResizeTextarea()
     if (debounceTimer !== undefined) clearTimeout(debounceTimer)
     const rawText = textarea.value
     debounceTimer = setTimeout(() => {

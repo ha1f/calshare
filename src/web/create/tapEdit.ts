@@ -1,5 +1,6 @@
+import { DEFAULT_EVENT_DURATION_MINUTES } from '../../core/config/limits'
 import type { ParseIssue } from '../../core/parse/types'
-import { formatDateLabel, jstDate, toJstParts } from '../../core/time/jst'
+import { addDays, formatDateLabel, jstDate, toJstParts } from '../../core/time/jst'
 import { createElement } from '../lib/dom'
 import {
   effectiveDatetime,
@@ -45,6 +46,49 @@ function parseDateValue(value: string): Date | null {
   if (m === null) return null
   const [, y, mo, d] = m
   return jstDate(Number(y), Number(mo), Number(d))
+}
+
+/**
+ * 日時編集欄の入力文字列から手動の値を組み立てる（§6.1）。開始が無ければ日時未定として扱い、
+ * 終了が空欄なら開始 + `DEFAULT_EVENT_DURATION_MINUTES` を補う（パーサの既定と揃える）
+ */
+export function computeManualDatetimeFromInputs(
+  startValue: string,
+  endValue: string,
+  isAllDay: boolean,
+): DatetimeValue {
+  if (isAllDay) {
+    const startDate = parseDateValue(startValue)
+    if (startDate === null) return { start: null, end: null, isAllDay }
+    const inclusiveEndDate = parseDateValue(endValue) ?? startDate
+    return { start: startDate, end: addDays(inclusiveEndDate, 1), isAllDay: true }
+  }
+  const start = parseDatetimeLocalValue(startValue)
+  if (start === null) return { start: null, end: null, isAllDay: false }
+  const end = parseDatetimeLocalValue(endValue)
+  const resolvedEnd = end ?? new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60_000)
+  return { start, end: resolvedEnd, isAllDay: false }
+}
+
+/**
+ * 日時編集欄に入れる文字列を組み立てる（§6.1）。終日表示への切り替え時、切り替え元がまだ
+ * 終日でなければ `end` の JST 日付をそのまま最終日にする（終日の排他的翌日 00:00 前提で 1 日
+ * 引くのは、切り替え元もすでに終日のときだけでよい）
+ */
+export function computeDatetimeInputValues(
+  value: DatetimeValue,
+  isAllDay: boolean,
+): { start: string; end: string } {
+  if (value.start === null) return { start: '', end: '' }
+  if (isAllDay) {
+    const inclusiveEnd =
+      value.end === null ? value.start : value.isAllDay ? addDays(value.end, -1) : value.end
+    return { start: toDateValue(value.start), end: toDateValue(inclusiveEnd) }
+  }
+  return {
+    start: toDatetimeLocalValue(value.start),
+    end: value.end === null ? '' : toDatetimeLocalValue(value.end),
+  }
 }
 
 /** §5.7 の draft/past/beyond のプレビュー文言。auto かつ start が無いときだけ出す */
@@ -141,7 +185,9 @@ function updateTextItem(
   // getEffective は manual 中も現在値を返すので、表示先が view/input のどちらでも同じ値で揃う
   const value = config.getEffective(state)
   if (manual) {
-    input.value = value ?? ''
+    // 編集中の入力欄には書き戻さない。他項目の変更による render でも呼ばれるため、
+    // 操作中の欄まで上書きすると入力途中の空白や改行が消える
+    if (document.activeElement !== input) input.value = value ?? ''
   } else {
     valueText.textContent = value === null || value === '' ? config.emptyPlaceholder : value
   }
@@ -240,23 +286,13 @@ function buildDatetimeItem(
 
   root.append(viewButton, editRoot, resetLink)
 
-  function readInputsAsManualValue(): DatetimeValue {
-    const isAllDay = allDayCheckbox.checked
-    if (isAllDay) {
-      const startDate = parseDateValue(startInput.value)
-      const inclusiveEndDate = parseDateValue(endInput.value) ?? startDate
-      if (startDate === null) return { start: null, end: null, isAllDay: false }
-      const exclusiveEnd = new Date((inclusiveEndDate ?? startDate).getTime() + 24 * 60 * 60 * 1000)
-      return { start: startDate, end: exclusiveEnd, isAllDay: true }
-    }
-    const start = parseDatetimeLocalValue(startInput.value)
-    const end = parseDatetimeLocalValue(endInput.value)
-    if (start === null) return { start: null, end: null, isAllDay: false }
-    return { start, end: end ?? start, isAllDay: false }
-  }
-
   function applyManualFromInputs(): void {
-    state.datetime = { mode: 'manual', value: readInputsAsManualValue() }
+    const value = computeManualDatetimeFromInputs(
+      startInput.value,
+      endInput.value,
+      allDayCheckbox.checked,
+    )
+    state.datetime = { mode: 'manual', value }
     onChange()
   }
 
@@ -268,22 +304,18 @@ function buildDatetimeItem(
     applyManualFromInputs()
   })
 
+  // 編集中の入力欄には書き戻さない。render は他項目の変更でも呼ばれるため、
+  // 操作中の欄まで上書きすると入力途中の空白や改行が消える
+  function setInputValueUnlessFocused(input: HTMLInputElement, value: string): void {
+    if (document.activeElement !== input) input.value = value
+  }
+
   function fillInputsFromValue(value: DatetimeValue, isAllDay: boolean): void {
     startInput.type = isAllDay ? 'date' : 'datetime-local'
     endInput.type = isAllDay ? 'date' : 'datetime-local'
-    if (value.start === null) {
-      startInput.value = ''
-      endInput.value = ''
-      return
-    }
-    if (isAllDay) {
-      startInput.value = toDateValue(value.start)
-      const inclusiveEnd = value.end ?? value.start
-      endInput.value = toDateValue(new Date(inclusiveEnd.getTime() - 24 * 60 * 60 * 1000))
-    } else {
-      startInput.value = toDatetimeLocalValue(value.start)
-      endInput.value = value.end === null ? '' : toDatetimeLocalValue(value.end)
-    }
+    const values = computeDatetimeInputValues(value, isAllDay)
+    setInputValueUnlessFocused(startInput, values.start)
+    setInputValueUnlessFocused(endInput, values.end)
   }
 
   viewButton.addEventListener('click', () => {
@@ -342,7 +374,8 @@ function buildLocationSwapLink(
     const canSwap =
       state.title.mode === 'auto' &&
       state.parsed.singleTokenTitle &&
-      effectiveLocation(state) === null
+      effectiveLocation(state) === null &&
+      effectiveDatetime(state).start !== null
     link.hidden = !canSwap
   }
 
