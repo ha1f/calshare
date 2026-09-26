@@ -66,6 +66,7 @@ Node 22 以降の `node --test` は位置引数を glob として扱い、ディ
 | [moderation.md](moderation.md) | H11 | 通報対応（非表示・解除・一括非表示） |
 | [usage.md](usage.md) | H12 | Cloudflare 使用量の定期監視としきい値超過時の対応 |
 | [line-device-test.md](line-device-test.md) | H14 | LINE 実機でのカレンダー追加・ics 取り込み確認 |
+| [public-repo.md](public-repo.md) | — | リポジトリの public 化直後に必要な GitHub 設定（Dependabot・secret scanning・ブランチ保護等） |
 
 ## 関連スキル（`.claude/skills/` に存在するもの）
 
