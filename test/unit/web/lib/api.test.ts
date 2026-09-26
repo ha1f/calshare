@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiRequestFailedError, getPage, updatePage } from '../../../../src/web/lib/api'
+import { ApiRequestFailedError, createPage, getPage, updatePage } from '../../../../src/web/lib/api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -32,6 +32,41 @@ describe('getPage', () => {
     )
 
     await expect(getPage('abc', 'wrong-token')).rejects.toBeInstanceOf(ApiRequestFailedError)
+  })
+
+  it('エラーメッセージに呼び出し元の操作名が入る（作成専用の文言に固定されない）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(401, { code: 'UNAUTHORIZED', message: '' })),
+    )
+
+    await expect(getPage('abc', 'wrong-token')).rejects.toMatchObject({
+      message: expect.stringContaining('get page'),
+    })
+  })
+})
+
+describe('createPage', () => {
+  it('エラーメッセージに operation として create page が入る', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(400, { code: 'EMPTY_INPUT', message: '' })),
+    )
+
+    await expect(
+      createPage({
+        rawText: '飲み会',
+        fields: {
+          title: '飲み会',
+          location: null,
+          memo: null,
+          start: null,
+          end: null,
+          isAllDay: false,
+        },
+        source: 'direct',
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining('create page') })
   })
 })
 

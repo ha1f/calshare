@@ -6,8 +6,29 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>calshare - 編集</title>
     <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/create.css" />
+    <link rel="stylesheet" href="/assets/css/edit.css" />
   </head>
   <body>
+    <header class="app-header">
+      <a class="app-title" href="/">calshare</a>
+      <a class="history-link" href="/history">作ったURL</a>
+    </header>
+    <main>
+      <p id="cannot-edit-message" class="notice" hidden>
+        この端末では編集できません。作成した端末で開いてください
+      </p>
+      <p id="load-error-message" class="notice" hidden></p>
+      <div id="edit-form" hidden>
+        <textarea id="input"></textarea>
+        <div id="preview" class="preview"></div>
+        <button id="submit" type="button" class="submit-button">保存する</button>
+        <p id="error-message" class="error-message" hidden></p>
+        <p class="resend-hint">
+          保存しても、すでにカレンダーに追加した人には自動で伝わりません。変更後は同じURLを送り直してください。
+        </p>
+      </div>
+    </main>
     <script type="module" src="/assets/js/edit.js"></script>
   </body>
 </html>
