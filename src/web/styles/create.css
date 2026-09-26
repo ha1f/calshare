@@ -52,7 +52,8 @@
   padding: 4px;
 }
 
-.datetime-edit {
+/* hidden 属性で隠すため、display はブラウザ既定の [hidden] { display: none } を上書きしない範囲で指定する */
+.datetime-edit:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

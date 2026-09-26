@@ -32,8 +32,10 @@ test('日時を手動修正すると入力欄を変えても上書きされず�
   const input = page.locator('#input')
   await input.fill('9/20 19時 渋谷で飲み会')
   await expect(page.getByTestId('view-datetime')).toHaveText('9月20日(日) 19:00〜20:00')
+  await expect(page.getByTestId('start-input')).toBeHidden()
 
   await page.getByTestId('view-datetime').click()
+  await expect(page.getByTestId('start-input')).toBeVisible()
   await page.getByTestId('start-input').fill('2026-09-21T10:00')
   await page.getByTestId('end-input').fill('2026-09-21T11:00')
 
@@ -45,6 +47,7 @@ test('日時を手動修正すると入力欄を変えても上書きされず�
 
   await page.getByTestId('reset-datetime').click()
   await expect(page.getByTestId('view-datetime')).toHaveText('9月20日(日) 19:00〜20:00')
+  await expect(page.getByTestId('start-input')).toBeHidden()
 })
 
 test('場所を空にすると場所なしとして作成される（シナリオ4後半: 空にすると使わない）', async ({
