@@ -1,5 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { X_ROBOTS_TAG } from '../../../src/server/lib/headers'
@@ -7,6 +7,7 @@ import { buildIcsForPage } from '../../../src/server/lib/ics'
 import type { CreatePageResponse } from '../../../src/core/api/types'
 import type { EventFields, EventFieldsJson } from '../../../src/core/types'
 import type { NewPageInput, PageRepository } from '../../../src/ports/pageRepository'
+import type { Logger } from '../../../src/ports/logger'
 import type { ObjectStorage } from '../../../src/ports/objectStorage'
 import type { Deps } from '../../../src/server/deps'
 import { createApp } from '../../../src/server/app'
@@ -220,7 +221,9 @@ describe('GET /:id.ics（ics 配信、§7.2）', () => {
     await createPage(repo, id)
     const page = await repo.findById(id)
     if (page === null) throw new Error('expected page to exist')
-    await deps.storage.putIcs(id, buildIcsForPage(page, deps.config, NOW) ?? '')
+    const ics = buildIcsForPage(page, deps.config, NOW)
+    if (ics === null) throw new Error('expected ics to be built')
+    await deps.storage.putIcs(id, ics)
     await hidePage(id)
 
     const res = await get(deps, `/${id}.ics`)
@@ -300,5 +303,78 @@ describe('GET /:id.ics（ics 配信、§7.2）', () => {
     expect(res.status).toBe(200)
     expect(text).toBe(seededIcs)
     expect(calls()).toBe(0) // R2 に既にあるので putIcs は呼ばれない
+  })
+
+  it('日時ありから下書き（日時なし）に更新すると、R2 に古い ics が残っていても 404', async () => {
+    const { deps, repo } = buildIcsDeps()
+    const id = pageId(11)
+    await createPage(repo, id)
+    const page = await repo.findById(id)
+    if (page === null) throw new Error('expected page to exist')
+    const staleIcs = buildIcsForPage(page, deps.config, NOW)
+    if (staleIcs === null) throw new Error('expected ics to be built')
+    // R2 に古い ics を置いた状態を作る。作成 API 経由の同期 PUT が既に終わった後を模す
+    await deps.storage.putIcs(id, staleIcs)
+
+    const result = await repo.update(id, {
+      rawText: page.rawText,
+      event: eventFields({ start: null, end: null }),
+      expiresAt: page.expiresAt,
+      previousSnapshot: null,
+      now: NOW,
+    })
+    if (result !== 'ok') throw new Error(`failed to update page: ${result}`)
+
+    const res = await get(deps, `/${id}.ics`)
+
+    expect(res.status).toBe(404)
+  })
+
+  it('自己修復の putIcs が失敗しても、生成済みの ics を 200 で返し logger.error を呼ぶ', async () => {
+    const { deps: baseDeps, repo } = buildIcsDeps()
+    const putError = new Error('r2 down')
+    const storage: ObjectStorage = {
+      ...baseDeps.storage,
+      async putIcs() {
+        throw putError
+      },
+    }
+    const logger: Logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const deps = { ...baseDeps, storage, logger }
+    const id = pageId(9)
+    await createPage(repo, id)
+
+    const res = await get(deps, `/${id}.ics`)
+    const text = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(text).toContain('SUMMARY:飲み会')
+    expect(logger.error).toHaveBeenCalledTimes(1)
+    expect(logger.error).toHaveBeenCalledWith('ics_self_heal_put_failed', {
+      error: putError,
+      pageId: id,
+    })
+  })
+
+  it('パーセントエンコードした ID でもキャッシュキーが同じになる（D1 への直叩き対策、§2.4）', async () => {
+    const inner = createD1PageRepository(env.DB)
+    const { pages, calls } = withFindByIdCounter(inner)
+    const { deps } = buildIcsDeps({ pages })
+    const id = pageId(10)
+    await createPage(pages, id)
+    const percentEncoded = id
+      .split('')
+      .map((c) => `%${c.charCodeAt(0).toString(16)}`)
+      .join('')
+
+    const plain = await get(deps, `/${id}.ics`)
+    const encoded = await get(deps, `/${percentEncoded}.ics`)
+    const mixed = await get(deps, `/${id[0]}${percentEncoded.slice(3)}.ics`)
+    const withQuery = await get(deps, `/${id}.ics?x=1`)
+
+    expect([plain.status, encoded.status, mixed.status, withQuery.status]).toEqual([
+      200, 200, 200, 200,
+    ])
+    expect(calls()).toBe(1)
   })
 })

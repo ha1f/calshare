@@ -26,16 +26,24 @@ export function icsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
         return c.notFound()
       }
 
-      let ics = await deps.storage.getIcs(id)
-      if (ics === null) {
-        // 作成・更新時の R2 PUT 失敗からの自己修復（§2.3）。日時の無い下書きは buildIcsForPage が
-        // null を返すので、その場合は再生成せず 404 のままにする
-        ics = buildIcsForPage(page, deps.config, now)
-        if (ics === null) return c.notFound()
-        await deps.storage.putIcs(id, ics)
+      // 日時の無い下書きは buildIcsForPage が null を返す。PATCH で日時ありから下書きに戻された
+      // 場合、R2 には古い ics が残ったままになりうるので、R2 を見る前にここで判定する
+      const generated = buildIcsForPage(page, deps.config, now)
+      if (generated === null) return c.notFound()
+
+      const stored = await deps.storage.getIcs(id)
+      const ics = stored ?? generated
+      if (stored === null) {
+        // 作成・更新時の R2 PUT 失敗からの自己修復（§2.3）。ここでの PUT が失敗しても、
+        // 生成済みの本文は手元にあるので 200 で返す
+        try {
+          await deps.storage.putIcs(id, ics)
+        } catch (error) {
+          deps.logger.error('ics_self_heal_put_failed', { error, pageId: id })
+        }
       }
 
-      return c.text(ics, 200, { 'Content-Type': 'text/calendar; charset=utf-8' })
+      return c.body(ics, 200, { 'Content-Type': 'text/calendar; charset=utf-8' })
     })
   })
 
