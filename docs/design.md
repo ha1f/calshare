@@ -1126,7 +1126,7 @@ npm run lint              # eslint . && prettier --check .
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
 ```
 
-`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` はローカルでは IP が `ip:unknown` の単一バケットになるため、`test:e2e` を続けて何度も走らせると 429 に達することがある。そのときは `rm -rf .wrangler/state && npx wrangler d1 migrations apply calshare --local` で作り直す（CI は毎回クリーンな環境なので影響しない）。
+`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` は `CF-Connecting-IP` を付けないので全テストが `ip:unknown` の単一バケットに入り、全 spec を 1 回通すだけで作成回数が上限に達する。そのため `test/e2e/fixtures.ts` はテストごとに別の送信元 IP を `CF-Connecting-IP` で名乗る（本番では Cloudflare がこのヘッダを上書きするので偽装には使えない）。それでも同じテストを何度も走らせると 429 に達することがある。そのときは `rm -rf .wrangler/state && npx wrangler d1 migrations apply calshare --local` で作り直す（CI は毎回クリーンな環境なので影響しない）。
 
 ### 10.5 CI（GitHub Actions）
 
