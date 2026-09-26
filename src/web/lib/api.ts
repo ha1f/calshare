@@ -37,7 +37,7 @@ export async function createPage(request: CreatePageRequest): Promise<CreatePage
   return (await response.json()) as CreatePageResponse
 }
 
-/** 編集画面の初期値を取得する（§11.5）。トークンは URL に載せず Authorization ヘッダで送る（§3.4） */
+/** 編集画面の初期値を取得する（§11.5）。トークンは URL に載せず Authorization ヘッダで送る（§3.3） */
 export async function getPage(id: string, editToken: string): Promise<GetPageResponse> {
   const response = await fetch(`/api/pages/${encodeURIComponent(id)}`, {
     headers: { Authorization: `Bearer ${editToken}` },
@@ -46,7 +46,7 @@ export async function getPage(id: string, editToken: string): Promise<GetPageRes
   return (await response.json()) as GetPageResponse
 }
 
-/** 編集内容を保存する（§11.5）。トークンが一致しなければ 401 になる（§3.4） */
+/** 編集内容を保存する（§11.5）。トークンが一致しなければ 401 になる（§3.3、§4.1） */
 export async function updatePage(
   id: string,
   editToken: string,

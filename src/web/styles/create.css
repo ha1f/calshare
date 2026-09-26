@@ -24,6 +24,7 @@
   box-sizing: border-box;
   resize: none;
   overflow: hidden;
+  min-height: 4.5em; /* 自動リサイズ前（初期表示・空欄）でも 3 行分の高さを確保する */
 }
 
 .preview {

@@ -199,6 +199,18 @@ test('日時未定の下書きで終日にチェックしても外れず、日�
 
   await expect(page.getByTestId('all-day-checkbox')).toBeChecked()
   await expect(page.getByTestId('start-input')).toHaveAttribute('type', 'date')
+  await expect(page.locator('#error-message')).toBeHidden()
+
+  // 開始日を入れないまま送信しても下書き（日時未定）として作成できる
+  const [request] = await Promise.all([
+    waitForCreateRequest(page),
+    page.getByRole('button', { name: 'URLを作る' }).click(),
+  ])
+  const fields = request.postDataJSON().fields
+  expect(fields.start).toBeNull()
+  expect(fields.end).toBeNull()
+
+  await page.waitForURL(DONE_URL_PATTERN)
 })
 
 test('日時未定の下書きで開始だけ入力しても既定の1時間で作成できる', async ({ page }) => {
