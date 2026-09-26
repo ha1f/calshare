@@ -9,8 +9,9 @@ export default defineConfig({
   use: { baseURL: `http://localhost:${port}` },
   webServer: {
     // PUBLIC_ORIGIN を上書きしないと wrangler.jsonc の vars.PUBLIC_ORIGIN のままになり、
-    // E2E_PORT で別ポートにしたときに API が返す url と実際のサーバのアドレスがずれる
-    command: `npm run build && npx wrangler dev --port ${port} --var PUBLIC_ORIGIN:http://localhost:${port}`,
+    // E2E_PORT で別ポートにしたときに API が返す url と実際のサーバのアドレスがずれる。
+    // wrangler dev はローカル R2 にフォントを自動投入しないため、起動前に seed-local-r2.mjs を挟む（§2.5）
+    command: `node scripts/seed-local-r2.mjs && npm run build && npx wrangler dev --port ${port} --var PUBLIC_ORIGIN:http://localhost:${port}`,
     url: `http://localhost:${port}/api/health`,
     reuseExistingServer: !process.env.CI,
   },

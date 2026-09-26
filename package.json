@@ -19,13 +19,15 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "hono": "^4.13.0"
+    "@resvg/resvg-wasm": "2.6.2",
+    "hono": "^4.13.0",
+    "satori": "0.32.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@types/node": "^22.20.0",
     "@eslint/js": "^10.0.0",
     "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.0",
     "esbuild": "^0.28.0",
     "eslint": "^10.11.0",
     "prettier": "^3.9.9",

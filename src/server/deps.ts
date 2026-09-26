@@ -7,7 +7,7 @@ import { createWebCryptoIdGenerator } from '../adapters/id/webCryptoIdGenerator'
 import { consoleLogger } from '../adapters/logger/consoleLogger'
 import { createFakeNotifier } from '../adapters/notifier/fakeNotifier'
 import { createWebhookNotifier } from '../adapters/notifier/webhookNotifier'
-import { createFakeOgpRenderer } from '../adapters/ogp/fakeOgpRenderer'
+import { createSatoriOgpRenderer } from '../adapters/ogp/satoriOgpRenderer'
 import { createR2ObjectStorage } from '../adapters/r2/r2ObjectStorage'
 import type { Clock } from '../ports/clock'
 import type { IdGenerator } from '../ports/idGenerator'
@@ -27,7 +27,7 @@ export interface Deps {
   reports: ReportRepository
   storage: ObjectStorage
   rateLimiter: RateLimiter
-  ogpRenderer: OgpRenderer // T10 までは fakeOgpRenderer（固定 PNG）を使う
+  ogpRenderer: OgpRenderer
   notifier: Notifier // REPORT_WEBHOOK_URL が無ければ fakeNotifier（no-op）。§9.4
   logger: Logger
   config: {
@@ -55,19 +55,40 @@ function buildClock(env: Env): Clock {
   return fakeClock(fixed)
 }
 
-/** Env → Deps。ogpRenderer は本物のアダプタが無いため Fake のまま。notifier は REPORT_WEBHOOK_URL があるときだけ webhookNotifier、無ければ fakeNotifier（§9.4） */
+// OGP 用フォントの R2 キー（docs/runbooks/fonts.md・scripts/seed-local-r2.mjs と一致させる。§2.5）
+const OGP_FONT_KEY = 'fonts/NotoSansJP-Regular.subset.otf'
+
+/** Env → Deps。notifier は REPORT_WEBHOOK_URL があるときだけ webhookNotifier、無ければ fakeNotifier（§9.4） */
 export function buildDeps(env: Env): Deps {
   const clock = buildClock(env)
   // origin は末尾スラッシュの有無に関わらず一致させたいので URL#origin で正規化する（§9.8 の比較対象）
   const publicOriginUrl = new URL(env.PUBLIC_ORIGIN)
+  const storage = createR2ObjectStorage(env.BUCKET, clock)
   return {
     clock,
     ids: createWebCryptoIdGenerator(),
     pages: createD1PageRepository(env.DB),
     reports: createD1ReportRepository(env.DB),
-    storage: createR2ObjectStorage(env.BUCKET, clock),
+    storage,
     rateLimiter: createD1RateLimiter(env.DB),
-    ogpRenderer: createFakeOgpRenderer(),
+    ogpRenderer: createSatoriOgpRenderer({
+      // `.wasm` の import は `test/unit`（Node、pool-workers を使わない）が deps.ts を読み込めるよう
+      // 動的 import にする。パスがリテラルなので wrangler・vitest-pool-workers のバンドラは静的解析
+      // でき、実行時に新しいモジュールを取りに行くわけではない（§2.5 の「トップレベルで重い初期化をしない」
+      // にも合う。初期化自体は createSatoriOgpRenderer が初回 render 時に遅延実行する）
+      loadWasm: async () => {
+        const [{ default: yoga }, { default: resvg }] = await Promise.all([
+          import('satori/yoga.wasm'),
+          import('@resvg/resvg-wasm/index_bg.wasm'),
+        ])
+        return { yoga, resvg }
+      },
+      loadFont: async () => {
+        const font = await storage.getFont(OGP_FONT_KEY)
+        if (font === null) throw new Error(`OGP font not found in R2: ${OGP_FONT_KEY}`)
+        return font
+      },
+    }),
     notifier: env.REPORT_WEBHOOK_URL
       ? createWebhookNotifier(env.REPORT_WEBHOOK_URL, consoleLogger)
       : createFakeNotifier(),
