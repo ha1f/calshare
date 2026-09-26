@@ -4,7 +4,7 @@ import {
   env,
   waitOnExecutionContext,
 } from 'cloudflare:test'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { systemClock } from '../../../src/adapters/clock/systemClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
@@ -13,6 +13,7 @@ import { createR2ObjectStorage, icsKey } from '../../../src/adapters/r2/r2Object
 import {
   CHANGE_BANNER_HOURS,
   GC_BATCH_SIZE,
+  GC_MAX_BATCHES_PER_RUN,
   RATE_LIMIT_COUNTER_RETENTION_DAYS,
 } from '../../../src/core/config/limits'
 import type { ChangeSnapshot, EventFields } from '../../../src/core/types'
@@ -27,7 +28,12 @@ const NOW = new Date('2026-09-16T01:00:00.000Z')
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
-/** R2 はテストファイル内で状態が残るので、ページ・レート制限のキーはテストごとにユニークにする */
+/**
+ * ページ ID を一意にする。R2 はテストファイル内で状態が残るため、同じ ID を使い回すと
+ * 前のテストが残した ics / ogp オブジェクトを誤って検証してしまう。
+ * レート制限のバケットキーも同じ関数で作るが、こちらは D1・memory とも各テストで空の状態から始まるため
+ * 必須ではなく、他のキーと混同しないための可読性目的
+ */
 function uniqueId(name: string): string {
   return `${name}-${crypto.randomUUID()}`
 }
@@ -104,7 +110,8 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
   })
 
   it(`${GC_BATCH_SIZE + 1} 件の期限切れをバッチに分けて全件削除する`, async () => {
-    const deps = buildDeps()
+    const infoSpy = vi.fn()
+    const deps = buildDeps({ logger: { info: infoSpy, warn: vi.fn(), error: vi.fn() } })
     const count = GC_BATCH_SIZE + 1
     const ids = Array.from({ length: count }, () => uniqueId('expired-batch'))
     for (const id of ids) {
@@ -119,6 +126,64 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
     for (const id of ids) {
       expect(await deps.pages.findById(id)).toBeNull()
     }
+    expect(infoSpy).toHaveBeenCalledWith(
+      'gc_completed',
+      expect.objectContaining({ deletedPageCount: count, batchCount: 2 }),
+    )
+  })
+
+  it('rate_limit_counters の掃除・ページ削除ループの失敗が gc_failed に伝わり、例外が再スローされる', async () => {
+    const errorSpy = vi.fn()
+    const deps = buildDeps({ logger: { info: vi.fn(), warn: vi.fn(), error: errorSpy } })
+    const expiredId = uniqueId('expired')
+    await deps.pages.create(buildInput(expiredId, new Date(NOW.getTime() - 1)))
+    vi.spyOn(deps.storage, 'deleteAllForPage').mockRejectedValue(new Error('r2 down'))
+    const deleteExpiredSpy = vi.spyOn(deps.rateLimiter, 'deleteExpired')
+    const clearExpiredSnapshotsSpy = vi.spyOn(deps.pages, 'clearExpiredSnapshots')
+    const deleteByIdsSpy = vi.spyOn(deps.pages, 'deleteByIds')
+
+    await expect(runGc(deps)).rejects.toThrow('r2 down')
+
+    // サブリクエスト上限などでページ削除ループが落ちても、掃除の 2 手順は先に終わっている
+    expect(deleteExpiredSpy).toHaveBeenCalledTimes(1)
+    expect(clearExpiredSnapshotsSpy).toHaveBeenCalledTimes(1)
+    expect(deleteByIdsSpy).not.toHaveBeenCalled()
+    // pages 行は残るので、次回の GC が同じページを拾って再試行できる
+    expect(await deps.pages.findById(expiredId)).not.toBeNull()
+    expect(errorSpy).toHaveBeenCalledWith(
+      'gc_failed',
+      expect.objectContaining({ deletedPageCount: 0, batchCount: 1 }),
+    )
+  })
+
+  it('rate_limit_counters の掃除自体が失敗しても gc_failed をログしてから再スローする', async () => {
+    const errorSpy = vi.fn()
+    const deps = buildDeps({ logger: { info: vi.fn(), warn: vi.fn(), error: errorSpy } })
+    vi.spyOn(deps.rateLimiter, 'deleteExpired').mockRejectedValue(new Error('d1 down'))
+
+    await expect(runGc(deps)).rejects.toThrow('d1 down')
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      'gc_failed',
+      expect.objectContaining({ deletedPageCount: 0, batchCount: 0 }),
+    )
+  })
+
+  it('reject された値が falsy でも失敗として扱い、gc_completed をログしない', async () => {
+    const infoSpy = vi.fn()
+    const errorSpy = vi.fn()
+    const deps = buildDeps({ logger: { info: infoSpy, warn: vi.fn(), error: errorSpy } })
+    const expiredId = uniqueId('expired')
+    await deps.pages.create(buildInput(expiredId, new Date(NOW.getTime() - 1)))
+    vi.spyOn(deps.storage, 'deleteAllForPage').mockRejectedValue(undefined)
+
+    await expect(runGc(deps)).rejects.toBeUndefined()
+
+    expect(infoSpy).not.toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledWith(
+      'gc_failed',
+      expect.objectContaining({ deletedPageCount: 0, batchCount: 1 }),
+    )
   })
 
   it('rate_limit_counters は古い窓だけ消し、新しい窓は残す', async () => {
@@ -153,7 +218,8 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
   })
 
   it('changedAt が CHANGE_BANNER_HOURS より古い previousSnapshot だけを NULL 化する', async () => {
-    const deps = buildDeps()
+    const infoSpy = vi.fn()
+    const deps = buildDeps({ logger: { info: infoSpy, warn: vi.fn(), error: vi.fn() } })
     const cutoff = new Date(NOW.getTime() - CHANGE_BANNER_HOURS * HOUR_MS)
     const futureExpiry = new Date(NOW.getTime() + DAY_MS)
     const oldId = uniqueId('old-banner')
@@ -181,6 +247,10 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
     expect((await deps.pages.findById(oldId))?.previousSnapshot).toBeNull()
     expect((await deps.pages.findById(oldId))?.changedAt).toBeNull()
     expect((await deps.pages.findById(boundaryId))?.previousSnapshot).not.toBeNull()
+    expect(infoSpy).toHaveBeenCalledWith(
+      'gc_completed',
+      expect.objectContaining({ clearedSnapshotCount: 1 }),
+    )
   })
 
   it('件数と所要時間を構造化ログに出す', async () => {
@@ -207,6 +277,29 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
 
 describe('runGc（Fake Deps）', () => {
   runGcContractTests((overrides) => buildFakeDeps({ clock: fakeClock(NOW), ...overrides }))
+
+  it(`期限切れが尽きなくても GC_MAX_BATCHES_PER_RUN 回で打ち切る`, async () => {
+    const infoSpy = vi.fn()
+    const deps = buildFakeDeps({
+      clock: fakeClock(NOW),
+      logger: { info: infoSpy, warn: vi.fn(), error: vi.fn() },
+    })
+    // 常に満杯のバッチを返すことで、期限切れが尽きない状況を再現する
+    const fixedIds = Array.from({ length: GC_BATCH_SIZE }, (_, i) => `stub-${i}`)
+    vi.spyOn(deps.pages, 'listExpired').mockResolvedValue(fixedIds)
+    const deleteByIdsSpy = vi.spyOn(deps.pages, 'deleteByIds').mockResolvedValue(undefined)
+
+    await runGc(deps)
+
+    expect(deleteByIdsSpy).toHaveBeenCalledTimes(GC_MAX_BATCHES_PER_RUN)
+    expect(infoSpy).toHaveBeenCalledWith(
+      'gc_completed',
+      expect.objectContaining({
+        deletedPageCount: GC_BATCH_SIZE * GC_MAX_BATCHES_PER_RUN,
+        batchCount: GC_MAX_BATCHES_PER_RUN,
+      }),
+    )
+  })
 })
 
 describe('runGc（本物の D1 / R2）', () => {
@@ -227,9 +320,13 @@ describe('runGc（本物の D1 / R2）', () => {
   })
 })
 
-describe('scheduled（src/server/index.ts の配線）', () => {
+describe('scheduled ハンドラ（src/server/index.ts）', () => {
   beforeEach(async () => {
     await env.DB.prepare('DELETE FROM pages').run()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('Cron Trigger から呼ばれる scheduled ハンドラが GC を実行する', async () => {

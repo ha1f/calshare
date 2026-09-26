@@ -19,40 +19,44 @@ export async function runGc(deps: Deps): Promise<void> {
 
   let deletedPageCount = 0
   let batchCount = 0
-  let deletionError: unknown
+  let clearedSnapshotCount = 0
+  let failed = false
+  let caughtError: unknown
   try {
+    // ページ削除ループはサブリクエスト数がページ数に比例して増える。上限に達して例外で止まっても
+    // rate_limit_counters の掃除と previous_snapshot の失効は済んでいるよう、先に実行する（§2.6、§14.1）
+    await deps.rateLimiter.deleteExpired(
+      new Date(now.getTime() - RATE_LIMIT_COUNTER_RETENTION_DAYS * DAY_MS),
+    )
+    clearedSnapshotCount = await deps.pages.clearExpiredSnapshots(
+      new Date(now.getTime() - CHANGE_BANNER_HOURS * HOUR_MS),
+    )
+
     while (batchCount < GC_MAX_BATCHES_PER_RUN) {
       const ids = await deps.pages.listExpired(now, GC_BATCH_SIZE)
       if (ids.length === 0) break
       batchCount++
-      // R2 の削除が失敗しても pages 行は残るので、次回の GC が同じページを拾って再試行する
+      // R2 の削除を先に行う。失敗すれば pages 行を残し、次回の GC が同じページを拾って再試行する
       await Promise.all(ids.map((id) => deps.storage.deleteAllForPage(id)))
       await deps.pages.deleteByIds(ids)
       deletedPageCount += ids.length
       if (ids.length < GC_BATCH_SIZE) break
     }
   } catch (error) {
-    // ページ削除に失敗しても rate_limit_counters の掃除と previous_snapshot の失効は続ける。
-    // ここで止めると前者が延々と積み上がる（§14.1）
-    deletionError = error
+    failed = true
+    caughtError = error
   }
-
-  await deps.rateLimiter.deleteExpired(
-    new Date(now.getTime() - RATE_LIMIT_COUNTER_RETENTION_DAYS * DAY_MS),
-  )
-  const clearedSnapshotCount = await deps.pages.clearExpiredSnapshots(
-    new Date(now.getTime() - CHANGE_BANNER_HOURS * HOUR_MS),
-  )
   const durationMs = Date.now() - startedAt
 
-  if (deletionError) {
+  if (failed) {
     deps.logger.error('gc_failed', {
-      error: deletionError,
+      error: caughtError,
       deletedPageCount,
       batchCount,
+      clearedSnapshotCount,
       durationMs,
     })
-    throw deletionError
+    throw caughtError
   }
   deps.logger.info('gc_completed', {
     deletedPageCount,
