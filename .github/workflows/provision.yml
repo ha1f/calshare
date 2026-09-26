@@ -326,4 +326,7 @@ jobs:
           # --remote を付けないとローカルシミュレータ向けになり本番 R2 に届かない（要検証）。
           npx wrangler@4 r2 object put calshare/fonts/NotoSansJP-Regular.subset.otf \
             --file dist/fonts/NotoSansJP-Regular.subset.otf --remote
-          echo "フォントを R2 (fonts/NotoSansJP-Regular.subset.otf) に配置しました" | tee -a "$GITHUB_STEP_SUMMARY"
+          # OFL 1.1 はライセンス本文と著作権表示をフォントと一緒に置くことを求める（docs/licenses/noto-sans-jp.md）
+          npx wrangler@4 r2 object put calshare/fonts/OFL.txt \
+            --file test/fixtures/fonts/OFL.txt --remote
+          echo "フォントとライセンス本文を R2 (fonts/NotoSansJP-Regular.subset.otf, fonts/OFL.txt) に配置しました" | tee -a "$GITHUB_STEP_SUMMARY"
