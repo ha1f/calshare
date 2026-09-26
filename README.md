@@ -32,4 +32,4 @@ npm run test:e2e      # e2e（他の作業ツリーと同時に動かす場合�
 
 ## ライセンス
 
-未定（Issue 参照）。
+オープンソースライセンスでは提供していません（All rights reserved）。閲覧と、Issue / Pull Request による本リポジトリへの貢献のみ許可します。詳細は [LICENSE](LICENSE)。第三者の成果物はそれぞれのライセンスに従います（[docs/licenses](docs/licenses)）。
