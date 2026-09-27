@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { routePath } from 'hono/route'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { Deps } from './deps'
 import type { Env } from './env'
 import { ApiRequestError, toApiErrorResponse } from './lib/errors'
@@ -41,7 +40,7 @@ export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
 
     if (isApi) {
       const { status, body } = toApiErrorResponse(err)
-      return c.json(body, status as ContentfulStatusCode)
+      return c.json(body, status)
     }
     return c.text('Internal Server Error', 500)
   })
