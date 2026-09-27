@@ -89,7 +89,7 @@ export function detectDateTokens(text: string): DateTokenMatch[] {
       kind: 'relative',
       offsetDays: relativeOffset(m[0]),
     })),
-    // 各正規表現は曜日を表すキャプチャグループを 1 つだけ持ち、一致すれば必ず埋まる
+    // 以下 3 つ（NEXT_WEEK_RE / THIS_WEEK_RE / WEEKDAY_RE）は曜日を表すキャプチャグループを 1 つだけ持ち、一致すれば必ず埋まる
     ...collectMatches(text, NEXT_WEEK_RE, (m) => ({
       kind: 'nextWeek',
       weekday: WEEKDAY_CHARS.indexOf(requireDefined(m[1], 'NEXT_WEEK_RE: missing weekday group')),
