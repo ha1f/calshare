@@ -7,9 +7,9 @@
 - docs/concept.md は「なぜ作るか」、docs/design.md は「何を作るか」を決める。本書は「どう書くか」を決める。
 - 本書の規則は、2026-09-27 時点で一次資料（公式ドキュメント・型定義・npm のメタデータ）で確認できたものだけを載せる。確認できなかった提案は末尾の「要検証」に分けてあり、規則ではない。
 - docs/concept.md の 3 原則（入力欄は 1 つ、設定を選ばせない、詳細ページの仕事は次の作成者を作ること）と docs/design.md §11.6 の規約（core は外部依存ゼロ、定数は `core/config/limits.ts` にだけ置く、`app.ts` はルートの登録だけ）に反する提案は、技術的に優れていても採らない。
-- コメントの書き方（日本語、読み手は経緯を知らない同僚、変わるものを写さない）は CLAUDE.md に従う。本書では繰り返さない。
+- コメントの書き方は §3.3 に従う。
 - 各規則には理由を 1 文添える。根拠の URL は文末の脚注にまとめる。
-- docs/design.md §11.6・§11.7 の「後続 PR はこのファイルを変更しない」は並列実装期間（T1〜T19）の規約で、完了後は本書に従う。本書と設計書が食い違う箇所（`target: 'es2020'`、`recommended` のみ、`scripts/build-web.mjs` 不変更など）は、実装を変える PR で設計書側も同時に直す。
+- docs/design.md §11.6 の「後続 PR は変更しない」は並列実装期間（T1〜T19）の規約で、完了後は本書に従う。本書と設計書が食い違う箇所は、実装を変える PR で設計書側も同時に直す。
 
 依存の更新方針は §1、判断の背景と採らなかった案は §9〜§11 にある。何かを追加・変更したくなったら、まず §9 と §10 に同じ提案が無いかを見る。
 
@@ -71,7 +71,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 | `types` | core / web は `[]`、server は `["@cloudflare/vitest-pool-workers/types"]` | core と web に Node の型（`process` `Buffer`）が漏れないことを tsc で保証する（docs/design.md §11.7） |
 | `lib` の追加 | core: `WebWorker`、web: `DOM` `DOM.Iterable` | core は Web Crypto を使うため WebWorker が要る。web だけが DOM を触る |
 
-追加 4 項目（`verbatimModuleSyntax` 以下）は 2026-09-27 に HEAD `5930ec4` で 4 フラグ付きの tsc を流して実測した。core 15 件（`core/prefill/resolvePrefill.ts` 10、`parse/dateTokens.ts` 3、`parse/locationTitle.ts` 2）、server プロジェクト合計 67 件（`src/server` 12、`src/adapters` 6、`src/core` 15、`test/unit` + `test/integration` 34）、web プロジェクト合計 33 件（`src/web` 11、`src/core` 15、`test/unit/web` 7）。core の 15 件は 3 プロジェクトに重複して数えられている。導入は層ごとの PR で行い、各層が 0 件になった時点でその層の tsconfig にフラグを入れる（§10）。
+追加 4 項目（`verbatimModuleSyntax` 以下）は 2026-09-27 に HEAD `5930ec4` で 4 フラグ付きの tsc を流して実測した。core 15 件（`core/prefill/resolvePrefill.ts` 10、`parse/dateTokens.ts` 3、`parse/locationTitle.ts` 2）、server プロジェクト合計 67 件（`src/server` 12、`src/adapters` 6、`src/core` 15、`test/unit` + `test/integration` 34）、web プロジェクト合計 33 件（`src/web` 11、`src/core` 15、`test/unit/web` 7）。core の 15 件は 3 プロジェクトに重複して数えられている。導入は層ごとの PR で行った。core → server / web の順に、0 件になった層の tsconfig に先に入れ、3 つがそろった時点で base（`tsconfig.json`）へ集約した（§10）。
 
 `noPropertyAccessFromIndexSignature` は採らない。`element.dataset.testid` のような慣用的な書き方が `dataset['testid']` になり、読みにくくなる割に守れるものが少ない（実測で web 40 件・server 27 件）。`erasableSyntaxOnly` `allowImportingTsExtensions` `rewriteRelativeImportExtensions` も採らない。tsc がファイルを直接実行する構成向けの設定で、noEmit + バンドラの構成には当てはまらない[^tsconfig-ref]。
 
@@ -126,7 +126,24 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 
 ### 3.3 コメント
 
-CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の節番号（`§9.1` のような参照）をコメントに書いてよい。docs/design.md が読み手に共有されている前提で、判断の背景をコードから辿れるようにするため。
+- コメントは日本語で。
+- 読み手は、この会話を見ていない同僚。今のコードだけを見て読む。
+- 各コメントに「これを読まないと何を壊すか」を問う。答えられないなら消す。
+- 読み手がコードだけでは分からないことだけ書く。コードの言い換えや作業の経緯は書かない。
+  - コメントで補いたくなったら、先に名前や構造で伝えられないか考える。
+  - 読み手が普通は別の書き方を期待する箇所は、普通の書き方を示してからそうしない理由を書く。
+  - 一文で済むことに例を足さない。
+  - 判断の経緯を残したければ PR 説明に書く。
+- コメントは誰も更新しない前提で書く。変わるものを写すと、変わった頃には嘘になっている。
+  - ログメッセージ、UI 文言、他ファイルの行番号など。どうしても要るなら参照先の名前だけ書く。
+- 読み手が持っていない語彙を使わない。
+  - 設計文書の符牒（M1、D-4 など）、この会話でしか通じない呼び名や比喩。ただし docs/design.md の節番号（`§9.1` のような参照）は読み手に共有されているので符牒に当たらない。
+  - 独特な言い回しを使わない: 正本 / 配線 / スクリム / 〜に倒す / 〜に閉じる / 〜の器 / 噛み合わない / 素直 / 素通り / 巻き添え / 構造的に / 〜であって〜ではない /「取り返しがつかない」等の大げさな断定。
+  - 言い換え: 正本 →「定義はここ」、配線 →「モジュールに登録する」、〜に倒す →「〜として扱う」。
+- 強調に頼らない。★・太字・ダッシュは 1 ファイルに 1 つまで。
+- 1 つのコメントは 3 文以内を目安にする。
+- コメント密度は周囲のファイルに合わせる。
+- doc コメント（JSDoc 等）は利用者向けに、何をするかと契約を書く。目的（何のためにあるか）を先に書き、方法（どう実現しているか）を後に書く。
 
 ---
 
@@ -267,7 +284,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 
 - エントリは `src/web/*/main.ts`。出力は `dist/assets/js/<dir>.js`。HTML・CSS・画像・`_headers` はコピーするだけ。
 - `format: 'esm'`、`bundle: true`、`minify: true`、`target: 'es2022'`。tsconfig の `target` と揃える。対象ブラウザ（モバイル Safari / Chrome、LINE 内蔵ブラウザ = システム WebView）は ES2022 を実行できる。browserslist 連携のプラグインは入れない[^esbuild-target]。
-- `create` と `edit` が `preview.ts` `tapEdit.ts` を共有している。`splitting: true` + `chunkNames: 'chunks/[name]-[hash]'`（`outdir` からの相対パス。`dist/assets/js/chunks/` に出る）で共有チャンクに出せる（`format: 'esm'` が前提）[^esbuild-splitting]。導入前に `metafile: true` を一時的に付けて重複量を測り、削減が小さければ入れない。`metafile` は常設しない[^esbuild-metafile]。
+- `create` と `edit` が `preview.ts` `tapEdit.ts` を共有している。`splitting: true` + `chunkNames: 'chunks/[name]-[hash]'`（`outdir` からの相対パス。`dist/assets/js/chunks/` に出る）で共有チャンクに出せる（`format: 'esm'` が前提）[^esbuild-splitting]が、使わない。合計バイト数は減るが、共有チャンクが別リクエストになり、どの画面もページ単体の初回ロード（バイト数・リクエスト数）が増えるため。判断はページ単体の初回ロードで行い、全画面の合計では行わない（§9.2）。`metafile` は常設しない[^esbuild-metafile]。
 - ファイル名にハッシュを付けず、`_headers` の `/assets/*` を `max-age=300` にしている。ハッシュ化には静的 HTML の `<script src>` をビルド時に書き換える仕組みが要り、「静的 HTML はそのままコピーする」足場の単純さを壊す（§9）。
 - `scripts/build-web.mjs` を変えるときは、e2e（`npm run test:e2e`）と `dist/` の目視で確認する。
 
@@ -332,7 +349,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
   - `applyD1Migrations` `createExecutionContext` `waitOnExecutionContext` `reset` は `cloudflare:test` のまま使う（非推奨タグは無い）。
 - ストレージ分離はテストファイル単位。同一ファイルの `it()` 間でデータが残る。`test/integration/setup.ts` の `beforeEach` で `reset()`（全バインディングのデータを削除）を呼び、その直後に `applyD1Migrations` を再適用する。各ファイルに `DELETE FROM ...` を書かない[^pool-workers-isolation][^pool-workers-test-apis]。
   - `reset()` は D1 のテーブル定義も削除する（実測。`reset()` 直後の `sqlite_master` が空配列になることを確認した）。`applyD1Migrations` を必ず後ろに置く。
-  - 導入前後で `npm run test:integration` の所要時間を比べ、大きく伸びる（目安 1.5 倍超）なら `DELETE FROM` 方式に戻して理由を setup.ts に書く。
+  - `npm run test:integration` の所要時間は `reset()` 導入前の約 1.05 倍（手元で 12.8 秒 → 13.0〜13.6 秒、2026-09-27）。
 - `ctx.waitUntil` の完了を待つ経路（OGP の R2 put、Webhook）は `createExecutionContext()` で ctx を作って `app.fetch(req, env, ctx)` を直接呼び、`waitOnExecutionContext(ctx)` の後に検証する。
 - 状態変更 API のリクエストは `test/integration/helpers/jsonRequest.ts` で組む（Content-Type・Origin を付ける）。
 - 時刻・ID は `createApp(fakeDeps)` で Fake に差し替える。`.dev.vars` に依存しない（`vitest.config.ts` の `miniflare.bindings` が優先する）。
@@ -409,7 +426,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 ### 9.1 原則
 
 - `src/core` は外部依存ゼロ。ブラウザに同梱してライブプレビューに使うため、バンドルサイズと「サーバとプレビューが同じ実装」を守る（docs/design.md §2.1）。ESLint と `tsconfig.core.json` の `types: []` で機械的に保証する。
-- `src/server` `src/adapters` への依存追加は、`wrangler deploy --dry-run` の出力サイズを PR に前後で書く。上限は uncompressed 64 MiB（Free / Paid 同じ。圧縮後サイズの上限は無い）[^workers-limits]で、resvg + satori を含めても余裕はあるが、推移を記録して増分の理由を説明できるようにする。docs/design.md §2.5 の「Free 3MB / Paid 10MB」は旧値。
+- `src/server` `src/adapters` への依存追加は、`wrangler deploy --dry-run` の出力サイズを PR に前後で書く。上限は uncompressed 64 MiB（Free / Paid 同じ。圧縮後サイズの上限は無い）[^workers-limits]で、resvg + satori を含めても余裕はあるが、推移を記録して増分の理由を説明できるようにする。
 - `src/web` への依存追加は原則しない。必要なら esbuild の出力サイズを前後で比べる。
 - 依存を足すときは license-review スキルで判定し、`docs/licenses/` に記録する。
 - 「自前実装を保つ」判断は、calshare 固有の要件（URL を `[リンク]` に置換、JST 固定、Crockford Base32、順序付きの検証）がライブラリの汎用機能と合わないことによる。要件が変わったら見直す。
@@ -442,6 +459,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 | TypeScript Project References | 採らない | §2.1 | 型チェックが遅くなったら `composite` + `references` を検討 |
 | esbuild のハッシュ付きファイル名 + `immutable` キャッシュ | 採らない | 静的 HTML の書き換えが要り足場が複雑になる。5 分 TTL で実害は出ていない | デプロイ直後の新旧混在が問題になったら、HTML テンプレート化と dist の一致テストを含めて実施 |
 | browserslist 連携（esbuild-plugin-browserslist） | 採らない | 対象ブラウザが狭く、`target: 'es2022'` で足りる | 無し |
+| esbuild の splitting（共有チャンク） | 採らない | §6.1。どの画面もページ単体の初回ロードが増える | 画面遷移で共有チャンクのキャッシュが効く使い方が主になったら、metafile でページ単体の初回ロードを測り直す |
 | `field-sizing: content` / `<form>` 化 | 採らない | §6.2 | field-sizing が Widely Available になったら `@supports` 併用を検討 |
 | `<dialog>` / popover / View Transitions | 該当なし | 使う画面が無い | モーダルが要るときは `<dialog>` + `showModal()` を第一候補に |
 | TC39 Signals | 採らない | Stage 1〜2 でブラウザ未実装。ポリフィルは外部依存 | Stage 4 かつ Baseline 化 |
@@ -453,9 +471,9 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 
 ## 10. この版で決めた変更（要約）
 
-§12 の計画で実施する。ここでは「現状 → 変更後」を一覧にする。
+いずれも実施済み（PR #63〜#72）。ここでは「変更前 → 変更後」を記録として残す。
 
-| 領域 | 現状 | 変更後 |
+| 領域 | 変更前 | 変更後 |
 |---|---|---|
 | npm | `.npmrc` なし | `engine-strict=true` |
 | tsconfig | `strict` のみ | `verbatimModuleSyntax` `noUncheckedIndexedAccess` `exactOptionalPropertyTypes` `noImplicitOverride` を追加。層ごとに直し、0 件になった層の tsconfig（core → server / web）に先に入れ、最後に base へ移す |
@@ -463,7 +481,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 | Hono | 各ルートで try / catch と `c.json(body, status)` | `ApiRequestError` を throw し `app.onError` で 1 箇所変換 |
 | CSP | Trusted Types なし | `require-trusted-types-for 'script'` を `headers.ts` と `_headers` の両方へ |
 | D1 | `d1RateLimiter` がループ内で `prepare` | ループ外で 1 回 `prepare`、`bind` を繰り返す |
-| esbuild | `target: 'es2020'` | `'es2022'`。splitting は metafile で測ってから。docs/design.md §11.7 と `scripts/build-web.mjs` の先頭コメントも同時に更新 |
+| esbuild | `target: 'es2020'` | `'es2022'`。splitting は採らない（§9.2）。docs/design.md §11.7 と `scripts/build-web.mjs` の先頭コメントも同時に更新 |
 | web | fetch にタイムアウトなし | `AbortSignal.timeout(API_REQUEST_TIMEOUT_MS)` |
 | web | aria-live / label / フォーカス戻しなし | `role="alert"` `aria-live="polite"`、`aria-labelledby`、`viewButton.focus()` |
 | CSS | ハードコード色、ダークモードなし | `:root` のカスタムプロパティ + `prefers-color-scheme: dark` |
@@ -492,7 +510,6 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 
 - `package.json` の `imports`（`#core/*`）で test 配下の深い相対 import（`../../../../src/core/...` が 61 ファイル）を短くする。`moduleResolution: bundler` ではサブパス import の拡張子省略はサポート外（Working as Intended）で、対象パターンに `.ts` を付ける（`"#core/*": "./src/core/*.ts"`）必要がある[^ts-imports-issue]。tsc・esbuild・Vitest（Vite）・wrangler の 4 系統で同じ解決になるかが未検証。
 - CI に `npm audit signatures` を足す。署名を提供しないパッケージで誤検知しうるため、非ブロッキングから始める。
-- esbuild の splitting による削減量（§6.1）。metafile で測ってから判断する。
 - Cache API（`caches.default`、`withEdgeCache`）は Cloudflare 公式ドキュメントで「カスタムドメインの Worker だけが機能する Cache 操作を持つ」と明記されている[^cf-cache-api]。現状 `wrangler.jsonc` は `workers_dev: true`（§4.1。独自ドメインを割り当てるまでの暫定）なので、`*.workers.dev` 上で `withEdgeCache` が実際にヒットするかは未確認。ヒットしなくても `produce()` が都度実行されるだけで壊れないが、キャッシュ導入の効果（D1・R2 の負荷軽減）が出ていない可能性がある。デプロイ環境（workers.dev、後にカスタムドメイン）で同じリクエストを 2 回送り、2 回目に `cache.match` がヒットするかを確認し、結果を Issue に記録する。
 
 ---

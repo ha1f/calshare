@@ -20,7 +20,7 @@
 | クライアント JS | バニラ TypeScript（esbuild） | `core/` をそのままブラウザに同梱してライブプレビュー |
 | 静的ページのヘッダ | Static Assets の `_headers` ファイル | 静的ページは Worker を通らないので CSP 等はここで付ける（§9.1。pool-workers・`wrangler dev` の両方で動作確認済み〈T1〉、§10.2） |
 | テスト | Vitest（unit）/ `@cloudflare/vitest-pool-workers`（integration）/ Playwright（e2e） | 3 層すべて足場 PR で疎通させる |
-| CI / デプロイ | GitHub Actions + `cloudflare/wrangler-action` | lint → typecheck → unit → integration → build → e2e → main のみ deploy |
+| CI / デプロイ | GitHub Actions（GitHub 公式 action のみ。wrangler は `npm ci` 済みの `npx wrangler` で呼ぶ。§10.5） | lint → typecheck → unit → scripts → build → integration → e2e → main のみ deploy |
 | 定期実行 | Cloudflare Cron Triggers | 保持期限切れの GC を日次 |
 | 通報通知 | Discord / Slack Incoming Webhook | 運用者 1 人向けの最小構成 |
 
@@ -42,7 +42,7 @@
 | 単体テスト | Vitest（Node） | `core/` は外部依存ゼロなので Node で高速に回せる |
 | 結合テスト | `@cloudflare/vitest-pool-workers` | workerd 上で D1・R2・Cache API・`ctx.waitUntil` を実機同等に再現できる |
 | e2e | Playwright | `wrangler dev` を `webServer` として起動し、モバイル UA（LINE 内蔵ブラウザ相当）もエミュレートできる |
-| CI | GitHub Actions | 個人アカウントの無料枠で足りる。`cloudflare/wrangler-action` で main マージ後に自動デプロイ |
+| CI | GitHub Actions | 個人アカウントの無料枠で足りる。`npx wrangler deploy` で main マージ後に自動デプロイ（§10.5） |
 
 ### 1.2 コストとの整合（concept §08〜§09 との突き合わせ）
 
@@ -238,7 +238,7 @@ async function handleOgp(id: string, request: Request, env: Env, ctx: ExecutionC
 - **satori の読み込み方**: satori の既定エントリ（`satori`）はレイアウトエンジン yoga の asm.js 版をモジュール読み込み時に初期化する。Workers には「グローバルスコープの評価は 1 秒以内」という起動時間制限があり、これに掛かるとデプロイ自体が失敗し、`wrangler deploy --dry-run` では検出できない。そのため **`satori/standalone` エントリを使う。設計時点で想定していた `satori/wasm` + `yoga-wasm-web` は現行の satori では無くなっており（`satori/standalone` に統合され、`yoga.wasm`（`satori/yoga.wasm` として同梱）を `init()` に渡す形に変わった）、実装時点の実物（`node_modules/satori/package.json` の `exports`）に合わせてこちらを使う。**
   **satori のバージョンは `0.32.0` に固定する（`^0.33.0` 以降は不可、実機確認済み）**: satori 0.33.0 でテキストシェイピングに `harfbuzzjs` が追加されたが、`harfbuzzjs` は自身の wasm（`hb.wasm`）を Node の `fs.readFile` 相当（`readAll`）で読む実装で、これを差し替える公開 API が satori 0.33 系に無い。`satori/standalone` の `init()` は yoga の wasm しか受け付けないため、Workers（fs を持たない）では `harfbuzzjs` の初期化が `no such file or directory` で必ず失敗する（vitest-pool-workers で実機確認済み）。`harfbuzzjs` 導入前の最終版である `0.32.0` を使うことでこの依存を避ける。
   resvg は `@resvg/resvg-wasm` の `initWasm()` に `index_bg.wasm` を渡す。どちらの wasm も `import` で静的に束ね（wrangler の既定 `CompiledWasm` ルールが `**/*.wasm` に効くため `wrangler.jsonc` の `rules` 追加は不要、実機確認済み）、`init`/`initWasm` は初回 render 時に遅延実行する。トップレベルで重い初期化は行わない。初期化結果と `R2` から読んだフォントはモジュールスコープでメモ化する。T10 の完了条件に「`wrangler dev` の起動と初回リクエストが通る」「1 回の render に要する CPU 時間（フォントパース込み）の実測」を含め、実機の起動制限は T19 の初回デプロイで確認する。
-- **フォント**: satori はデフォルトフォントを持たず `fonts` オプションが必須。Noto Sans JP のサブセット（**JIS 第 1 水準** + かな + 英数記号 + 一般的な約物。約 765KiB、実測済み）を **R2 の `fonts/NotoSansJP-Regular.subset.otf` に置き**、isolate 内でモジュールスコープにメモ化して読み込む。スクリプトに同梱しないのは Paid でも 10MB（gzip 後）の上限があるため。サブセット生成は運用基盤の PR が provisioning 用に用意した `scripts/fonts/subset.sh`（pyftsubset を呼ぶ）に一本化し、T10 で新たに `scripts/subset-font.mjs` は作らない。第 2 水準（「麹町」「髙」のような人名・地名の字）は含めない。第 1 水準のみにした理由と、含まない文字が OGP 画像上で豆腐になる制限は `docs/licenses/noto-sans-jp.md`・`docs/runbooks/fonts.md` に記録する。OFL のライセンスファイルは `test/fixtures/fonts/OFL.txt` に含める。**satori は `SatoriOptions.fonts`（配列オブジェクト自体）を鍵にした `WeakMap` でパース結果をキャッシュする**（`node_modules/satori/dist/standalone.js` の該当箇所をソースで確認済み）。したがって `fonts: [{ data, ... }]` を render のたびに新しい配列リテラルで渡すと毎回キャッシュミスしてパースし直しになる。`createSatoriOgpRenderer` は `fonts` 配列を wasm・フォントと同じタイミングで 1 回だけ組み立て、以後の render すべてで同じ配列参照を渡すことでこのキャッシュを効かせる（T10 で実測: この対策により 2 回目以降の render が短縮した。§14.1）。
+- **フォント**: satori はデフォルトフォントを持たず `fonts` オプションが必須。Noto Sans JP のサブセット（**JIS 第 1 水準** + かな + 英数記号 + 一般的な約物。約 765KiB、実測済み）を **R2 の `fonts/NotoSansJP-Regular.subset.otf` に置き**、isolate 内でモジュールスコープにメモ化して読み込む。現行のサイズ上限（uncompressed 64 MiB、§1.2）なら同梱もできるが、現状は R2 から読む。サブセット生成は運用基盤の PR が provisioning 用に用意した `scripts/fonts/subset.sh`（pyftsubset を呼ぶ）に一本化し、T10 で新たに `scripts/subset-font.mjs` は作らない。第 2 水準（「麹町」「髙」のような人名・地名の字）は含めない。第 1 水準のみにした理由と、含まない文字が OGP 画像上で豆腐になる制限は `docs/licenses/noto-sans-jp.md`・`docs/runbooks/fonts.md` に記録する。OFL のライセンスファイルは `test/fixtures/fonts/OFL.txt` に含める。**satori は `SatoriOptions.fonts`（配列オブジェクト自体）を鍵にした `WeakMap` でパース結果をキャッシュする**（`node_modules/satori/dist/standalone.js` の該当箇所をソースで確認済み）。したがって `fonts: [{ data, ... }]` を render のたびに新しい配列リテラルで渡すと毎回キャッシュミスしてパースし直しになる。`createSatoriOgpRenderer` は `fonts` 配列を wasm・フォントと同じタイミングで 1 回だけ組み立て、以後の render すべてで同じ配列参照を渡すことでこのキャッシュを効かせる（T10 で実測: この対策により 2 回目以降の render が短縮した。§14.1）。
 - **入力の前処理（`toOgpInput`）**: 絵文字・制御文字（Cc）・書式制御文字（Cf。ZWJ・ZWSP・BOM・RLO 等）・異体字セレクタは描画前に除去する。サブセットに無い漢字（JIS 第 1 水準外）や一般記号は判別できないため除去せず、satori が該当グリフを描かないことで例外にならずに吸収する（結果として空白の穴になる。§14.1「OGP のフォント未収録文字」）。タイトルは詳細ページで正しく見えるので、OGP から落としても価値は失われない。絵文字を画像で描く `graphemeImages` は外部取得が要るので採らない。ユーザーテキスト（タイトル・場所）は `ogpTemplate` の CSS（`-webkit-line-clamp` + `text-overflow: ellipsis`）で 2 行までに切り詰める。
 - **satori への入力**: satori は React 要素形状（`{ type, props: { style, children } }`）を要求し、`hono/jsx` の JSXNode はそのまま渡せない。`OgpRenderer` の実装は素のオブジェクトツリーを組む。ユーザー入力は**テキストノードとしてのみ**渡し、文字列連結で SVG や CSS を組まない。satori はテキストを SVG のパスに変換するので、`<` `&` を含む入力でも SVG/HTML 注入にはならない（この不変条件を T10 のテストで固定する）。
 - **なりすまし対策**: OGP テンプレートには固定文言「予定の共有」とサービス名を必ず含める。「【○○銀行】…のお知らせ」のようなタイトルがサービスのブランドで描かれても公式通知に見えないようにする。デザインの未決事項（§14.2）にこの制約を添える。
@@ -1137,9 +1137,10 @@ npm run build             # node scripts/build-web.mjs（src/web → dist/）
 npm run test:unit         # vitest run --project unit
 npm run test:integration  # vitest run --project integration（vitest-pool-workers）。Static Assets（env.ASSETS.fetch）を
                            # dist/ から検証するテストがあるため、先に npm run build が必要（確認済み・T1）
+npm run test:scripts      # node --test（scripts/**/*.test.mjs と .claude/skills/**/*.test.mjs）
 npm run test:e2e          # playwright test（webServer で build → wrangler dev を自動起動。E2E_PORT=8791 のように指定すると別ポートで起動し、複数の作業ツリーで同時に走らせられる。
                            # wrangler dev には --var PUBLIC_ORIGIN:http://localhost:<port> も渡すので、API が返す url は実際のポートと一致する）
-npm run test              # unit + integration
+npm run test              # unit + integration + scripts
 npm run lint              # wrangler types → eslint . && prettier --check .（型情報付き lint が worker-configuration.d.ts を読む）
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
 ```
@@ -1306,6 +1307,8 @@ export const REPORT_COUNT_WARNING_THRESHOLD = 3
 export const WEBHOOK_FETCH_TIMEOUT_MS = 5000
 /** Google カレンダーリンクの details に載せるメモの最大文字数（§7.1） */
 export const MAX_CALENDAR_DETAILS_LENGTH = 500
+/** ブラウザから API を呼ぶ fetch を打ち切るまでの時間。回線が不安定でも送信ボタンが固まって見えないようにする（docs/guidelines.md §6.4） */
+export const API_REQUEST_TIMEOUT_MS = 10000
 export const PAGE_ID_LENGTH = 12
 export const CHANGE_BANNER_HOURS = 48
 export const DETAIL_CACHE_MAX_AGE_SECONDS = 60
@@ -1687,11 +1690,12 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
   "dev": "npm run build && wrangler dev",
   "build": "node scripts/build-web.mjs",
   "typecheck": "wrangler types && tsc -p tsconfig.core.json && tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
-  "lint": "eslint . && prettier --check .",
+  "lint": "wrangler types && eslint . && prettier --check .",
   "format": "prettier --write .",
   "test:unit": "vitest run --project unit",
   "test:integration": "vitest run --project integration",
-  "test": "npm run test:unit && npm run test:integration",
+  "test:scripts": "node --test \"scripts/**/*.test.mjs\" \".claude/skills/**/*.test.mjs\"",
+  "test": "npm run test:unit && npm run test:integration && npm run test:scripts",
   "test:e2e": "playwright test"
 }
 ```
@@ -1703,11 +1707,9 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "calshare",
   "main": "src/server/index.ts",             // wrangler が直接バンドルする。esbuild は web アセットのみ
-  "compatibility_date": "2026-08-22",         // 実装時の実機確認: T1 実施日（2026-09-17）そのままだと
-                                               // 「このワーカーは compatibility date "2026-09-17" を要求するが、
-                                               // このサーバのバイナリが対応する最新の日付は "2026-08-22"」で
-                                               // pool-workers（miniflare 同梱の workerd）が起動に失敗した。
-                                               // wrangler 4.133.0 に同梱の workerd が対応する最新日付を使う
+  "compatibility_date": "2026-08-22",         // `@cloudflare/vitest-pool-workers` に同梱の workerd
+                                               // （`npm ls workerd` の pool-workers 配下）が対応する最新日付を使う。
+                                               // wrangler 単体の更新では動かさない（docs/guidelines.md §1.1）
   "compatibility_flags": ["nodejs_compat"],  // 確認済み（T1）: T1 自体は nodejs_compat を必要としないが、
                                               // wrangler.jsonc は crons（T13）以外での変更が §12 の規約で禁じられているため、
                                               // T10（satori/resvg）で必要になることを見越して T1 の時点で付けておく。付けても
@@ -1729,8 +1731,12 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
     }
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "calshare" }],
-  "vars": { "PUBLIC_ORIGIN": "http://localhost:8787", "SERVICE_NAME": "calshare" }
-  // "triggers": { "crons": ["0 19 * * *"] } は T13 で追加する（§2.6）
+  "vars": { "PUBLIC_ORIGIN": "http://localhost:8787", "SERVICE_NAME": "calshare" },
+  // .otf は既定ルールに無いため、test/integration/ogp/satoriOgpRenderer.test.ts が
+  // フィクスチャフォントを import するために追加する（T10）。fallthrough: false は
+  // 既定の **/*.bin ルールを無効にする警告を消すため
+  "rules": [{ "type": "Data", "globs": ["**/*.otf"], "fallthrough": false }],
+  "triggers": { "crons": ["0 19 * * *"] }     // JST 04:00 に GC を実行する（T13、§2.6）
 }
 ```
 
@@ -1772,12 +1778,12 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 | `reports` | `createD1ReportRepository(env.DB)` | — |
 | `storage` | `createR2ObjectStorage(env.BUCKET, clock)` | — |
 | `rateLimiter` | `createD1RateLimiter(env.DB)` | — |
-| `ogpRenderer` | `fakeOgpRenderer` | T10 |
+| `ogpRenderer` | `createSatoriOgpRenderer(...)`（wasm・フォントを引数で受け取る。§2.5） | T10 |
 | `notifier` | `REPORT_WEBHOOK_URL` があれば `webhookNotifier`、無ければ `fakeNotifier` | — |
 | `logger` | `consoleLogger` | — |
 | `config` | `publicOrigin` = `new URL(PUBLIC_ORIGIN).origin`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER` | — |
 
-`src/server/index.ts` は `export default { fetch: (req, env, ctx) => createApp(buildDeps(env)).fetch(req, env, ctx) }`（`scheduled` は T13 で追加）。`buildDeps` はリクエストごとに呼んでよい（アダプタの生成は軽い。wasm やフォントのメモ化はモジュールスコープで行う、§2.5）。
+`src/server/index.ts` は `export default { fetch: (req, env, ctx) => createApp(buildDeps(env)).fetch(req, env, ctx), scheduled: (_controller, env, ctx) => ctx.waitUntil(runGc(buildDeps(env))) }`（`scheduled` は T13 で追加済み）。`buildDeps` はリクエストごとに呼んでよい（アダプタの生成は軽い。wasm やフォントのメモ化はモジュールスコープで行う、§2.5）。
 
 **足場の Fake**
 
@@ -1808,8 +1814,11 @@ export default defineConfig(async () => {
           plugins: [
             cloudflareTest({
               wrangler: { configPath: './wrangler.jsonc' },
-              // .dev.vars に依存しないよう secrets はここで与える
-              miniflare: { bindings: { TEST_MIGRATIONS, RATE_LIMIT_PEPPER: 'test-pepper' } },
+              // .dev.vars に依存しないよう secrets はここで与える。E2E_FIXED_NOW は空文字で
+              // 上書きし、.dev.vars に値があっても buildDeps が systemClock を使うようにする
+              miniflare: {
+                bindings: { TEST_MIGRATIONS, RATE_LIMIT_PEPPER: 'test-pepper', E2E_FIXED_NOW: '' },
+              },
             }),
           ],
           test: {
@@ -1905,18 +1914,33 @@ export default defineConfig(async () => {
 
 - `test/unit/web/headers.test.ts`（T1）は `import headersText from '../../../src/web/_headers?raw'`（Vite の raw import。型は `/// <reference types="vite/client" />`）で読み、上記の各パスに各ヘッダが載っていることを検査する。T8 の `test/unit/server/lib/headers.test.ts` は同じ読み方で「`_headers` の CSP / `X-Content-Type-Options` / `Referrer-Policy` の値 === `headers.ts` の定数」を検査する。
 
-**`playwright.config.ts`**
+**`playwright.config.ts`**（以下は現在の構成。retries・reporter などの規則と理由は docs/guidelines.md §7.3）
 
 ```typescript
 import { defineConfig, devices } from '@playwright/test'
 
+// 複数の作業ツリーで同時に e2e を走らせると、既定の 8787 を掴んだ別のサーバを
+// reuseExistingServer が拾って別ビルドを検証してしまう。E2E_PORT で作業ツリーごとに分ける
+const port = Number(process.env.E2E_PORT ?? 8787)
+
 export default defineConfig({
   testDir: 'test/e2e',
-  use: { baseURL: 'http://localhost:8787' },
+  retries: process.env.CI ? 1 : 0,
+  failOnFlakyTests: !!process.env.CI,
+  reporter: process.env.CI
+    ? [['github'], ['html', { open: 'never' }]]
+    : [['list'], ['html', { open: 'never' }]],
+  use: {
+    baseURL: `http://localhost:${port}`,
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+  },
   webServer: {
-    command: 'node scripts/seed-local-r2.mjs && npm run build && npx wrangler dev --port 8787',   // T10 で前置済み
-    url: 'http://localhost:8787/api/health',
+    // wrangler dev はローカル R2 にフォントを自動投入しないため、起動前に seed-local-r2.mjs を挟む（T10 で前置済み）
+    command: `node scripts/seed-local-r2.mjs && npm run build && npx wrangler dev --port ${port} --var PUBLIC_ORIGIN:http://localhost:${port}`,
+    url: `http://localhost:${port}/api/health`,
     reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
@@ -1992,7 +2016,7 @@ jobs:
 | T7 | `feat/api-create` | feat: 作成 API（POST /api/pages）とレート制限・同一オリジン・JSON ミドルウェア | T6 | `src/server/routes/apiPages.ts`（POST のみ）`src/server/middleware/{rateLimit,sameOrigin,jsonBody}.ts` `src/server/lib/{errors,ics}.ts` `src/server/deps.ts`（`notWired` を本物のアダプタに差し替え、Fake はそのまま）`src/server/app.ts`（1 行）`test/integration/server/{apiPages.create,sameOrigin}.test.ts` | 正常系（D1 2 行・`source` `creator_*`・R2 `ics/{id}.ics`・レスポンス形・Set-Cookie）、§5.7 の各 400（`source` 不正は `INVALID_REQUEST`）、`text/plain` は 415、`Origin` 不一致 / `Sec-Fetch-Site: cross-site` は 403（D1 に書かれずカウンタも進まない）、検証順序（`MAX_BODY_BYTES` 超過・`MAX_INPUT_LENGTH` 超過でレート制限カウンタが進まない）、下書き作成（R2 に ics を置かない）、ID 衝突時の再採番、429（IP 側／device 側それぞれ）、`events` 不変条件 | integration green。`POST` から `url` `editToken` `expiresAt` が返る |
 | T8 | `feat/detail-page` | feat: 詳細ページ SSR（Cache API・noindex・セキュリティヘッダ） | T7 | `src/server/routes/detail.tsx` `src/server/views/{Layout,DetailPage,NotFound}.tsx` `src/server/lib/{edgeCache,headers,pageAccess}.ts`（`headers.ts` は CSP 等の定数）`src/server/middleware/securityHeaders.ts` `src/server/app.ts`（1 行）`test/unit/server/lib/headers.test.ts` `test/integration/server/{detail,securityHeaders}.test.ts` | §6.3 の順序（DOM を解析して検証）、OGP メタ（`og:image` に `?v={version}`、絶対 URL が `publicOrigin` 由来）、`hidden`／期限切れ／不正 ID の 404（`isServable`）、XSS 回帰（`<script>` を含むタイトルがエスケープされる）、メモの改行と非リンク化、Cache API の hit（`?x=1` `?x=2` でも D1 は 1 回）、CSP 文字列の固定・Referrer-Policy・X-Robots-Tag、unit: `src/web/_headers` の CSP / `X-Content-Type-Options` / `Referrer-Policy` の値が `headers.ts` の定数と一致（§9.1）、変更バナー（日時の差分のみ。旧タイトル・旧場所が DOM に無い）の 48 時間境界、免責の位置（未編集はフッターのみ、編集済みはボタン直下にも）、発行者スロットが空で DOM に出ない | integration green |
 | T9 | `feat/ics-route` | feat: ics 配信（GET /:id.ics） | T8 | `src/server/routes/ics.ts` `src/server/app.ts`（1 行）`test/integration/server/ics.test.ts` | 正規表現ルートで `.ics` が必須（`/:id.ics` 以外は詳細ページに落ちない）、`text/calendar`、本文が現在の内容、`X-Robots-Tag`、不正 ID・hidden・期限切れの 404、下書き（日時なし）は 404、Cache API。**自己修復**: R2 に ics が無い `isServable` なページで `GET /:id.ics` が `buildIcsForPage` の出力を 200 で返し、R2 に `ics/{id}.ics` が PUT されている（2 回目は再生成しない） | integration green |
-| T10 | `feat/ogp` | feat: OGP 画像の遅延生成（satori/standalone + resvg-wasm、R2 フォント、フォールバック） | T9 | `src/adapters/ogp/{satoriOgpRenderer,ogpTemplate}.ts` `src/server/routes/ogp.ts` `src/server/lib/assets.ts` `src/server/app.ts`（1 行）`src/server/deps.ts` `scripts/seed-local-r2.mjs`（`scripts/fonts/subset.sh` は既存を再利用し新規作成しない）`playwright.config.ts`（`webServer.command` に seed を前置、1 行）`wrangler.jsonc`（`.otf` を Data モジュールとして import するテスト専用の `rules` 追加。§11.6 の共有ファイル一覧に無い例外、本文で理由を記録）`test/fixtures/fonts/*`（サブセット OTF と `OFL.txt`）`test/integration/server/ogp.test.ts` `test/integration/ogp/satoriOgpRenderer.test.ts` `test/unit/adapters/ogp/ogpTemplate.test.ts` | Fake レンダラで「初回のみ生成」「`waitUntil` 後に R2 にある」「throw 時はフォールバック PNG（ASSETS を包み直して `Cache-Control` 付き）と失敗マーカー」「マーカーがあればレンダラを呼ばない」「hidden はフォールバック」。本物で日本語を含む PNG が返る（PNG シグネチャ・サイズ 1200×630、IHDR を実際に検証）。**未収録文字（絵文字・第 1 水準外の漢字）を含む入力でも例外にならず PNG が返る**。title に `<script>` `&` `"` を含めても satori が生成する SVG 文字列自体にその文字列が現れない（PNG バイト列ではなく SVG を直接検証）。テンプレートに固定文言とサービス名が含まれることをテンプレートの出力を走査して確認する | integration green。`wrangler deploy --dry-run` で gzip 後サイズが 10MB 未満（PR 説明に記録）。フォント読み込みが R2 経由で `scripts/fonts/subset.sh` で生成したフォントで PNG が返る。**`wrangler dev` の起動と初回リクエストが通る（トップレベルで wasm 初期化をしない）**。1 回の render の CPU 時間（フォントパース込み）とフォントの再パース有無を実測して PR 説明に記録 |
+| T10 | `feat/ogp` | feat: OGP 画像の遅延生成（satori/standalone + resvg-wasm、R2 フォント、フォールバック） | T9 | `src/adapters/ogp/{satoriOgpRenderer,ogpTemplate}.ts` `src/server/routes/ogp.ts` `src/server/lib/assets.ts` `src/server/app.ts`（1 行）`src/server/deps.ts` `scripts/seed-local-r2.mjs`（`scripts/fonts/subset.sh` は既存を再利用し新規作成しない）`playwright.config.ts`（`webServer.command` に seed を前置、1 行）`wrangler.jsonc`（`.otf` を Data モジュールとして import するテスト専用の `rules` 追加。§11.6 の共有ファイル一覧に無い例外、本文で理由を記録）`test/fixtures/fonts/*`（サブセット OTF と `OFL.txt`）`test/integration/server/ogp.test.ts` `test/integration/ogp/satoriOgpRenderer.test.ts` `test/unit/adapters/ogp/ogpTemplate.test.ts` | Fake レンダラで「初回のみ生成」「`waitUntil` 後に R2 にある」「throw 時はフォールバック PNG（ASSETS を包み直して `Cache-Control` 付き）と失敗マーカー」「マーカーがあればレンダラを呼ばない」「hidden はフォールバック」。本物で日本語を含む PNG が返る（PNG シグネチャ・サイズ 1200×630、IHDR を実際に検証）。**未収録文字（絵文字・第 1 水準外の漢字）を含む入力でも例外にならず PNG が返る**。title に `<script>` `&` `"` を含めても satori が生成する SVG 文字列自体にその文字列が現れない（PNG バイト列ではなく SVG を直接検証）。テンプレートに固定文言とサービス名が含まれることをテンプレートの出力を走査して確認する | integration green。`wrangler deploy --dry-run` で gzip 後サイズが 10MB 未満（T10 時点の上限。現行は uncompressed 64 MiB、§1.2）。フォント読み込みが R2 経由で `scripts/fonts/subset.sh` で生成したフォントで PNG が返る。**`wrangler dev` の起動と初回リクエストが通る（トップレベルで wasm 初期化をしない）**。1 回の render の CPU 時間（フォントパース込み）とフォントの再パース有無を実測して PR 説明に記録 |
 | T11 | `feat/api-edit` | feat: 編集 API（GET/PATCH /api/pages/:id）と編集画面の配信 | T10 | `src/server/routes/apiPagesEdit.ts` `src/server/routes/editPage.ts` `src/server/app.ts`（2 行）`test/integration/server/{apiPagesEdit,editPage}.test.ts` | Bearer 一致で 200・不一致 401・欠落 401、hidden／期限切れは 404、`version` +1、`previous_snapshot`（日時のみ）／`changed_at`（タイトル・日時・場所の変更時のみ）、`expires_at` 再計算（日時を消した下書きは `now + 7 日`）、R2 の ics が新 `SEQUENCE` で上書き、終了済みイベントのメモだけの編集は 200、日時を過去に変えると 400、`status` `report_count` 不変、`GET` のレスポンスに `rawText` が入る（`GetPageResponse`）、同一ページへの 2 連続 PATCH が両方 200（最後の保存が勝つ）、**`GET /:id/edit` が 200 で HTML 本文を返す（3xx でない）** かつ `X-Robots-Tag` 付き、不正 ID は 404 | integration green |
 | T12 | `feat/reports` | feat: 通報（フォーム・API・Webhook 通知） | T11 | `src/server/routes/{apiReports.ts,reportPage.tsx}` `src/server/views/ReportPage.tsx` `src/adapters/notifier/webhookNotifier.ts` `src/web/report/main.ts` `src/core/config/limits.ts`（`REPORT_COUNT_WARNING_THRESHOLD` `WEBHOOK_FETCH_TIMEOUT_MS` を追記） `src/server/app.ts`（2 行） `src/server/deps.ts`（1 行）`test/integration/server/reports.test.ts` `test/unit/adapters/notifier/*` | 通報で `reports` 1 行（`deps.reports.insertIfNotDuplicate`）・`report_count` +1・Fake Notifier が `activePagesFromSameCreator` 付きで呼ばれる、`reason` 不正は 400、`comment` 501 文字は 400、同一 ip_hash の 24 時間重複は無視、429、`text/plain` は 415、`Origin` 不一致は 403 で `reports` に入らない、hidden／期限切れは 404、Webhook 失敗でも 200、フォームの noindex とインラインスクリプト無し。unit: `webhookNotifier` の payload で `@everyone` と `https://` が無効化され（Discord: `allowed_mentions` とコードブロック、Slack: エスケープと `mrkdwn: false`）、コメントが 200 文字に切られ、URL は詳細ページの 1 本だけ。Webhook 種別が URL のホストで決まる（`discord.com` / `discordapp.com` → Discord、`hooks.slack.com` → Slack、未知のホストは送らず warn。§9.4） | integration green |
 | T13 | `feat/gc-cron` | feat: 保持期限切れの GC（Cron Trigger） | T12 | `src/server/scheduled/gc.ts` `src/server/index.ts`（`scheduled` 配線）`wrangler.jsonc`（`crons`）`test/integration/scheduled/gc.test.ts` | 期限切れが D1・R2（`ics/{id}.ics` と `ogp/{id}/*`）から消え有効なものは残る、ちょうど期限の境界、バッチ繰り返し（101 件以上）、`rate_limit_counters` の掃除、48 時間より古い `previous_snapshot` の NULL 化、ログの件数 | integration green |
@@ -2001,7 +2025,7 @@ jobs:
 | T16 | `feat/web-edit` | feat: 編集画面（localStorage のトークンで編集） | T15 | `src/web/pages/edit.html` `src/web/edit/main.ts` `src/web/styles/edit.css` `test/e2e/edit.spec.ts` `test/unit/web/lib/{api,history}.test.ts`。`src/web/lib/api.ts` `src/web/lib/history.ts` は T14 が置いたファイルで、`getPage` / `updatePage` は T14 時点で既にある。本タスクの担当ファイルとして割り当てられており、`api.ts` は `ApiRequestFailedError` の message を作成専用の文言から呼び出し元が操作名を渡せる形に汎用化し、`history.ts` に編集完了時専用の `updateHistoryEntry`（fields / expiresAt / updatedAt / version だけを差し替え、並び順は変えない。§6.4）を追加した | e2e §10.3 の 7・8。保存後に `/done` 再掲、履歴の `fields` `updatedAt` `version` の更新。`pathname` の `id` が不正なら `/` へ | e2e green |
 | T17 | `feat/web-history` | feat: 作成履歴画面 | T16 | `src/web/pages/history.html` `src/web/history/main.ts` `src/web/styles/history.css` `src/web/lib/history.ts`（`readHistory` を export に変更。元は T14 が private で定義） `src/web/styles/base.css`（`.app-header` `.app-title` `.history-link` を追加）`src/web/styles/create.css`（同 3 ルールを削除。§12 冒頭の例外(4)） `test/e2e/history.spec.ts` | 作成後に一覧に出る、期限切れのグレー表示、空状態の文言、localStorage に不正な `id` を仕込んでもリンクが生成されない | e2e green |
 | T18 | `feat/observability` | feat: 構造化ログとリクエストログミドルウェア | T17 | `src/server/lib/logger.ts` `src/server/middleware/requestLog.ts` `src/server/app.ts`（`requestLog` の登録と `app.onError` の 2 箇所。後者は Hono の既定 errorHandler の `console.error(err)` を構造化ログに置き換えるために追加）`src/server/routes/apiPages.ts`（1 行。作成成功時に `page_created` を出す）`test/integration/server/requestLog.test.ts` | §9.6 の表: ログに生 IP・トークン・クエリ・本文が出ない（`console.log` をスパイ）、ルート名と所要時間が出る、作成ログに `source` が出る、429 のログに `exceeded` のバケット種別が出る、catch していないルートの例外は `app.onError` 経由で `unhandled_error`（`{ name, message }` に正規化、生のスタックトレースは出さない）として残る | integration green |
-| T19 | `feat/e2e-finish` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ）、`test/e2e/create.spec.ts` への不足分の追記（シナリオ 4・6 の詳細ページ側）、`test/e2e/fixtures.ts`（レート制限を避ける salt、`DONE_URL_PATTERN`・`createPage`・`waitForCreateRequest` の共通化）、`playwright.config.ts`、`.github/workflows/ci.yml` | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない）。シナリオ 7 の「同じ URL を送り直してください」・詳細ページの「最終更新」は version 判定により固定時計の下でも `test/e2e/edit.spec.ts` で固定済み（§10.3 シナリオ 7 参照）。履歴 `updatedAt` の上書き自体は `test/unit/web/lib/history.test.ts` で検証済みだが、固定時計の下で値が進むことは e2e では検証しない | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（400ms）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
+| T19 | `feat/e2e-finish` | ci: e2e 一式の仕上げと CI の安定化 | T18 | `test/e2e/{report,full}.spec.ts`（シナリオ 9・14 と通しシナリオ）、`test/e2e/create.spec.ts` への不足分の追記（シナリオ 4・6 の詳細ページ側）、`test/e2e/fixtures.ts`（レート制限を避ける salt、`DONE_URL_PATTERN`・`createPage`・`waitForCreateRequest` の共通化）、`playwright.config.ts`、`.github/workflows/ci.yml` | §10.3 の全シナリオが CI で安定して green（3 回連続。時刻固定 §10.3 により実日付に依存しない）。シナリオ 7 の「同じ URL を送り直してください」・詳細ページの「最終更新」は version 判定により固定時計の下でも `test/e2e/edit.spec.ts` で固定済み（§10.3 シナリオ 7 参照）。履歴 `updatedAt` の上書き自体は `test/unit/web/lib/history.test.ts` で検証済みだが、固定時計の下で値が進むことは e2e では検証しない | CI green。`deploy.yml` は運用基盤の PR で作成済み（§13・§10.5）なので T19 はこれを作らない。main マージ後に `DEPLOY_ENABLED` が true なら `wrangler d1 migrations apply --remote` → `wrangler deploy` が走る（初回は §13 の人間作業が前提）。**初回デプロイが起動時間制限（グローバルスコープの評価 1 秒、§14.1）で失敗しないことを確認**し、失敗したら §2.5 の wasm 初期化を見直す |
 
 並列に着手したい場合: T2〜T4（core）は互いにファイルが重ならないので、同時に着手して T2 → T3 → T4 の順にスタックできる。T14〜T17（web）も同様。ただし base は常に直前の PR にし、ダイヤモンドを作らない。
 

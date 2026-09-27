@@ -38,8 +38,9 @@ Noto Sans JP は SIL Open Font License 1.1（`.claude/tmp/fonts/LICENSE.txt` に
    一般的な約物」にサブセット化し、`dist/fonts/NotoSansJP-Regular.subset.otf` に出力する
    （fonttools の `pyftsubset` を使う）。
 3. `.github/workflows/provision.yml` の `font` ジョブが、venv に `fonttools` を入れて
-   `pyftsubset` を PATH に通したうえで上記 2 スクリプトを引数なしで順に呼び、生成した OTF を
-   `wrangler r2 object put calshare/fonts/NotoSansJP-Regular.subset.otf` で本番 R2 に配置する
+   `pyftsubset` を PATH に通したうえで上記 2 スクリプトを引数なしで順に呼び、生成した OTF と
+   `test/fixtures/fonts/OFL.txt`（著作権表示付きのライセンス本文）を、本番 R2 の
+   `fonts/NotoSansJP-Regular.subset.otf` と `fonts/OFL.txt` に配置する
    （`with_font` 入力が既定 true。`scripts/fonts/` 一式が無い間は自動でスキップ）。
 
 **第 1 水準漢字の一覧をファイルにコミットしない理由**: `generate-jis-level1.mjs` は区点から
@@ -53,10 +54,8 @@ EUC-JP 変換で一覧を導出する純粋関数で、ネットワークも乱�
 
 1. GitHub Actions で `Provision Cloudflare resources` を実行する（`with_font` は既定 true の
    ままでよい）。手順は `docs/runbooks/provisioning.md` を参照。
-2. `font` ジョブの Step Summary で配置が完了したことを確認する。
-3. **ライセンス同梱の確認**: `docs/licenses/noto-sans-jp.md`（T10 のライセンス審査記録）の
-   「残る条件」に従い、著作権表示付きの `OFL.txt`（`test/fixtures/fonts/OFL.txt` と同じ内容）を
-   本番 R2 の `fonts/OFL.txt` にも配置する。配置後、同記録を確定として再承認する。
+2. `font` ジョブの Step Summary で、フォントと `fonts/OFL.txt` の両方の配置が完了したことを確認する。
+3. `docs/licenses/noto-sans-jp.md` の審査記録を読み、確定として再承認する。
 
 ## ローカルでの実行方法（動作確認済み）
 
