@@ -1,4 +1,5 @@
-/* ダークモードでは背景だけ暗転して文字が薄いグレーのまま残ることがあるため、色は変数にして両方を明示する */
+/* ダークモードでは背景だけ暗転して文字が薄いグレーのまま残ることがあるため、色は変数にして両方を明示する。
+   文字に使う色は --bg に対するコントラスト比を 4.5:1 以上にする */
 :root {
   color-scheme: light dark;
   --fg: #111;
@@ -8,7 +9,7 @@
   --border-faint: #ddd;
   --muted: #666;
   --muted-strong: #444;
-  --faint: #999;
+  --faint: #757575;
   --link: #06c;
   --error: #c00;
   --success: #080;
@@ -26,7 +27,7 @@
     --border-faint: #333;
     --muted: #aaa;
     --muted-strong: #ccc;
-    --faint: #888; /* WCAG AA 4.5:1 を --bg に対して満たす明るさに調整 */
+    --faint: #888;
     --link: #7ab8ff;
     --error: #ff8a80;
     --success: #7fd99a;

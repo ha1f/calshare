@@ -288,7 +288,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 
 ### 6.4 Web API
 
-- `fetch` には `signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS)` を渡す。回線が不安定な環境（LINE 内蔵ブラウザ）で応答が返らないと、送信ボタンが無効のまま固まって見える。タイムアウト値は `core/config/limits.ts` に置き、`AbortError` / `TimeoutError` は `ApiRequestFailedError` 相当に変換してユーザーに文言を出す[^abortsignal-timeout]。
+- ブラウザから API を呼ぶ `fetch`（作成・取得・更新・通報）には `signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS)` を渡す。`src/web/lib/api.ts` の `fetchWithTimeout` を使い、`fetch` を直接呼ばない。回線が不安定な環境（LINE 内蔵ブラウザ）で応答が返らないと、送信ボタンが無効のまま固まって見える。タイムアウト値は `core/config/limits.ts` に置き、`AbortError` / `TimeoutError` は `ApiRequestFailedError` 相当に変換してユーザーに文言を出す[^abortsignal-timeout]。
 - クリップボードは `navigator.clipboard.writeText` を試し、失敗時に `document.execCommand('copy')` にフォールバックする（`src/web/lib/clipboard.ts`）[^clipboard]。
 - Web Share API は `typeof navigator.share === 'function'` で機能検出してからボタンを出す。Firefox が未対応で Baseline に達していない[^web-share]。
 - localStorage の値は信頼しない。`JSON.parse` の結果を構造チェック（`isHistoryEntry`）してから使う。読み書きは try / catch で包み、使えない環境でも画面が動くようにする。
@@ -297,9 +297,10 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 ### 6.5 アクセシビリティ
 
 - 動的に現れるメッセージには最初からマークアップで役割を付ける。エラー（`#error-message` `#load-error-message` `#copy-error`）は `role="alert"`、成功・結果（`#copy-message`）は `aria-live="polite"`。SSR 側（`views/ReportPage.tsx` の `#report-result`）は既に付いている。JS は `textContent` と `hidden` の操作だけにし、属性を後から足さない[^aria-live]。
-- 入力欄とボタンにはラベルを結ぶ。タップ編集欄（`tapEdit.ts` の `buildTextItem` `buildDatetimeItem`）は「タイトル」「場所」「メモ」「日時」の `<span>` に `id="label-<key>"` を振り、排他表示される `viewButton`（自動）と `input`（手動）の両方から `aria-labelledby` で参照する。`<label for>` は 1 要素しか指せないため使わない。`startInput` / `endInput` は既に `<label>` で包まれているので対象外[^label]。
+- 入力欄とボタンにはラベルを結ぶ。タップ編集欄（`tapEdit.ts` の `buildTextItem` `buildDatetimeItem`）は「タイトル」「場所」「メモ」「日時」の `<span>` に `id="label-<key>"` を振り、排他表示される `viewButton`（自動）と `input`（手動）の両方から `aria-labelledby` で参照する。`viewButton` は現在の値も読み上げさせるため、値の `<span>`（`id="value-<key>"`）も並べて参照する。`<label for>` は 1 要素しか指せないため使わない。`startInput` / `endInput` は既に `<label>` で包まれているので対象外[^label]。
 - フォーカスを持つ要素を隠すときは、隠す側が次のフォーカス先を決めて `focus()` を呼ぶ。「自動に戻す」で入力欄を `hidden` にしたら `viewButton.focus()` する。
 - 色だけで状態を伝えない。`is-manual` のような状態は文言（「手動」）も併記する。
+- 文字に使う色は、ライト・ダークとも背景色に対するコントラスト比を 4.5:1 以上にする（WCAG 2.2 達成基準 1.4.3）[^wcag-contrast]。色の定義場所は §6.3。
 
 ### 6.6 CSP との整合
 
@@ -561,6 +562,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 [^web-share]: https://web-platform-dx.github.io/web-features-explorer/features/share/
 [^aria-live]: https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Guides/Live_regions
 [^label]: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/label
+[^wcag-contrast]: https://www.w3.org/TR/WCAG22/#contrast-minimum
 [^trusted-types]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/require-trusted-types-for
 [^vitest-stubglobal]: https://vitest.dev/api/vi.html#vi-stubglobal
 [^vitest-mocking]: https://vitest.dev/guide/mocking.html

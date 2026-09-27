@@ -1119,6 +1119,11 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 12. プリフィル `/new?text=飲み会&dates=20260920T100000Z/20260920T110000Z&location=渋谷` → 各項目が埋まり `manual` 表示、作成 API は押すまで呼ばれない。作成すると `source = 'prefill'` で記録される（`/new?ref=detail_cta` からの作成は `detail_cta`）（`test/e2e/create.spec.ts` の「プリフィルされた項目は manual 表示になり、API は押すまで呼ばれない（シナリオ12前半）」「ref=detail_cta からの作成は source が detail_cta になる（シナリオ12後半）」で固定）
 13. `/done?id=//example.com` と `/done?id=%2F%2Fexample.com` を開く → 外部に遷移せず `/` に戻る（`test/e2e/redirect.spec.ts` の「不正なid（生の // による open redirect）は / へ遷移する（シナリオ13）」「不正なid（パーセントエンコードされた // による open redirect）は / へ遷移する（シナリオ13）」で固定）
 14. `GET /done` `GET /new` のレスポンスヘッダに CSP と `X-Content-Type-Options` が付く（`_headers` の検証）（`test/e2e/report.spec.ts` の「GET /done と GET /new のレスポンスヘッダに CSP と X-Content-Type-Options が付く（シナリオ14）」で固定）
+15. タップ編集欄をラベルで引ける。`getByLabel('タイトル')` が自動表示中は表示ボタン、タップ後は入力欄に解決し、表示ボタンのアクセシブルネームは「ラベル + 現在の値」になる。編集画面の場所欄も同じ（`test/e2e/create.spec.ts` の「タイトル欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する」「日時の view ボタンはラベルと現在値の両方をアクセシブルネームに含む」、`test/e2e/edit.spec.ts` の「編集画面でも場所欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する」で固定）
+16. 「自動に戻す」を押すと、隠れた入力欄の代わりに表示ボタンへフォーカスが移る（`test/e2e/create.spec.ts` の「「自動に戻す」を押すと view ボタンにフォーカスが戻る」「日時編集欄の「自動に戻す」を押すと view ボタンにフォーカスが戻る」で固定）
+17. 通報 API の応答が返らないとき、`API_REQUEST_TIMEOUT_MS` で打ち切って失敗の文言を出し、送信ボタンが再び押せる（`test/e2e/report.spec.ts` の「応答が返らないと約10秒でタイムアウトし、送信ボタンが再び押せる状態に戻る」で固定）
+
+全 spec 共通で、`test/e2e/fixtures.ts` がコンソールに出た CSP 違反（Trusted Types を含む。§9.1）を集め、1 件でもあればそのテストを失敗にする。
 
 上記に加えて `test/e2e/full.spec.ts` に「作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 → 詳細の変更バナー → ics」の通しシナリオを持つ（個々の画面遷移は上記の各 spec で個別に固定済みだが、画面をまたいだ一連の操作が壊れていないことをこの 1 本で確認する。T19）。詳細ページは編集しても Cache API のエントリを消さない（§2.4。最大 60 秒古い内容が返る）ため、編集前に詳細ページを開いたページを編集直後に開き直すと変更バナーが出ない。このシナリオは「作ってみる」で新たに作った 2 件目のページを編集する（1 件目は「作ってみる」の遷移確認のためだけに詳細ページを開く）ことでこれを避けている。同じ理由で `test/e2e/edit.spec.ts` のシナリオ7も編集対象のページの詳細を編集前には開いていない。
 
@@ -1869,7 +1874,7 @@ export default defineConfig(async () => {
 **`scripts/build-web.mjs`**
 
 1. `dist/` を空にする。
-2. `src/web/*/main.ts` を glob してエントリにし、esbuild で `bundle: true, format: 'esm', target: 'es2022', minify: true, outdir: 'dist/assets/js', outbase: 'src/web', entryNames: '[dir]'` でビルドする（`src/web/create/main.ts` → `dist/assets/js/create.js`）。ファイル名にハッシュは付けない（`/assets/*` は `_headers` で `Cache-Control: public, max-age=300`）。エントリが 0 件（T1 時点）なら esbuild を呼ばない。`create` と `edit` が共有する `preview.ts` / `tapEdit.ts` の重複は `splitting: true` で共有チャンクに切り出せるが、metafile で計測するとページ単体の初回ロードがどの画面でもバイト数・リクエスト数とも増えたため見送った（§6.1）。
+2. `src/web/*/main.ts` を glob してエントリにし、esbuild で `bundle: true, format: 'esm', target: 'es2022', minify: true, outdir: 'dist/assets/js', outbase: 'src/web', entryNames: '[dir]'` でビルドする（`src/web/create/main.ts` → `dist/assets/js/create.js`）。ファイル名にハッシュは付けない（`/assets/*` は `_headers` で `Cache-Control: public, max-age=300`）。エントリが 0 件（T1 時点）なら esbuild を呼ばない。`create` と `edit` が共有する `preview.ts` / `tapEdit.ts` の重複は `splitting: true` で共有チャンクに切り出せるが、metafile で計測するとページ単体の初回ロードがどの画面でもバイト数・リクエスト数とも増えたため見送った（docs/guidelines.md §6.1）。
 3. `src/web/styles/*.css` → `dist/assets/css/`、`src/web/img/*` → `dist/assets/img/` にコピーする。
 4. `src/web/pages/*.html` と `src/web/{robots.txt,favicon.ico,_headers}` を `dist/` 直下にコピーする。ルートファイルは存在チェックをせず、欠けていれば `copyFile` の `ENOENT` でビルドが落ちる（`_headers` を静かに欠落させて CSP の無い `dist/` を作らないため）。
 
