@@ -58,7 +58,12 @@ function isValidUtcDateTime(
 function parseDatesParam(dates: string): DatesResolution | null {
   const allDay = ALL_DAY_DATES_PATTERN.exec(dates)
   if (allDay !== null) {
-    const [y1, m1, d1, y2, m2, d2] = allDay.slice(1).map(Number)
+    const y1 = Number(allDay[1])
+    const m1 = Number(allDay[2])
+    const d1 = Number(allDay[3])
+    const y2 = Number(allDay[4])
+    const m2 = Number(allDay[5])
+    const d2 = Number(allDay[6])
     if (!isValidJstDate(y1, m1, d1) || !isValidJstDate(y2, m2, d2)) return null
     const start = jstDate(y1, m1, d1)
     const end = jstDate(y2, m2, d2)
@@ -68,7 +73,18 @@ function parseDatesParam(dates: string): DatesResolution | null {
 
   const timed = TIMED_DATES_PATTERN.exec(dates)
   if (timed !== null) {
-    const [y1, m1, d1, h1, mi1, s1, y2, m2, d2, h2, mi2, s2] = timed.slice(1).map(Number)
+    const y1 = Number(timed[1])
+    const m1 = Number(timed[2])
+    const d1 = Number(timed[3])
+    const h1 = Number(timed[4])
+    const mi1 = Number(timed[5])
+    const s1 = Number(timed[6])
+    const y2 = Number(timed[7])
+    const m2 = Number(timed[8])
+    const d2 = Number(timed[9])
+    const h2 = Number(timed[10])
+    const mi2 = Number(timed[11])
+    const s2 = Number(timed[12])
     if (
       !isValidUtcDateTime(y1, m1, d1, h1, mi1, s1) ||
       !isValidUtcDateTime(y2, m2, d2, h2, mi2, s2)

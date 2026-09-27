@@ -1,3 +1,4 @@
+import { requireDefined } from '../assert'
 import { MAX_EVENT_LEAD_TIME_MONTHS } from '../config/limits'
 import { addDays, addMonths, jstDate, toJstParts } from '../time/jst'
 import { RANGE_SYMBOL_SOURCE } from './normalize'
@@ -88,17 +89,18 @@ export function detectDateTokens(text: string): DateTokenMatch[] {
       kind: 'relative',
       offsetDays: relativeOffset(m[0]),
     })),
+    // 各正規表現は曜日を表すキャプチャグループを 1 つだけ持ち、一致すれば必ず埋まる
     ...collectMatches(text, NEXT_WEEK_RE, (m) => ({
       kind: 'nextWeek',
-      weekday: WEEKDAY_CHARS.indexOf(m[1]),
+      weekday: WEEKDAY_CHARS.indexOf(requireDefined(m[1], 'NEXT_WEEK_RE: missing weekday group')),
     })),
     ...collectMatches(text, THIS_WEEK_RE, (m) => ({
       kind: 'thisWeek',
-      weekday: WEEKDAY_CHARS.indexOf(m[1]),
+      weekday: WEEKDAY_CHARS.indexOf(requireDefined(m[1], 'THIS_WEEK_RE: missing weekday group')),
     })),
     ...collectMatches(text, WEEKDAY_RE, (m) => ({
       kind: 'weekday',
-      weekday: WEEKDAY_CHARS.indexOf(m[1]),
+      weekday: WEEKDAY_CHARS.indexOf(requireDefined(m[1], 'WEEKDAY_RE: missing weekday group')),
     })),
   ]
 
