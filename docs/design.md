@@ -238,7 +238,7 @@ async function handleOgp(id: string, request: Request, env: Env, ctx: ExecutionC
 - **satori の読み込み方**: satori の既定エントリ（`satori`）はレイアウトエンジン yoga の asm.js 版をモジュール読み込み時に初期化する。Workers には「グローバルスコープの評価は 1 秒以内」という起動時間制限があり、これに掛かるとデプロイ自体が失敗し、`wrangler deploy --dry-run` では検出できない。そのため **`satori/standalone` エントリを使う。設計時点で想定していた `satori/wasm` + `yoga-wasm-web` は現行の satori では無くなっており（`satori/standalone` に統合され、`yoga.wasm`（`satori/yoga.wasm` として同梱）を `init()` に渡す形に変わった）、実装時点の実物（`node_modules/satori/package.json` の `exports`）に合わせてこちらを使う。**
   **satori のバージョンは `0.32.0` に固定する（`^0.33.0` 以降は不可、実機確認済み）**: satori 0.33.0 でテキストシェイピングに `harfbuzzjs` が追加されたが、`harfbuzzjs` は自身の wasm（`hb.wasm`）を Node の `fs.readFile` 相当（`readAll`）で読む実装で、これを差し替える公開 API が satori 0.33 系に無い。`satori/standalone` の `init()` は yoga の wasm しか受け付けないため、Workers（fs を持たない）では `harfbuzzjs` の初期化が `no such file or directory` で必ず失敗する（vitest-pool-workers で実機確認済み）。`harfbuzzjs` 導入前の最終版である `0.32.0` を使うことでこの依存を避ける。
   resvg は `@resvg/resvg-wasm` の `initWasm()` に `index_bg.wasm` を渡す。どちらの wasm も `import` で静的に束ね（wrangler の既定 `CompiledWasm` ルールが `**/*.wasm` に効くため `wrangler.jsonc` の `rules` 追加は不要、実機確認済み）、`init`/`initWasm` は初回 render 時に遅延実行する。トップレベルで重い初期化は行わない。初期化結果と `R2` から読んだフォントはモジュールスコープでメモ化する。T10 の完了条件に「`wrangler dev` の起動と初回リクエストが通る」「1 回の render に要する CPU 時間（フォントパース込み）の実測」を含め、実機の起動制限は T19 の初回デプロイで確認する。
-- **フォント**: satori はデフォルトフォントを持たず `fonts` オプションが必須。Noto Sans JP のサブセット（**JIS 第 1 水準** + かな + 英数記号 + 一般的な約物。約 765KiB、実測済み）を **R2 の `fonts/NotoSansJP-Regular.subset.otf` に置き**、isolate 内でモジュールスコープにメモ化して読み込む。現行のサイズ上限（uncompressed 64 MiB、§1.2）なら同梱もできるが、現状は R2 から読む。サブセット生成は運用基盤の PR が provisioning 用に用意した `scripts/fonts/subset.sh`（pyftsubset を呼ぶ）に一本化し、T10 で新たに `scripts/subset-font.mjs` は作らない。第 2 水準（「麹町」「髙」のような人名・地名の字）は含めない。第 1 水準のみにした理由と、含まない文字が OGP 画像上で豆腐になる制限は `docs/licenses/noto-sans-jp.md`・`docs/runbooks/fonts.md` に記録する。OFL のライセンスファイルは `test/fixtures/fonts/OFL.txt` に含める。**satori は `SatoriOptions.fonts`（配列オブジェクト自体）を鍵にした `WeakMap` でパース結果をキャッシュする**（`node_modules/satori/dist/standalone.js` の該当箇所をソースで確認済み）。したがって `fonts: [{ data, ... }]` を render のたびに新しい配列リテラルで渡すと毎回キャッシュミスしてパースし直しになる。`createSatoriOgpRenderer` は `fonts` 配列を wasm・フォントと同じタイミングで 1 回だけ組み立て、以後の render すべてで同じ配列参照を渡すことでこのキャッシュを効かせる（T10 で実測: この対策により 2 回目以降の render が短縮した。§14.1）。
+- **フォント**: satori はデフォルトフォントを持たず `fonts` オプションが必須。Noto Sans JP のサブセット（**JIS 第 1 水準** + かな + 英数記号 + 一般的な約物。約 765KiB、実測済み）を **R2 の `fonts/NotoSansJP-Regular.subset.otf` に置き**、isolate 内でモジュールスコープにメモ化して読み込む。現行のサイズ上限（uncompressed 64 MiB、§1.2）なら同梱もできるが、本番用のフォントは `provision.yml` の font ジョブが上流の配布物からサブセットを生成して R2 に置く構成で、Worker のデプロイと独立して差し替えられるため、現状は R2 から読む。サブセット生成は運用基盤の PR が provisioning 用に用意した `scripts/fonts/subset.sh`（pyftsubset を呼ぶ）に一本化し、T10 で新たに `scripts/subset-font.mjs` は作らない。第 2 水準（「麹町」「髙」のような人名・地名の字）は含めない。第 1 水準のみにした理由と、含まない文字が OGP 画像上で豆腐になる制限は `docs/licenses/noto-sans-jp.md`・`docs/runbooks/fonts.md` に記録する。OFL のライセンスファイルは `test/fixtures/fonts/OFL.txt` に含める。**satori は `SatoriOptions.fonts`（配列オブジェクト自体）を鍵にした `WeakMap` でパース結果をキャッシュする**（`node_modules/satori/dist/standalone.js` の該当箇所をソースで確認済み）。したがって `fonts: [{ data, ... }]` を render のたびに新しい配列リテラルで渡すと毎回キャッシュミスしてパースし直しになる。`createSatoriOgpRenderer` は `fonts` 配列を wasm・フォントと同じタイミングで 1 回だけ組み立て、以後の render すべてで同じ配列参照を渡すことでこのキャッシュを効かせる（T10 で実測: この対策により 2 回目以降の render が短縮した。§14.1）。
 - **入力の前処理（`toOgpInput`）**: 絵文字・制御文字（Cc）・書式制御文字（Cf。ZWJ・ZWSP・BOM・RLO 等）・異体字セレクタは描画前に除去する。サブセットに無い漢字（JIS 第 1 水準外）や一般記号は判別できないため除去せず、satori が該当グリフを描かないことで例外にならずに吸収する（結果として空白の穴になる。§14.1「OGP のフォント未収録文字」）。タイトルは詳細ページで正しく見えるので、OGP から落としても価値は失われない。絵文字を画像で描く `graphemeImages` は外部取得が要るので採らない。ユーザーテキスト（タイトル・場所）は `ogpTemplate` の CSS（`-webkit-line-clamp` + `text-overflow: ellipsis`）で 2 行までに切り詰める。
 - **satori への入力**: satori は React 要素形状（`{ type, props: { style, children } }`）を要求し、`hono/jsx` の JSXNode はそのまま渡せない。`OgpRenderer` の実装は素のオブジェクトツリーを組む。ユーザー入力は**テキストノードとしてのみ**渡し、文字列連結で SVG や CSS を組まない。satori はテキストを SVG のパスに変換するので、`<` `&` を含む入力でも SVG/HTML 注入にはならない（この不変条件を T10 のテストで固定する）。
 - **なりすまし対策**: OGP テンプレートには固定文言「予定の共有」とサービス名を必ず含める。「【○○銀行】…のお知らせ」のようなタイトルがサービスのブランドで描かれても公式通知に見えないようにする。デザインの未決事項（§14.2）にこの制約を添える。
@@ -1659,7 +1659,7 @@ export function updatePage(id: string, editToken: string, req: UpdatePageRequest
 
 ### 11.7 足場（T1）の構成ファイル
 
-T1 が置く設定ファイルと足場コードの確定値。後続 PR はここに書かれた値を前提にしてよい。「要検証」と書いた項目は T1 の完了条件に検証結果の記録を含め、外れたら本節を直してから後続に進む（確認が済んだ項目は「確認済み（T1）」に書き換えてある）。
+T1 が置く設定ファイルと足場コードの確定値。後続 PR はここに書かれた値を前提にしてよい。「要検証」と書いた項目は T1 の完了条件に検証結果の記録を含め、外れたら本節を直してから後続に進む（確認が済んだ項目は「確認済み（T1）」に書き換えてある）。設定ファイルの抜粋は現在の構成を写す。
 
 **パッケージ管理と Node**
 
@@ -1706,18 +1706,13 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "calshare",
-  "main": "src/server/index.ts",             // wrangler が直接バンドルする。esbuild は web アセットのみ
-  "compatibility_date": "2026-08-22",         // `@cloudflare/vitest-pool-workers` に同梱の workerd
-                                               // （`npm ls workerd` の pool-workers 配下）が対応する最新日付を使う。
-                                               // wrangler 単体の更新では動かさない（docs/guidelines.md §1.1）
-  "compatibility_flags": ["nodejs_compat"],  // 確認済み（T1）: T1 自体は nodejs_compat を必要としないが、
-                                              // wrangler.jsonc は crons（T13）以外での変更が §12 の規約で禁じられているため、
-                                              // T10（satori/resvg）で必要になることを見越して T1 の時点で付けておく。付けても
-                                              // T1 のテスト・dry-run・wrangler dev はすべて通ることを実機確認済み
-  "workers_dev": true,                        // H3 でカスタムドメインを割り当てたら false（§9.9）
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
   "observability": { "enabled": true },
   "assets": {
-    "directory": "./dist",                    // §2.2 の配置
+    "directory": "./dist",
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none"
@@ -1726,20 +1721,25 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
     {
       "binding": "DB",
       "database_name": "calshare",
-      "database_id": "00000000-0000-0000-0000-000000000000",   // H4 で本番の ID に置換
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "calshare" }],
   "vars": { "PUBLIC_ORIGIN": "http://localhost:8787", "SERVICE_NAME": "calshare" },
+  // .wasm は既定の CompiledWasm ルールで import できる（server/deps.ts が動的 import で使う）。
   // .otf は既定ルールに無いため、test/integration/ogp/satoriOgpRenderer.test.ts が
-  // フィクスチャフォントを import するために追加する（T10）。fallthrough: false は
-  // 既定の **/*.bin ルールを無効にする警告を消すため
+  // フィクスチャフォントを import するために追加する（本番コードは R2 からフォントを読むので対象外）
+  // fallthrough: false は「同じ Data 型の既定ルール（**/*.bin）を無効にする」という wrangler の
+  // 警告を消すため。プロジェクトで .bin は使っていないので無効化して問題ない
   "rules": [{ "type": "Data", "globs": ["**/*.otf"], "fallthrough": false }],
-  "triggers": { "crons": ["0 19 * * *"] }     // JST 04:00 に GC を実行する（T13、§2.6）
+  // JST 04:00 に GC を実行する（§2.6）
+  "triggers": { "crons": ["0 19 * * *"] }
 }
 ```
 
+- `compatibility_date` の上限は、この設定ファイル単独ではなく `@cloudflare/vitest-pool-workers` に同梱の workerd（`npm ls workerd` の pool-workers 配下）が対応する最新日付で決まる。wrangler 単体の更新では動かさない（docs/guidelines.md §1.1）。
+- `workers_dev: true` は独自ドメイン取得までの暫定、`database_id` はプレースホルダで本番の ID に置換が要る（docs/guidelines.md §4.1、§13）。
 - `vars` はローカル・CI の値。本番の `PUBLIC_ORIGIN`（H1 のドメイン）は `deploy.yml` の `wrangler deploy --var PUBLIC_ORIGIN:https://...` で上書きする（T19。`env.production` を作ると D1 / R2 のバインディングを環境ごとに再宣言する必要があり二重管理になる）。
 - 確認済み（T1、wrangler 4.133.0、`CLOUDFLARE_API_TOKEN` 等を明示的に外した環境で実行）: `wrangler deploy --dry-run --outdir dist-worker` はプレースホルダの `database_id`・未ログインのまま通り、バインディング一覧（`DB` `BUCKET` `ASSETS` `PUBLIC_ORIGIN` `SERVICE_NAME`）と Upload サイズ（Total 66.51 KiB / gzip 16.79 KiB、T1 時点）が表示された。通らない場合に備えていた代替（CI のそのステップを `npx wrangler check startup` に置き換え、サイズ計測を `dist-worker` のファイルサイズで代替する案）への切り替えは不要だった。
 
@@ -1778,7 +1778,7 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 | `reports` | `createD1ReportRepository(env.DB)` | — |
 | `storage` | `createR2ObjectStorage(env.BUCKET, clock)` | — |
 | `rateLimiter` | `createD1RateLimiter(env.DB)` | — |
-| `ogpRenderer` | `createSatoriOgpRenderer(...)`（wasm・フォントを引数で受け取る。§2.5） | T10 |
+| `ogpRenderer` | `createSatoriOgpRenderer({ loadWasm, loadFont })`（wasm と R2 のフォントを読み込む関数を受け取り、初回 render 時に遅延実行する。§2.5） | T10 |
 | `notifier` | `REPORT_WEBHOOK_URL` があれば `webhookNotifier`、無ければ `fakeNotifier` | — |
 | `logger` | `consoleLogger` | — |
 | `config` | `publicOrigin` = `new URL(PUBLIC_ORIGIN).origin`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER` | — |
@@ -1800,12 +1800,14 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-workers'
 import { defineConfig } from 'vitest/config'
 
-// ローカルに .dev.vars があると wrangler が読み込みログ（"Using secrets defined in .dev.vars"）を出す。
-// 値は下記 miniflare.bindings が上書きするので実害は無いが、テスト出力を汚さないよう log レベルを warn に絞る
+// Vitest 4 の test.projects を 1 ファイルに書く。
+// wrangler は .dev.vars を読むと "Using secrets defined in .dev.vars" を出す。CI では .dev.vars が無いため出ないが、
+// ローカルでテスト出力を汚さないよう wrangler の log レベルを warn 以上に絞る（値自体は miniflare.bindings が優先する）
 process.env.WRANGLER_LOG ??= 'warn'
 
 export default defineConfig(async () => {
   const TEST_MIGRATIONS = await readD1Migrations('migrations')
+
   return {
     test: {
       projects: [
@@ -1815,7 +1817,7 @@ export default defineConfig(async () => {
             cloudflareTest({
               wrangler: { configPath: './wrangler.jsonc' },
               // .dev.vars に依存しないよう secrets はここで与える。E2E_FIXED_NOW は空文字で
-              // 上書きし、.dev.vars に値があっても buildDeps が systemClock を使うようにする
+              // 上書きし、.dev.vars に設定があっても buildDeps が systemClock を使うようにする
               miniflare: {
                 bindings: { TEST_MIGRATIONS, RATE_LIMIT_PEPPER: 'test-pepper', E2E_FIXED_NOW: '' },
               },
@@ -1914,7 +1916,7 @@ export default defineConfig(async () => {
 
 - `test/unit/web/headers.test.ts`（T1）は `import headersText from '../../../src/web/_headers?raw'`（Vite の raw import。型は `/// <reference types="vite/client" />`）で読み、上記の各パスに各ヘッダが載っていることを検査する。T8 の `test/unit/server/lib/headers.test.ts` は同じ読み方で「`_headers` の CSP / `X-Content-Type-Options` / `Referrer-Policy` の値 === `headers.ts` の定数」を検査する。
 
-**`playwright.config.ts`**（以下は現在の構成。retries・reporter などの規則と理由は docs/guidelines.md §7.3）
+**`playwright.config.ts`**（retries・reporter などの規則と理由は docs/guidelines.md §7.3）
 
 ```typescript
 import { defineConfig, devices } from '@playwright/test'
@@ -1925,6 +1927,8 @@ const port = Number(process.env.E2E_PORT ?? 8787)
 
 export default defineConfig({
   testDir: 'test/e2e',
+  // failOnFlakyTests が再試行後の成功も flaky として job を落とすため、retries は
+  // 原因調査用の trace・スクリーンショットを残す目的だけに使う
   retries: process.env.CI ? 1 : 0,
   failOnFlakyTests: !!process.env.CI,
   reporter: process.env.CI
@@ -1936,10 +1940,14 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    // wrangler dev はローカル R2 にフォントを自動投入しないため、起動前に seed-local-r2.mjs を挟む（T10 で前置済み）
+    // PUBLIC_ORIGIN を上書きしないと wrangler.jsonc の vars.PUBLIC_ORIGIN のままになり、
+    // E2E_PORT で別ポートにしたときに API が返す url と実際のサーバのアドレスがずれる。
+    // wrangler dev はローカル R2 にフォントを自動投入しないため、起動前に seed-local-r2.mjs を挟む（§2.5）
     command: `node scripts/seed-local-r2.mjs && npm run build && npx wrangler dev --port ${port} --var PUBLIC_ORIGIN:http://localhost:${port}`,
     url: `http://localhost:${port}/api/health`,
     reuseExistingServer: !process.env.CI,
+    // フォント投入 + build + wrangler dev の起動を毎回まとめて行うため、CI の遅いランナーでは
+    // 既定の 60 秒に収まらないことがある。実測の数倍の余裕を持たせる
     timeout: 120_000,
   },
   projects: [
@@ -1947,7 +1955,11 @@ export default defineConfig({
     {
       name: 'line-ios',
       // iPhone 13 の既定は WebKit だが CI は chromium しか install しないので上書きする（isMobile / touch は Chromium でも効く）
-      use: { ...devices['iPhone 13'], browserName: 'chromium', userAgent: `${devices['iPhone 13'].userAgent} Line/14.0.0` },
+      use: {
+        ...devices['iPhone 13'],
+        browserName: 'chromium',
+        userAgent: `${devices['iPhone 13'].userAgent} Line/14.0.0`,
+      },
     },
   ],
 })
@@ -1956,7 +1968,7 @@ export default defineConfig({
 - `test/e2e/fixtures.ts`: `@playwright/test` の `test.extend` で `page` を包み、`await page.clock.setFixedTime(E2E_FIXED_NOW)` を各テストの前に呼ぶ（`E2E_FIXED_NOW = new Date('2026-09-16T01:00:00Z')` を export）。`setFixedTime` は `Date` だけを固定しタイマーは動かすので、プレビューの 150ms デバウンス（§6.1）はそのまま動く。全 spec はこのファイルの `test` / `expect` を import する。
 - `wrangler dev` は `.dev.vars` を読む。CI では e2e の前に `cp .dev.vars.example .dev.vars` する（下記）。
 
-**`.github/workflows/ci.yml`**（`pull_request` と `push: main` で起動。以下は現在の構成。`uses:` は実際にはタグ名ではなくフルコミット SHA + `# vX.Y.Z` コメントで固定する、docs/guidelines.md §8.1）
+**`.github/workflows/ci.yml`**（`pull_request` と `push: main` で起動。`uses:` は実際にはタグ名ではなくフルコミット SHA + `# vX.Y.Z` コメントで固定する、docs/guidelines.md §8.1）
 
 ```yaml
 permissions:
@@ -1966,6 +1978,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   ci:
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@<SHA> # v7.x.y
@@ -1978,17 +1991,23 @@ jobs:
       - run: npm run test:unit
       - run: npm run test:scripts
       - run: npm run build
-      - run: npm run test:integration   # env.ASSETS.fetch() が dist/ を見るため build の後に置く
-      - run: npx wrangler deploy --dry-run --outdir dist-worker   # 未ログインで通る（T1 で確認済み）
+      # env.ASSETS.fetch() で dist/ の Static Assets を検証するテストがあるため build の後に置く（§10.2）
+      - run: npm run test:integration
+      - run: npx wrangler deploy --dry-run --outdir dist-worker
       - run: npx playwright install --with-deps chromium
       - run: cp .dev.vars.example .dev.vars
-      - run: npx wrangler d1 migrations apply calshare --local   # wrangler dev は自動適用しない（§10.5）
+      # wrangler dev はローカル D1 にマイグレーションを自動適用しない（§10.5）。playwright の
+      # webServer が起動する wrangler dev と同じ .wrangler/state を先に用意しておく
+      - run: npx wrangler d1 migrations apply calshare --local
       - id: e2e
         run: npm run test:e2e
         timeout-minutes: 15
       - if: failure() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@<SHA> # v7.x.y
-        with: { name: playwright-report, path: playwright-report/, retention-days: 7 }
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
 ```
 
 確認済み（T1。設計時点の順序と食い違ったため入れ替えた）: `test:integration` は `env.ASSETS.fetch()` で Static Assets（`wrangler.jsonc` の `assets.directory: ./dist`）を検証するため、`dist/` がビルド済みであることに依存する。クリーンチェックアウト直後（`npm run build` 未実行）に `test:integration` を先に走らせると `dist/` が空で 404 になることを実機確認したため、`npm run build` を `test:integration` より前に実行する順序に変更した。
