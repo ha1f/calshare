@@ -35,8 +35,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
 
+      # npm ci をこのジョブでは実行しないため cache: npm は付けない（保存対象が無く post 側の
+      # actions/cache が失敗しうる）。
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version-file: .nvmrc, cache: npm }
+        with: { node-version-file: .nvmrc }
 
       # inputs / vars の式はシェル実行前にテキスト置換されるため、run: に直接展開すると
       # 値に "; ..." や $(...) を混ぜたシェル注入の経路になる。env 経由で受け取り、
@@ -80,8 +82,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # npm ci をこのジョブでは実行しないため cache: npm は付けない（保存対象が無く post 側の
+      # actions/cache が失敗しうる）。
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version-file: .nvmrc, cache: npm }
+        with: { node-version-file: .nvmrc }
 
       - name: Ensure D1 / R2 resources
         id: ensure
@@ -203,8 +207,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # npm ci をこのジョブでは実行しないため cache: npm は付けない（保存対象が無く post 側の
+      # actions/cache が失敗しうる）。
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version-file: .nvmrc, cache: npm }
+        with: { node-version-file: .nvmrc }
 
       - name: Ensure zone
         id: zone
