@@ -1869,7 +1869,7 @@ export default defineConfig(async () => {
 **`scripts/build-web.mjs`**
 
 1. `dist/` を空にする。
-2. `src/web/*/main.ts` を glob してエントリにし、esbuild で `bundle: true, format: 'esm', target: 'es2022', minify: true, outdir: 'dist/assets/js', outbase: 'src/web', entryNames: '[dir]', splitting: true, chunkNames: 'chunks/[name]-[hash]'` でビルドする（`src/web/create/main.ts` → `dist/assets/js/create.js`）。`create` と `edit` が共有する `preview.ts` / `tapEdit.ts` 等は `dist/assets/js/chunks/` の共有チャンクに出る（`_headers` の `/assets/*` はチャンクにも当たる）。ファイル名にハッシュは付けない（`/assets/*` は `_headers` で `Cache-Control: public, max-age=300`）。エントリが 0 件（T1 時点）なら esbuild を呼ばない。
+2. `src/web/*/main.ts` を glob してエントリにし、esbuild で `bundle: true, format: 'esm', target: 'es2022', minify: true, outdir: 'dist/assets/js', outbase: 'src/web', entryNames: '[dir]'` でビルドする（`src/web/create/main.ts` → `dist/assets/js/create.js`）。ファイル名にハッシュは付けない（`/assets/*` は `_headers` で `Cache-Control: public, max-age=300`）。エントリが 0 件（T1 時点）なら esbuild を呼ばない。`create` と `edit` が共有する `preview.ts` / `tapEdit.ts` の重複は `splitting: true` で共有チャンクに切り出せるが、metafile で計測するとページ単体の初回ロードがどの画面でもバイト数・リクエスト数とも増えたため見送った（§6.1）。
 3. `src/web/styles/*.css` → `dist/assets/css/`、`src/web/img/*` → `dist/assets/img/` にコピーする。
 4. `src/web/pages/*.html` と `src/web/{robots.txt,favicon.ico,_headers}` を `dist/` 直下にコピーする。ルートファイルは存在チェックをせず、欠けていれば `copyFile` の `ENOENT` でビルドが落ちる（`_headers` を静かに欠落させて CSP の無い `dist/` を作らないため）。
 

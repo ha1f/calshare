@@ -43,9 +43,8 @@ async function main() {
       outdir: path.join(distDir, 'assets/js'),
       outbase: srcWebDir,
       entryNames: '[dir]',
-      // create と edit が preview.ts / tapEdit.ts を共有するため、重複を避けて共有チャンクに出す
-      splitting: true,
-      chunkNames: 'chunks/[name]-[hash]',
+      // splitting は metafile で計測済み（PR 説明を参照）。共有チャンクに切り出すと dist 合計は減るが、
+      // ページ単体の初回ロードはどの画面でもバイト数・リクエスト数とも増えるため見送った
     })
   }
 

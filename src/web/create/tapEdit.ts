@@ -120,6 +120,7 @@ function buildTextItem(
   root.dataset.field = config.key
 
   const labelId = `label-${config.key}`
+  const valueId = `value-${config.key}`
   root.appendChild(
     createElement('span', {
       className: 'preview-item-label',
@@ -128,10 +129,14 @@ function buildTextItem(
     }),
   )
 
-  const valueText = createElement('span', { className: 'preview-item-value' })
+  const valueText = createElement('span', {
+    className: 'preview-item-value',
+    attrs: { id: valueId },
+  })
   const viewButton = createElement('button', {
     className: 'preview-item-view',
-    attrs: { type: 'button', 'aria-labelledby': labelId },
+    // 値も読み上げさせるため label と value の両方を参照する（input 側は value が入力値そのもの）
+    attrs: { type: 'button', 'aria-labelledby': `${labelId} ${valueId}` },
   })
   viewButton.dataset.testid = `view-${config.key}`
   viewButton.appendChild(valueText)
@@ -263,6 +268,7 @@ function buildDatetimeItem(
   const root = createElement('div', { className: 'preview-item' })
   root.dataset.field = 'datetime'
   const labelId = 'label-datetime'
+  const valueId = 'value-datetime'
   root.appendChild(
     createElement('span', {
       className: 'preview-item-label',
@@ -271,10 +277,13 @@ function buildDatetimeItem(
     }),
   )
 
-  const valueText = createElement('span', { className: 'preview-item-value' })
+  const valueText = createElement('span', {
+    className: 'preview-item-value',
+    attrs: { id: valueId },
+  })
   const viewButton = createElement('button', {
     className: 'preview-item-view',
-    attrs: { type: 'button', 'aria-labelledby': labelId },
+    attrs: { type: 'button', 'aria-labelledby': `${labelId} ${valueId}` },
   })
   viewButton.dataset.testid = 'view-datetime'
   viewButton.appendChild(valueText)

@@ -27,6 +27,25 @@ test('通報フォームから送信すると受付メッセージが出る（�
   await expect(page.locator('#report-form')).toBeHidden()
 })
 
+test('応答が返らないと約10秒でタイムアウトし、送信ボタンが再び押せる状態に戻る', async ({
+  page,
+}) => {
+  const id = await createPage(page, '9/20 19時 渋谷で飲み会')
+  await page.route(`**/api/pages/${id}/reports`, () => {}) // fulfill しないことで応答なしを再現する
+
+  await page.goto(`/${id}/report`)
+  await page.locator('input[name="reason"][value="inappropriate"]').check()
+  const submitButton = page.getByRole('button', { name: '報告する' })
+  await submitButton.click()
+  await expect(submitButton).toBeDisabled()
+
+  await expect(page.locator('#report-result')).toHaveText(
+    '送信に失敗しました。時間をおいて試してください。',
+    { timeout: 15_000 },
+  )
+  await expect(submitButton).toBeEnabled()
+})
+
 test('GET /done と GET /new のレスポンスヘッダに CSP と X-Content-Type-Options が付く（シナリオ14）', async ({
   request,
 }) => {

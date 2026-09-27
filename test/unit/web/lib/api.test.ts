@@ -5,6 +5,15 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/** 実行環境の `AbortSignal.timeout` を一時的に外す。Safari / WKWebView の旧版を模す */
+function withoutAbortSignalTimeout(run: () => Promise<void>): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(AbortSignal, 'timeout')
+  Reflect.deleteProperty(AbortSignal, 'timeout')
+  return run().finally(() => {
+    if (original !== undefined) Object.defineProperty(AbortSignal, 'timeout', original)
+  })
+}
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -26,10 +35,30 @@ describe('getPage', () => {
     expect(response).toEqual({ id: 'abc', rawText: '飲み会' })
   })
 
-  it('タイムアウト・中断は ApiRequestFailedError に変換する', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('timed out', 'TimeoutError')))
+  it.each(['TimeoutError', 'AbortError'])(
+    '%s は ApiRequestFailedError（code: INTERNAL）に変換する',
+    async (name) => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('aborted', name)))
 
-    await expect(getPage('abc', 'token-123')).rejects.toBeInstanceOf(ApiRequestFailedError)
+      const error = await getPage('abc', 'token-123').catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(ApiRequestFailedError)
+      expect(error).toMatchObject({ code: 'INTERNAL', status: 0 })
+    },
+  )
+
+  it('AbortSignal.timeout 未対応環境でも signal なしで fetch する', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { id: 'abc', rawText: '飲み会' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await withoutAbortSignalTimeout(async () => {
+      const response = await getPage('abc', 'token-123')
+      expect(response).toEqual({ id: 'abc', rawText: '飲み会' })
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/pages/abc', {
+      headers: { Authorization: 'Bearer token-123' },
+      signal: null,
+    })
   })
 
   it('タイムアウト・中断以外の fetch の失敗はそのまま投げる', async () => {

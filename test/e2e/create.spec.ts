@@ -317,11 +317,21 @@ test('タイトル欄は自動表示中は view ボタン、タップ後は inpu
   await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
   await expect(page.getByTestId('view-title')).toHaveText('飲み会')
 
-  const labeledTitle = page.getByLabel('タイトル').and(page.locator(':visible'))
+  const labeledTitle = page.getByLabel('タイトル').filter({ visible: true })
   await expect(labeledTitle).toHaveAttribute('data-testid', 'view-title')
 
   await labeledTitle.click()
   await expect(labeledTitle).toHaveAttribute('data-testid', 'input-title')
+})
+
+test('日時の view ボタンはラベルと現在値の両方をアクセシブルネームに含む', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
+
+  await expect(page.getByTestId('view-title')).toHaveAccessibleName('タイトル 飲み会')
+  await expect(page.getByTestId('view-datetime')).toHaveAccessibleName(
+    '日時 9月20日(日) 19:00〜20:00',
+  )
 })
 
 test('「自動に戻す」を押すと view ボタンにフォーカスが戻る', async ({ page }) => {
@@ -332,4 +342,14 @@ test('「自動に戻す」を押すと view ボタンにフォーカスが戻�
   await page.getByTestId('reset-location').click()
 
   await expect(page.getByTestId('view-location')).toBeFocused()
+})
+
+test('日時編集欄の「自動に戻す」を押すと view ボタンにフォーカスが戻る', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
+
+  await page.getByTestId('view-datetime').click()
+  await page.getByTestId('reset-datetime').click()
+
+  await expect(page.getByTestId('view-datetime')).toBeFocused()
 })

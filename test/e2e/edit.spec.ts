@@ -151,7 +151,7 @@ test('編集画面でも場所欄は自動表示中は view ボタン、タッ�
   await expect(page.getByTestId('input-location')).toHaveValue('渋谷')
 
   await page.getByTestId('reset-location').click()
-  const labeledLocation = page.getByLabel('場所').and(page.locator(':visible'))
+  const labeledLocation = page.getByLabel('場所').filter({ visible: true })
   await expect(labeledLocation).toHaveAttribute('data-testid', 'view-location')
 
   await labeledLocation.click()

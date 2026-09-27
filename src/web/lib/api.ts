@@ -8,7 +8,7 @@ import type {
 } from '../../core/api/types'
 import { API_REQUEST_TIMEOUT_MS } from '../../core/config/limits'
 
-/** 作成・取得・更新 API が 2xx 以外を返したとき、またはタイムアウトしたときに投げる。呼び出し側は code でエラー文言を出し分ける（§5.7） */
+/** 作成・取得・更新・通報 API が 2xx 以外を返したとき、またはタイムアウトしたときに投げる。呼び出し側は code でエラー文言を出し分ける（§5.7） */
 export class ApiRequestFailedError extends Error {
   constructor(
     public readonly status: number,
@@ -19,14 +19,24 @@ export class ApiRequestFailedError extends Error {
   }
 }
 
-/** `AbortSignal.timeout` 付きで fetch する。タイムアウト・中断は `ApiRequestFailedError` に変換する */
-async function fetchWithTimeout(
+/** `AbortSignal.timeout` 未対応環境（Safari / WKWebView の旧版）では signal なしで fetch を続ける */
+function timeoutSignal(): AbortSignal | null {
+  return typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(API_REQUEST_TIMEOUT_MS)
+    : null
+}
+
+/**
+ * `AbortSignal.timeout` 付きで fetch する。タイムアウト・中断は `ApiRequestFailedError` に変換する。
+ * 作成・取得・更新・通報のすべての fetch がここを通る
+ */
+export async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   operation: string,
 ): Promise<Response> {
   try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS) })
+    return await fetch(url, { ...init, signal: timeoutSignal() })
   } catch (error) {
     const isTimeoutOrAbort =
       error instanceof DOMException &&
