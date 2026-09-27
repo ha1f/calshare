@@ -27,7 +27,7 @@
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@eslint/js": "^10.0.0",
     "@playwright/test": "^1.63.0",
-    "@types/node": "^22.20.0",
+    "@types/node": "^26.6.2",
     "esbuild": "^0.28.0",
     "eslint": "^10.11.0",
     "prettier": "^3.9.9",
