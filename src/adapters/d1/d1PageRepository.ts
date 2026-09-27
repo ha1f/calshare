@@ -57,8 +57,13 @@ function serializeChangeSnapshot(snapshot: ChangeSnapshot): string {
   return JSON.stringify(json)
 }
 
+// serializeChangeSnapshot が書き込むのは toISOString() の形だけなので、その形へ戻して一致するかで判定する。
+// Date.parse は '2026' のような ISO8601 以外の文字列も受理するため、判定には使えない
 function isNullableDateString(value: unknown): value is string | null {
-  return value === null || (typeof value === 'string' && !Number.isNaN(Date.parse(value)))
+  if (value === null) return true
+  if (typeof value !== 'string') return false
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.toISOString() === value
 }
 
 function isChangeSnapshotJson(value: unknown): value is ChangeSnapshotJson {

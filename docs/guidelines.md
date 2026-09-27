@@ -87,7 +87,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 ### 2.3 型の書き方
 
 - 境界（サーバが受け取るリクエストの JSON、web が受け取るエラー本文、localStorage、D1 の TEXT 列に入れた JSON）から入る値は `unknown` で受け、手書きの判定で狭めてから core の型に変換する。`as` は判定が済んだ直後の 1 箇所だけに使う（`src/server/routes/apiPagesEdit.ts` の `parseUpdatePageRequest`、`src/web/lib/history.ts` の `isStoredHistoryEntry` が手本）。
-  - web が受け取るエラー本文は Cloudflare の 502 など API 以外が返すこともあるので判定の対象にする。web が自分の API から受け取る成功レスポンスは、`src/core/api/types.ts` の型をサーバと共用しているので型注釈で受けてよい。
+  - web が受け取るエラー本文は Cloudflare の 502 など API 以外が返すこともあるので判定の対象にする。web が自分の API から受け取る成功レスポンスは、`src/core/api/types.ts` の型をサーバと共用しているので、判定せずに `as` で型付けしてよい（`response.json()` は `any` を返すため、型注釈で受けると `@typescript-eslint/no-unsafe-assignment` に当たる）。
   - D1 の行は、書き込むのが本リポジトリのアダプタと scripts に限られるので `.first<T>()` などで型付けしてよい。スキーマが中身を保証しない JSON を入れた TEXT 列だけは unknown で受けて判定する。
 - 状態は判別可能なユニオン（`{ mode: 'auto' } | { mode: 'manual'; value: T }`、`{ ok: true } | { ok: false; code }`）で表す。`enum` は使わず、文字列リテラルのユニオンと `as const` を使う。
 - 依存は `Deps`（`src/server/deps.ts`）の引数で渡す。モジュールスコープのシングルトンやグローバルからの参照はしない。テストは Fake を渡して差し替える（docs/design.md §11.4）。
@@ -216,7 +216,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 - ルートが意図的に返すエラーは `ApiRequestError`（`src/server/lib/errors.ts`）を throw する。HTTP ステータスと `ApiErrorCode` を持つ。
 - 例外から JSON レスポンスへの変換は `app.onError` の 1 箇所で行う。各ルートに `try / catch` と `c.json(body, status)` を繰り返し書かない。Hono 公式も `onError` を例外の集約点として示している[^hono-exception]。
   - `HTTPException` は Hono 自身が投げることがあるので `err.getResponse()` をそのまま返す。
-  - `c.req.path` が `/api/` で始まるルートでは、`ApiRequestError` もそれ以外の例外も `toApiErrorResponse` で `ApiError` 形式の JSON にする（後者は `{ code: 'INTERNAL' }` の 500）。HTML ルート（詳細・編集・通報ページ）では従来どおり `c.text('Internal Server Error', 500)`。`src/web/lib/api.ts` はこの `code` でエラー文言を出し分けており、`test/integration/server/apiPages.create.test.ts` も `errorCode(res) === 'INTERNAL'` を検査しているため、この分岐が無いと落ちる。
+  - `c.req.path` が `/api/` で始まるルートでは、`ApiRequestError` もそれ以外の例外も `toApiErrorResponse` で `ApiError` 形式の JSON にする（後者は `{ code: 'INTERNAL' }` の 500）。HTML ルート（詳細・編集・通報ページ）では従来どおり `c.text('Internal Server Error', 500)`。web は `src/web/lib/api.ts` がこの `code` を読み、呼び出し側が `apiErrorMessage`（`src/web/lib/messages.ts`）で文言を出し分ける。`test/integration/server/apiPages.create.test.ts` も `errorCode(res) === 'INTERNAL'` を検査しているため、この分岐が無いと落ちる。
   - 5xx になるものと `ApiRequestError` 以外の例外は `deps.logger.error` に `routePath(c)` と `pageId` を付けて記録する。
   - `HTTPException.getResponse()` は Context を知らない。`securityHeaders()` が外側で包み直すので、ヘッダの付け直しは不要。Hono の合成処理（`compose.ts`）は各階層の `dispatch` に `onError` を渡しており、例外は投げた階層でその場で `onError` に変換され、`context.res` に入った状態で呼び出し元へ、例外を投げずに戻る。つまり `securityHeaders()` の `await next()` は例外を受け取らず正常に完了し、後続の `c.res = new Response(...)` によるヘッダ付け直しが必ず実行される（`node_modules/hono@4.13.9` の `dist/compose.js` で確認）[^hono-compose]。
   - `hono/csrf` `hono/body-limit` のような標準ミドルウェアを将来 `/api/*` に足す場合、それらが投げる `HTTPException` の `getResponse()` は JSON ではない（例: `hono/csrf` の既定応答は `text/plain` の `Forbidden`）。§5.7 の判断が続く限り起きないが、追加するときは `onError` 側で `/api/*` 判定に合わせて JSON へ詰め直すことを検討する。

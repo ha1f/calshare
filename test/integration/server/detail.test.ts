@@ -516,6 +516,28 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
       expect(res.status).toBe(200)
       expect(await collectSections(text)).not.toContain('change-banner')
     })
+
+    it('previous_snapshot の日時が ISO8601 でない行はバナーを出さない', async () => {
+      const { deps, repo } = buildDetailDeps()
+      const id = pageId(25)
+      await createPage(repo, id)
+      await setRawPreviousSnapshot(
+        id,
+        JSON.stringify({
+          start: '2026',
+          end: null,
+          isAllDay: false,
+          titleChanged: false,
+          locationChanged: false,
+        }),
+        new Date(NOW.getTime() - 60 * 60 * 1000),
+      )
+
+      const { res, text } = await get(deps, `/${id}`)
+
+      expect(res.status).toBe(200)
+      expect(await collectSections(text)).not.toContain('change-banner')
+    })
   })
 
   describe('免責の位置（§8）', () => {
