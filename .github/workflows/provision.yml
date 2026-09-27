@@ -32,15 +32,13 @@ jobs:
     outputs:
       domain: ${{ steps.resolve-domain.outputs.domain }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
 
-      - name: Node のバージョンを決める
-        id: node-version
-        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
+      # npm ci をこのジョブでは実行しないため cache: npm は付けない（保存対象が無く post 側の
+      # actions/cache が失敗しうる）。
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: .nvmrc }
 
       # inputs / vars の式はシェル実行前にテキスト置換されるため、run: に直接展開すると
       # 値に "; ..." や $(...) を混ぜたシェル注入の経路になる。env 経由で受け取り、
@@ -82,15 +80,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Node のバージョンを決める
-        id: node-version
-        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
+      # npm ci をこのジョブでは実行しないため cache: npm は付けない（保存対象が無く post 側の
+      # actions/cache が失敗しうる）。
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: .nvmrc }
 
       - name: Ensure D1 / R2 resources
         id: ensure
@@ -141,15 +136,11 @@ jobs:
     needs: resources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
 
-      - name: Node のバージョンを決める
-        id: node-version
-        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: .nvmrc, cache: npm }
 
       - name: wrangler.jsonc の有無を確認する
         id: scaffold
@@ -160,6 +151,10 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "wrangler.jsonc が無いためスキップします（wrangler.jsonc が main に入る前）" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: npm ci
+        if: steps.scaffold.outputs.present == 'true'
+        run: npm ci
 
       # wrangler.jsonc の name は apply-service-name.mjs（H1）でサービス名とともに変わるため、
       # ここで固定値にすると改名後は常にスキップになる（docs/runbooks/rename.md）。
@@ -210,15 +205,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Node のバージョンを決める
-        id: node-version
-        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
+      # npm ci をこのジョブでは実行しないため cache: npm は付けない（保存対象が無く post 側の
+      # actions/cache が失敗しうる）。
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: .nvmrc }
 
       - name: Ensure zone
         id: zone
@@ -279,15 +271,11 @@ jobs:
     if: inputs.with_font
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
 
-      - name: Node のバージョンを決める
-        id: node-version
-        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: .nvmrc, cache: npm }
 
       - name: wrangler.jsonc とフォントスクリプトの有無を確認する
         id: font-scaffold
@@ -303,6 +291,10 @@ jobs:
             exit 0
           fi
           echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - name: npm ci
+        if: steps.font-scaffold.outputs.present == 'true'
+        run: npm ci
 
       # scripts/fonts/subset.sh が呼ぶ pyftsubset は fonttools（Python パッケージ）が提供する。
       # ubuntu-latest の system Python は PEP 668（externally-managed-environment）で
@@ -324,9 +316,9 @@ jobs:
           node scripts/fonts/download-noto-sans-jp.mjs
           bash scripts/fonts/subset.sh
           # --remote を付けないとローカルシミュレータ向けになり本番 R2 に届かない（要検証）。
-          npx wrangler@4 r2 object put calshare/fonts/NotoSansJP-Regular.subset.otf \
+          npx wrangler r2 object put calshare/fonts/NotoSansJP-Regular.subset.otf \
             --file dist/fonts/NotoSansJP-Regular.subset.otf --remote
           # OFL 1.1 はライセンス本文と著作権表示をフォントと一緒に置くことを求める（docs/licenses/noto-sans-jp.md）
-          npx wrangler@4 r2 object put calshare/fonts/OFL.txt \
+          npx wrangler r2 object put calshare/fonts/OFL.txt \
             --file test/fixtures/fonts/OFL.txt --remote
           echo "フォントとライセンス本文を R2 (fonts/NotoSansJP-Regular.subset.otf, fonts/OFL.txt) に配置しました" | tee -a "$GITHUB_STEP_SUMMARY"

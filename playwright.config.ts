@@ -10,7 +10,9 @@ export default defineConfig({
   // 原因調査用の trace・スクリーンショットを残す目的だけに使う
   retries: process.env.CI ? 1 : 0,
   failOnFlakyTests: !!process.env.CI,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: process.env.CI
+    ? [['github'], ['html', { open: 'never' }]]
+    : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: `http://localhost:${port}`,
     trace: 'on-first-retry',

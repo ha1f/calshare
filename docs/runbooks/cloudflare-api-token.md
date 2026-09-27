@@ -35,7 +35,9 @@ API トークンを、必要最小限の権限で発行する。
 3. **続行して概要に進む** → 内容を確認して **トークンを作成する**。表示されたトークンをコピーする
    （この画面を閉じると二度と表示されない）。
 4. Account ID を控える: Cloudflare ダッシュボードの **Workers & Pages** 概要ページ右サイドバー、
-   または `wrangler login` 済みならターミナルで `npx wrangler@4 whoami` でも確認できる。
+   または `wrangler login` 済みならターミナルで `npx wrangler whoami` でも確認できる
+   （リポジトリで `npm ci` 済みで `node_modules` に lockfile の wrangler が入っている前提。
+   入っていなければ `npx` がレジストリから最新版を取りに行く）。
 5. `scripts/cf/set-github-secrets.sh` を実行し、トークンと Account ID を登録する（後述の
    provisioning.md 参照）。全チェックが OK かどうかは `.github/workflows/provision.yml` の
    `preflight` ジョブが実行のたびに自動確認するので、ローカルで `check-token.mjs` を
