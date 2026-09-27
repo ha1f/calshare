@@ -123,8 +123,9 @@ test('localStorage に不正な id を仕込んでもリンクが生成されな
   await expect(page.getByTestId('history-title-link')).toHaveText('正しい予定')
   await expect(page.getByTestId('empty-message')).toBeHidden()
 
+  // getByRole('link') は既定で hidden な <a> を除外するため、ここでは含めて拾う
   const hrefs = await page
-    .getByRole('link')
+    .getByRole('link', { includeHidden: true })
     .evaluateAll((els) => els.map((el) => el.getAttribute('href')))
   for (const href of hrefs) {
     if (href === '/') continue

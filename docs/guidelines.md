@@ -299,7 +299,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 ### 6.5 アクセシビリティ
 
 - 動的に現れるメッセージには最初からマークアップで役割を付ける。エラー（`#error-message` `#load-error-message` `#copy-error`）は `role="alert"`、成功・結果（`#copy-message`）は `aria-live="polite"`。SSR 側（`views/ReportPage.tsx` の `#report-result`）は既に付いている。JS は `textContent` と `hidden` の操作だけにし、属性を後から足さない[^aria-live]。
-- 入力欄とボタンにはラベルを結ぶ。タップ編集欄（`tapEdit.ts` の `buildTextItem` `buildDatetimeItem`）は「タイトル」「場所」「メモ」「日時」の `<span>` に `id="label-<key>"` を振り、排他表示される `viewButton`（自動）と `input`（手動）の両方から `aria-labelledby` で参照する。`viewButton` は現在の値も読み上げさせるため、値の `<span>`（`id="value-<key>"`）も並べて参照する。`<label for>` は 1 要素しか指せないため使わない。`startInput` / `endInput` は既に `<label>` で包まれているので対象外[^label]。
+- 入力欄とボタンにはラベルを結ぶ。タップ編集欄（`tapEdit.ts` の `buildTextItem` `buildDatetimeItem`）は「タイトル」「場所」「メモ」「日時」の `<span>` に `id="label-<key>"` を振り、排他表示される `viewButton`（自動）と `input`（手動）の両方から `aria-labelledby` で参照する。`viewButton` は現在の値も読み上げさせるため、値の `<span>`（`id="value-<key>"`）も並べて参照する。`<label for>` は 1 要素しか指せないため、排他表示される `viewButton` と `input` の 2 要素を 1 つのラベルから指すタップ編集欄では使わない。`startInput` / `endInput` は既に `<label>` で包まれているので対象外[^label]。作成・編集画面（`index.html` `new.html` `edit.html`）の `#input` は参照先が 1 つなので、見た目を変えない `.visually-hidden` の `<label for>` で結ぶ。
 - フォーカスを持つ要素を隠すときは、隠す側が次のフォーカス先を決めて `focus()` を呼ぶ。「自動に戻す」で入力欄を `hidden` にしたら `viewButton.focus()` する。
 - 色だけで状態を伝えない。`is-manual` の状態は、入力欄への切り替えと「自動に戻す」ボタンの表示で伝わり、枠線の色は補助として使う。
 - 文字に使う色は、ライト・ダークとも背景色に対するコントラスト比を 4.5:1 以上にする（WCAG 2.2 達成基準 1.4.3）[^wcag-contrast]。色の定義場所は §6.2。

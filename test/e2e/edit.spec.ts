@@ -93,14 +93,12 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
   )
   await expect(changeBanner).toContainText('場所が変更されました')
   await expect(changeBanner).not.toContainText('タイトルが変更されました')
-  await expect(page.locator('body')).not.toContainText('渋谷')
+  await expect(page.getByText('渋谷')).toHaveCount(0)
 
   // version > 1 になったページは「最終更新」とカレンダーボタン直下の免責が出る（§6.3・§8）
   await expect(page.locator('[data-section="footer"]')).toContainText('最終更新:')
   await expect(
-    page
-      .locator('[data-section="calendar"]')
-      .getByText('カレンダーに追加した後の変更は自動では反映されません'),
+    page.locator('[data-section="calendar"]').getByText('最新はこのページで確認してください'),
   ).toBeVisible()
 })
 

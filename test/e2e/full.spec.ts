@@ -17,7 +17,7 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
   const detailHref = await page.locator('#url-display').getAttribute('href')
   if (detailHref === null) throw new Error('url-display の href が無い')
   await page.goto(new URL(detailHref).pathname)
-  await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('飲み会')
 
   // 詳細 →「作ってみる」→ 新しい予定を作成する（source が detail_cta で記録される。§6.1・§6.3）。
   // ここで最初のページを編集対象にすると、直前の詳細ページ表示で Cache API に載った

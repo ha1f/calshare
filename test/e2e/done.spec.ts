@@ -78,11 +78,12 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   await page.goto(`/done?id=${id}`)
   await expect(page.locator('#resend-notice')).toBeVisible()
 
+  await expect(page.locator('#url-display')).toHaveAttribute('href', /^https?:\/\//)
   const href = await page.locator('#url-display').getAttribute('href')
   if (href === null) throw new Error('url-display の href が無い')
   expect(new URL(href).origin).toBe(baseURL)
   await page.goto(href)
-  await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('飲み会')
 
   const sections = await page
     .locator('[data-section]')
