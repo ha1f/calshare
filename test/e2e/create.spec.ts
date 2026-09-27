@@ -1,4 +1,10 @@
-import { DONE_URL_PATTERN, createRequestBody, expect, test, waitForCreateRequest } from './fixtures'
+import {
+  DONE_URL_PATTERN,
+  readCreateRequestBody,
+  expect,
+  test,
+  waitForCreateRequest,
+} from './fixtures'
 
 test('入力〜プレビュー〜作成〜/done への遷移まで（シナリオ1）', async ({ page }) => {
   await page.goto('/')
@@ -12,7 +18,7 @@ test('入力〜プレビュー〜作成〜/done への遷移まで（シナリ�
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const body = createRequestBody(request)
+  const body = readCreateRequestBody(request)
   expect(body.source).toBe('direct')
   expect(body.fields.title).toBe('飲み会')
 
@@ -58,7 +64,7 @@ test('場所を空にすると場所なしとして作成される（シナリ�
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const body = createRequestBody(request)
+  const body = readCreateRequestBody(request)
   expect(body.fields.location).toBeNull()
 
   await page.waitForURL(DONE_URL_PATTERN)
@@ -123,7 +129,7 @@ test('13 ヶ月超の日付は下書きとして作成できる（シナリオ11
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const body = createRequestBody(request)
+  const body = readCreateRequestBody(request)
   expect(body.fields.start).toBeNull()
   expect(body.fields.end).toBeNull()
 
@@ -156,7 +162,7 @@ test('プリフィルされた項目は manual 表示になり、API は押す�
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const body = createRequestBody(request)
+  const body = readCreateRequestBody(request)
   expect(body.source).toBe('prefill')
 
   await page.waitForURL(DONE_URL_PATTERN)
@@ -172,7 +178,7 @@ test('ref=detail_cta からの作成は source が detail_cta になる（シナ
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const body = createRequestBody(request)
+  const body = readCreateRequestBody(request)
   expect(body.source).toBe('detail_cta')
 
   await page.waitForURL(DONE_URL_PATTERN)
@@ -186,7 +192,7 @@ test('不正な dates だけのプリフィルは何も反映されず source �
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  expect(createRequestBody(request).source).toBe('direct')
+  expect(readCreateRequestBody(request).source).toBe('direct')
 
   await page.waitForURL(DONE_URL_PATTERN)
 })
@@ -206,7 +212,7 @@ test('時刻ありの予定を終日にすると単日の終日として作成�
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const fields = createRequestBody(request).fields
+  const fields = readCreateRequestBody(request).fields
   expect(fields.start).toBe('2026-09-19T15:00:00.000Z')
   expect(fields.end).toBe('2026-09-20T15:00:00.000Z')
 
@@ -232,7 +238,7 @@ test('日時未定の下書きで終日にチェックしても外れず、日�
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const fields = createRequestBody(request).fields
+  const fields = readCreateRequestBody(request).fields
   expect(fields.start).toBeNull()
   expect(fields.end).toBeNull()
 
@@ -251,7 +257,7 @@ test('日時未定の下書きで開始だけ入力しても既定の1時間で�
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  const fields = createRequestBody(request).fields
+  const fields = readCreateRequestBody(request).fields
   expect(fields.start).toBe('2026-09-20T10:00:00.000Z')
   expect(fields.end).toBe('2026-09-20T11:00:00.000Z')
 

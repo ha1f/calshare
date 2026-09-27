@@ -1,6 +1,6 @@
 import {
   createPage,
-  createRequestBody,
+  readCreateRequestBody,
   DONE_URL_PATTERN,
   expect,
   test,
@@ -30,7 +30,7 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  expect(createRequestBody(createRequest).source).toBe('detail_cta')
+  expect(readCreateRequestBody(createRequest).source).toBe('detail_cta')
   await page.waitForURL(DONE_URL_PATTERN)
   const secondMatch = DONE_URL_PATTERN.exec(page.url())
   if (secondMatch === null) throw new Error('failed to extract page id from /done URL')

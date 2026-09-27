@@ -91,7 +91,7 @@ function throwingRenderer(): OgpRenderer & { calls: number } {
     calls: 0,
     render: (): Promise<Uint8Array> => {
       renderer.calls++
-      throw new Error('render failed')
+      return Promise.reject(new Error('render failed'))
     },
   }
   return renderer

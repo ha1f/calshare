@@ -731,7 +731,7 @@ export interface TextInterpreter {
 
 // src/core/interpret/ruleBasedInterpreter.ts — Phase 1 の唯一の実装
 export const ruleBasedInterpreter: TextInterpreter = {
-  interpret: async (input, ctx) => parseEventText(input, ctx),
+  interpret: (input, ctx) => new Promise((resolve) => resolve(parseEventText(input, ctx))),
 }
 ```
 

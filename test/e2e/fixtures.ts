@@ -64,7 +64,7 @@ export function waitForCreateRequest(page: Page) {
   return page.waitForRequest((r) => r.url().endsWith('/api/pages') && r.method() === 'POST')
 }
 
-/** POST /api/pages のリクエストボディ。Request#postDataJSON() の戻り値が any 型のため */
-export function createRequestBody(request: Request): CreatePageRequest {
+/** POST /api/pages のリクエストボディを読む。Request#postDataJSON() の戻り値が any 型のため */
+export function readCreateRequestBody(request: Request): CreatePageRequest {
   return request.postDataJSON() as CreatePageRequest
 }
