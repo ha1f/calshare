@@ -54,7 +54,6 @@ export interface PageRepository {
   findById(id: string): Promise<PageRecord | null>
   /** version+1 で更新する。楽観ロックは持たず最後の保存が勝つ（§6.5）。status / report_count は触らない */
   update(id: string, patch: PagePatch): Promise<'ok' | 'not_found'>
-  incrementReportCount(id: string): Promise<number> // 更新後の件数
   /** 同一送信元（ip_hash または device_id が一致）の active なページ数。通報通知に載せる（§9.4） */
   countActiveByCreator(creatorIpHash: string, creatorDeviceId: string): Promise<number>
   listExpired(before: Date, limit: number): Promise<string[]>

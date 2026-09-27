@@ -26,6 +26,10 @@ export interface CreateReportRequest {
   reason: ReportReason
   comment: string | null
 }
+/** 重複でも受理と同じ本文を返す（§9.4） */
+export interface CreateReportResponse {
+  ok: true
+}
 export type ApiErrorCode =
   | ValidationErrorCode
   | 'UNSUPPORTED_MEDIA_TYPE'

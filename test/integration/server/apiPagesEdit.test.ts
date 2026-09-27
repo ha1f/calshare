@@ -409,7 +409,10 @@ describe('PATCH /api/pages/:id', () => {
   it('status と report_count は変更しない', async () => {
     const deps = buildFakeDeps()
     await seedPage(deps.pages)
-    await deps.pages.incrementReportCount(PAGE_ID)
+    await deps.reports.insertIfNotDuplicate(
+      { id: 'report-x', pageId: PAGE_ID, reason: 'spam', comment: null, ipHash: 'ip-x', now: NOW },
+      new Date('2026-09-15T00:00:00.000Z'),
+    )
     const app = createApp(deps)
 
     const res = await app.fetch(

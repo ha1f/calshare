@@ -50,9 +50,18 @@ function clonePage(page: PageRecord): PageRecord {
   }
 }
 
+/** memoryPageRepository と memoryReportRepository が report_count を通じて共有する Map */
+export type MemoryPageStore = Map<string, PageRecord>
+
+export function createMemoryPageStore(): MemoryPageStore {
+  return new Map()
+}
+
 /** D1PageRepository と同じ契約を Map で再現するインメモリ実装。D1 実装と同じテストスイートで検証する */
-export function createMemoryPageRepository(): PageRepository {
-  const pages = new Map<string, PageRecord>()
+export function createMemoryPageRepository(
+  store: MemoryPageStore = createMemoryPageStore(),
+): PageRepository {
+  const pages = store
   const eventIds = new Set<string>()
 
   return {
@@ -132,13 +141,6 @@ export function createMemoryPageRepository(): PageRepository {
         },
       })
       return 'ok'
-    },
-
-    async incrementReportCount(id: string) {
-      const current = pages.get(id)
-      if (!current) return 0
-      current.reportCount += 1
-      return current.reportCount
     },
 
     async countActiveByCreator(creatorIpHash: string, creatorDeviceId: string) {

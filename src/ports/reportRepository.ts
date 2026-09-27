@@ -8,10 +8,12 @@ export interface NewReportInput {
   ipHash: string
   now: Date
 }
+export type InsertReportResult = { kind: 'inserted'; reportCount: number } | { kind: 'duplicate' }
+
 export interface ReportRepository {
   /**
-   * 同一 ipHash・同一 pageId の通報が dedupeSince 以降に既にあれば 'duplicate' を返して INSERT しない（§9.3 の 24 時間デデュープ）。
-   * 無ければ INSERT して 'inserted'。report_count の +1 は呼び出し側が PageRepository.incrementReportCount で行う
+   * 同一 ipHash・同一 pageId の通報が dedupeSince 以降に既にあれば duplicate を返して INSERT しない（§9.3 の 24 時間デデュープ）。
+   * 無ければ同じ db.batch() で reports に INSERT し pages.report_count を +1 する（§4.3）。保存と加算のどちらかだけが成功する状態を作らない
    */
-  insertIfNotDuplicate(report: NewReportInput, dedupeSince: Date): Promise<'inserted' | 'duplicate'>
+  insertIfNotDuplicate(report: NewReportInput, dedupeSince: Date): Promise<InsertReportResult>
 }
