@@ -18,8 +18,8 @@ function ipForTest(testId: string): string {
   return `10.${(hash >>> 16) & 255}.${(hash >>> 8) & 255}.${hash & 255}`
 }
 
-// CSP 違反（require-trusted-types-for 'script' を含む）はブラウザが console.error に出す。
-// 全 spec 共通でこれを拾い、テスト終了後にまとめて落とす（§9.1・§6.6）
+// CSP 違反（require-trusted-types-for 'script' を含む）はブラウザが console.error に出す（§9.1）。
+// 全 spec 共通でこれを拾い、テスト終了後にまとめて落とす
 const CSP_VIOLATION_PATTERN = /Refused to|Content Security Policy|Trusted ?(Types|HTML|Script)/
 
 export const test = base.extend({

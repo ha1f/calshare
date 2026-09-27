@@ -26,7 +26,7 @@
     --border-faint: #333;
     --muted: #aaa;
     --muted-strong: #ccc;
-    --faint: #777;
+    --faint: #888; /* WCAG AA (4.5:1) を --bg に対して満たす最小限の明るさ（実測 5.28:1） */
     --link: #7ab8ff;
     --error: #ff8a80;
     --success: #7fd99a;

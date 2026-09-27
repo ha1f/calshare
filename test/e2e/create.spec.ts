@@ -310,7 +310,7 @@ test('textarea の自動リサイズで border 分の高さが不足してスク
   expect(clientHeight).toBeGreaterThanOrEqual(scrollHeight)
 })
 
-test('タイトル欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する（§6.5）', async ({
+test('タイトル欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する', async ({
   page,
 }) => {
   await page.goto('/')

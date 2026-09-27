@@ -43,8 +43,7 @@ async function main() {
       outdir: path.join(distDir, 'assets/js'),
       outbase: srcWebDir,
       entryNames: '[dir]',
-      // create と edit が preview.ts / tapEdit.ts を共有しており、分割無しでは重複が大きい
-      // （実測: 分割無し 66,176 bytes → 分割あり 39,563 bytes、chunks/ 配下に共有チャンクとして出す）
+      // create と edit が preview.ts / tapEdit.ts を共有するため、重複を避けて共有チャンクに出す
       splitting: true,
       chunkNames: 'chunks/[name]-[hash]',
     })

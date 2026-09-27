@@ -142,7 +142,7 @@ test('pathname に id が無い（直接 /edit を開く）と / へ遷移する
   await page.waitForURL((url) => url.pathname === '/' && url.search === '')
 })
 
-test('編集画面でも場所欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する（§6.5）', async ({
+test('編集画面でも場所欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する', async ({
   page,
 }) => {
   const id = await createPage(page, '9/20 19時 渋谷で飲み会')
