@@ -1402,6 +1402,8 @@ export type GetPageResponse = PageSummaryJson & { rawText: string }
 export interface UpdatePageRequest { rawText: string; fields: EventFieldsJson }
 export type UpdatePageResponse = PageSummaryJson
 export interface CreateReportRequest { reason: ReportReason; comment: string | null }
+/** 重複でも受理と同じ本文を返す（§9.4） */
+export interface CreateReportResponse { ok: true }
 export type ApiErrorCode =
   | ValidationErrorCode | 'UNSUPPORTED_MEDIA_TYPE' | 'FORBIDDEN_ORIGIN' | 'INVALID_REQUEST'
   | 'RATE_LIMITED' | 'UNAUTHORIZED' | 'NOT_FOUND' | 'INTERNAL'
@@ -1790,7 +1792,7 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 
 - `adapters/ogp/fakeOgpRenderer.ts`: `createFakeOgpRenderer(): OgpRenderer & { calls: OgpInput[] }`。返す PNG は 1×1 透明 PNG をコード内の base64 定数で持つ（`iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=`）。fixtures ディレクトリは要らない。
 - `adapters/notifier/fakeNotifier.ts`: `createFakeNotifier(): Notifier & { calls: ReportNotification[] }`。何も送らず記録だけする。
-- `adapters/memory/memoryReportRepository.ts`: `${pageId}:${ipHash}` をキーに最終通報時刻を `Map` で持ち、`dedupeSince` 以降なら `'duplicate'`。T5 が D1 実装と同じスイートを流す。
+- `adapters/memory/memoryReportRepository.ts`: `createMemoryReportRepository(pages: MemoryPageStore): ReportRepository`。`${pageId}:${ipHash}` をキーに最終通報時刻を `Map` で持ち、`dedupeSince` 以降なら `{ kind: 'duplicate' }` を返して INSERT しない。無ければ `memoryPageRepository` と共有する `MemoryPageStore` の該当ページの `reportCount` を直接加算し、`{ kind: 'inserted', reportCount }` を返す（D1 の `db.batch()` に相当）。T5 が D1 実装と同じスイートを流す。
 - `adapters/clock/fakeClock.ts`: `fakeClock(now: Date): Clock & { set(now: Date): void }`。`systemClock` は `new Date()` を返す。
 
 **`GET /api/health`**: `200`、本文 `{ "ok": true }`（`HealthResponse`、§11.3）、`Content-Type: application/json`、`Cache-Control: no-store`。

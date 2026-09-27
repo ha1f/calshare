@@ -481,6 +481,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 | npm | `.npmrc` なし | `engine-strict=true` |
 | tsconfig | `strict` のみ | `verbatimModuleSyntax` `noUncheckedIndexedAccess` `exactOptionalPropertyTypes` `noImplicitOverride` を追加。層ごとに直し、0 件になった層の tsconfig（core → server / web）に先に入れ、最後に base へ移す |
 | ESLint | `recommended`（型情報なし） | `recommendedTypeChecked` + `parserOptions.project`（3 tsconfig の配列） |
+| ESLint | 値と型の inline import を検出しない | `no-restricted-syntax`（`ImportSpecifier[importKind='type']`、§2.2）（PR #77） |
 | Hono | 各ルートで try / catch と `c.json(body, status)` | `ApiRequestError` を throw し `app.onError` で 1 箇所変換 |
 | CSP | Trusted Types なし | `require-trusted-types-for 'script'` を `headers.ts` と `_headers` の両方へ |
 | D1 | `d1RateLimiter` がループ内で `prepare` | ループ外で 1 回 `prepare`、`bind` を繰り返す |

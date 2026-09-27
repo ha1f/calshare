@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// wrangler.jsonc の routes・workers_dev を、独自ドメイン割り当て（H3）に合わせて
+// wrangler.jsonc の routes・workers_dev を、独自ドメイン割り当てに合わせて
 // コメント入り JSONC のまま最小限の正規表現置換で書き換える。
 // docs/runbooks/custom-domain.md の手順 3（雛形を手で書いて PR を作る）を自動化し、
 // オーナーに残るのはネームサーバー変更と自動作成された PR の確認だけにする。

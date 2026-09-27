@@ -2,7 +2,7 @@
 // 独自ドメインのゾーン（type: full）が Cloudflare アカウントに無ければ作成し、
 // 割り当てられたネームサーバーを出す。既存なら現在の状態とネームサーバーを出す。
 // ゾーン作成そのものは自動化できるが、レジストラ側のネームサーバー変更は
-// 本人認証が要るため H3 として人間に残る（docs/runbooks/custom-domain.md）。
+// 本人認証が要るため人間に残る（docs/runbooks/custom-domain.md）。
 import { parseArgs } from 'node:util'
 import { pathToFileURL } from 'node:url'
 import { createCfApi, readCfEnv } from './lib/cfApi.mjs'
@@ -67,7 +67,7 @@ function formatText({ domain, existed, status, nameServers, dryRun }) {
   ]
   const table = toMarkdownTable(['項目', '値'], rows)
   const note = nameServers.length
-    ? '\n\nH3: 上記のネームサーバーをドメインのレジストラに設定してください（docs/runbooks/custom-domain.md）。'
+    ? '\n\n上記のネームサーバーをドメインのレジストラに設定してください（docs/runbooks/custom-domain.md）。'
     : ''
   return `${table}${note}`
 }

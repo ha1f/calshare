@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // D1 データベースと R2 バケット（どちらも名前は calshare）を、無ければ作り、あれば流用する。
 // 何度実行しても同じ結果になる（冪等）。--write-wrangler を指定すると、生成/流用した
-// D1 の database_id を wrangler.jsonc に書き戻す（H4 の置換作業を自動化する）。
+// D1 の database_id を wrangler.jsonc に書き戻す（プレースホルダの置換作業を自動化する）。
 import { parseArgs } from 'node:util'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'

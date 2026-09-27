@@ -1,6 +1,6 @@
 name: usage-report
 
-# H12: Cloudflare 使用量の定期監視。しきい値超過があれば Issue でオーナーに判断を仰ぐ
+# Cloudflare 使用量の定期監視。しきい値超過があれば Issue でオーナーに判断を仰ぐ
 # （docs/runbooks/usage.md、design.md §14 の対応方針）。
 on:
   schedule:
@@ -26,7 +26,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version-file: .nvmrc }
 
-      # H5（API トークン発行）より前に main へマージされると、schedule はこの時点で発火し始める。
+      # API トークンの発行（docs/runbooks/cloudflare-api-token.md）より前に main へマージされると、
+      # schedule はこの時点で発火し始める。
       # provision / deploy は前提が無いときスキップして成功終了する設計なので、ここも合わせる
       # （失敗メールが毎週届く状態を「そういうもの」にしない）。
       - name: Secrets の登録状況を確認する
@@ -38,7 +39,7 @@ jobs:
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "CLOUDFLARE_API_TOKEN または CLOUDFLARE_ACCOUNT_ID が未登録のためスキップしました。" | tee -a "$GITHUB_STEP_SUMMARY"
-            echo "docs/runbooks/cloudflare-api-token.md の手順で発行し、GitHub Secrets に登録してください（H5）。" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "docs/runbooks/cloudflare-api-token.md の手順で発行し、GitHub Secrets に登録してください。" | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi

@@ -46,7 +46,7 @@ function buildChecks(accountId) {
 }
 
 /**
- * scripts/cf/usage-report.mjs（H12）が使う GraphQL Analytics API の疎通確認。
+ * scripts/cf/usage-report.mjs が使う GraphQL Analytics API の疎通確認。
  * 通常の REST エンドポイントとは別の権限（Account Analytics:Read）が要るため、
  * 上の buildChecks とは別に POST /graphql で最小のクエリを投げて確認する。
  */
