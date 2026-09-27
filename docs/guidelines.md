@@ -86,7 +86,9 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 
 ### 2.3 型の書き方
 
-- 境界（HTTP の JSON、localStorage、D1 の行）から入る値は `unknown` で受け、手書きの判定で狭めてから core の型に変換する。`as` は判定が済んだ直後の 1 箇所だけに使う（`src/server/routes/apiPagesEdit.ts` の `parseUpdatePageRequest`、`src/web/lib/history.ts` の `isHistoryEntry` が手本）。
+- 境界（サーバが受け取るリクエストの JSON、web が受け取るエラー本文、localStorage、D1 の行）から入る値は `unknown` で受け、手書きの判定で狭めてから core の型に変換する。`as` は判定が済んだ直後の 1 箇所だけに使う（`src/server/routes/apiPagesEdit.ts` の `parseUpdatePageRequest`、`src/web/lib/history.ts` の `isStoredHistoryEntry` が手本）。
+  - web が受け取るエラー本文は Cloudflare の 502 など API 以外が返すこともあるので判定の対象にする。web が自分の API から受け取る成功レスポンスは、`src/core/api/types.ts` の型をサーバと共用しているので型注釈で受けてよい。
+  - D1 の行は、書き込むのが本リポジトリのアダプタと scripts に限られるので `.first<T>()` などで型付けしてよい。JSON を入れた TEXT 列だけは unknown で受けて判定する。
 - 状態は判別可能なユニオン（`{ mode: 'auto' } | { mode: 'manual'; value: T }`、`{ ok: true } | { ok: false; code }`）で表す。`enum` は使わず、文字列リテラルのユニオンと `as const` を使う。
 - 依存は `Deps`（`src/server/deps.ts`）の引数で渡す。モジュールスコープのシングルトンやグローバルからの参照はしない。テストは Fake を渡して差し替える（docs/design.md §11.4）。
 - `any` は使わない。`@ts-ignore` は使わず、必要なら `@ts-expect-error` に理由を添える。
@@ -214,13 +216,13 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 - ルートが意図的に返すエラーは `ApiRequestError`（`src/server/lib/errors.ts`）を throw する。HTTP ステータスと `ApiErrorCode` を持つ。
 - 例外から JSON レスポンスへの変換は `app.onError` の 1 箇所で行う。各ルートに `try / catch` と `c.json(body, status)` を繰り返し書かない。Hono 公式も `onError` を例外の集約点として示している[^hono-exception]。
   - `HTTPException` は Hono 自身が投げることがあるので `err.getResponse()` をそのまま返す。
-  - `c.req.path` が `/api/` で始まるルートでは、`ApiRequestError` もそれ以外の例外も `toApiErrorResponse` で JSON にする（後者は `{ code: 'INTERNAL' }` の 500）。HTML ルート（詳細・編集・通報ページ）では従来どおり `c.text('Internal Server Error', 500)`。現状の `routes/*.ts` の catch が非 `ApiRequestError` も JSON 500 にしており、`test/integration/server/apiPages.create.test.ts` が `errorCode(res) === 'INTERNAL'` を検査しているため、この分岐が無いと既存テストが落ちる。
+  - `c.req.path` が `/api/` で始まるルートでは、`ApiRequestError` もそれ以外の例外も `toApiErrorResponse` で `ApiError` 形式の JSON にする（後者は `{ code: 'INTERNAL' }` の 500）。HTML ルート（詳細・編集・通報ページ）では従来どおり `c.text('Internal Server Error', 500)`。`src/web/lib/api.ts` はこの `code` でエラー文言を出し分けており、`test/integration/server/apiPages.create.test.ts` も `errorCode(res) === 'INTERNAL'` を検査しているため、この分岐が無いと落ちる。
   - 5xx になるものと `ApiRequestError` 以外の例外は `deps.logger.error` に `routePath(c)` と `pageId` を付けて記録する。
   - `HTTPException.getResponse()` は Context を知らない。`securityHeaders()` が外側で包み直すので、ヘッダの付け直しは不要。Hono の合成処理（`compose.ts`）は各階層の `dispatch` に `onError` を渡しており、例外は投げた階層でその場で `onError` に変換され、`context.res` に入った状態で呼び出し元へ、例外を投げずに戻る。つまり `securityHeaders()` の `await next()` は例外を受け取らず正常に完了し、後続の `c.res = new Response(...)` によるヘッダ付け直しが必ず実行される（`node_modules/hono@4.13.9` の `dist/compose.js` で確認）[^hono-compose]。
   - `hono/csrf` `hono/body-limit` のような標準ミドルウェアを将来 `/api/*` に足す場合、それらが投げる `HTTPException` の `getResponse()` は JSON ではない（例: `hono/csrf` の既定応答は `text/plain` の `Forbidden`）。§5.7 の判断が続く限り起きないが、追加するときは `onError` 側で `/api/*` 判定に合わせて JSON へ詰め直すことを検討する。
 - HTML ページ（詳細・通報）の 404 は `NotFound` ビューを表示する。`detail.tsx` のように自分で `c.html(<NotFound />, 404)` を返してもよいし、`reportPage.tsx` のように `c.notFound()` を呼んで下の `app.notFound` に任せてもよい。API の 404 は `ApiRequestError(404, 'NOT_FOUND')`。
-- `createApp` の最上位 `app`（`app.ts`）に `app.notFound(...)` を登録する（現状は未登録）。Hono は `notFound` が「top-level app からしか呼ばれない」と明記しており、`routes/*.ts` の各サブアプリに `notFound` を登録しても効かない[^hono-app][^hono-base-source]。`c.notFound()` は呼び出し元のサブアプリではなく、その時点でリクエストを最初にディスパッチした app（＝ `createApp` の app）の `notFound` ハンドラを実行する（`hono-base.js` の `Context` 生成箇所で確認）ため、`app.notFound` を 1 箇所登録すれば揃う。現状 `reportPage.tsx` の `c.notFound()` は Hono 既定のプレーンテキスト 404（`c.text('404 Not Found', 404)`）を返し、`detail.tsx` の `NotFound` ビューと表示が揃っていない。登録するときは `onError` と同様に `c.req.path` で 3 通りに振り分ける: `/api/*` は JSON、`ics.ts` の `.ics` パス（`c.notFound()` を呼んでいる）はプレーンテキストのまま、それ以外の HTML ルート（`reportPage.tsx`）だけ `NotFound` ビューにする。
-- `ContentfulStatusCode` へのキャストは `onError` の中の 1 箇所だけに書く。
+- どのルートにも一致しないリクエストと `c.notFound()` の応答は、`createApp` の最上位 `app`（`app.ts`）に 1 箇所だけ登録した `app.notFound` が返す。実体は `src/server/lib/notFound.tsx` の `handleNotFound`。Hono は `notFound` が「top-level app からしか呼ばれない」と明記しており、`routes/*.ts` の各サブアプリに `notFound` を登録しても効かない[^hono-app][^hono-base-source]。サブアプリ内の `c.notFound()` も、リクエストを最初にディスパッチした app（＝ `createApp` の app）の `notFound` ハンドラを実行する（`hono-base.js` の `Context` 生成箇所で確認）。`handleNotFound` は `onError` と同様に `c.req.path` で 3 通りに振り分ける: `/api/*` は JSON、`.ics` で終わるパス（`ics.ts` の `c.notFound()` もここに来る）はプレーンテキスト、それ以外は `NotFound` ビュー。
+- HTTP ステータスは `ApiRequestError` を作る時点から `ContentfulStatusCode` 型で持ち、`as` キャストは書かない。`c.json(body, status)` の第 2 引数は `number` を受けないため、`number` で持つとどこかでキャストが必要になる。
 
 ### 5.5 JSX（hono/jsx）
 
@@ -246,7 +248,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 | `hono/http-exception` | `onError` で受けるだけ | 自分では throw しない。`ApiRequestError` を使う[^hono-exception] |
 | `hono/cookie` | 使う（device cookie） | `generateCookie()` は Context 無しで属性付きの Set-Cookie 文字列だけを作れる公式 API。手書きしない[^hono-cookie] |
 | `hono/html` | DOCTYPE のみ | 上記 §5.5 |
-| `hono/utils/http-status`（`ContentfulStatusCode`） | 型 import のみ。`onError` の 1 箇所 | `c.json(body, status)` の第 2 引数が `number` を受けないため。§5.4 の集約後は routes/*.ts から消える |
+| `hono/utils/http-status`（`ContentfulStatusCode`） | 型 import のみ。`src/server/lib/errors.ts` の 1 ファイル | `c.json(body, status)` の第 2 引数が `number` を受けないため、`ApiRequestError` のステータスをこの型で持つ。routes/*.ts では import しない |
 | `hono/utils/cookie`（`parse`）・`hono/utils/html`（`HtmlEscapedString`） | `parse` は値 import（`deviceCookie.ts`）、`HtmlEscapedString` は型 import（`Layout.tsx`）に限る | `getCookie(c, name)` は Context が要るが、`readDeviceId` は §5.2 の方針で `Request` しか受け取らないため、`hono/cookie` より低レベルな `parse` を使う。`utils/` 配下は公開 API としての文書化が薄いので、この 2 つ以外の `hono/utils/*` は足さない |
 | `secureHeaders()` | 使わない | (1) 既定で `Cross-Origin-Resource-Policy` `Cross-Origin-Opener-Policy` `Origin-Agent-Cluster` `Strict-Transport-Security` `X-DNS-Prefetch-Control` `X-Download-Options` `X-Permitted-Cross-Domain-Policies` `X-XSS-Protection` など `_headers`（§4.2）に無いヘッダを足す。全部 `false` にすれば消せるが、それなら自前で列挙するのと変わらない。(2) CSP はディレクティブ名ごとの配列を持つオブジェクト（`ContentSecurityPolicyOptions`）でしか渡せず、本リポジトリの 1 文字列定数（`CONTENT_SECURITY_POLICY`）をそのまま渡す口が無い。(3) 実装の `setHeaders()` は `ctx.res.headers.set(...)` を直接呼び、Cache API から返る不変ヘッダの Response（§4.5）を再ラップしない。`withEdgeCache` 経由のレスポンスに適用すると例外になりうる（`c.res` の getter は前段が書き込んだ Response をそのまま返すだけで、代入時のような再ラップは起きない。`node_modules/hono@4.13.9` の `context.js`・`secure-headers.ts` で確認）。自前の `securityHeaders()` は `next()` の後に `new Response(c.res.body, c.res)` で包み直してから `set` するため安全[^hono-secure-headers][^hono-secure-headers-source] |
 | `hono/csrf` | 使わない | フォームで送れる Content-Type（`application/x-www-form-urlencoded` `multipart/form-data` `text/plain`）のリクエストにしか Origin / `Sec-Fetch-Site` を検査しない。本リポジトリの状態変更 API は `application/json` 以外を 415 で弾く設計（docs/design.md §9.8）で、防ぎたい対象はまさに JSON リクエストだが `hono/csrf` はそれを検査対象外にする。さらに同じフォーム系 Content-Type のときに限っても、両ヘッダとも無いリクエストを既定で拒否し、本リポジトリの「両方無ければ通す」（Content-Type 検査に任せる）方針と逆になる。拒否時のレスポンスも `HTTPException(403, { res: new Response('Forbidden', ...) })`（`text/plain`）で、`assertSameOriginJsonRequest` が投げる `FORBIDDEN_ORIGIN` の JSON（`test/integration/server/sameOrigin.test.ts` が検査）と形が違う[^hono-csrf][^hono-csrf-source] |

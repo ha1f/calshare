@@ -53,7 +53,7 @@ export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
   // 記録できるよう各ルートの外側に置く
   app.use('*', requestLog(deps))
 
-  // §2.2 の評価順序で 1 行ずつ足す（後続 PR はこのファイルへの追記のみ許される、§11.6）
+  // §2.2 の評価順序で 1 行ずつ足す。ルートの中身は routes/*.ts に置く
   app.route('/', healthRoutes(deps))
   app.route('/', apiPagesRoutes(deps))
   app.route('/', apiPagesEditRoutes(deps))

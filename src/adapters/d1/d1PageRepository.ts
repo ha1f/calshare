@@ -57,9 +57,32 @@ function serializeChangeSnapshot(snapshot: ChangeSnapshot): string {
   return JSON.stringify(json)
 }
 
+function isNullableIsoDateString(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && !Number.isNaN(Date.parse(value)))
+}
+
+function isChangeSnapshotJson(value: unknown): value is ChangeSnapshotJson {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    isNullableIsoDateString(v.start) &&
+    isNullableIsoDateString(v.end) &&
+    typeof v.isAllDay === 'boolean' &&
+    typeof v.titleChanged === 'boolean' &&
+    typeof v.locationChanged === 'boolean'
+  )
+}
+
+/** previous_snapshot は列自体をスキーマが保証しない JSON なので unknown で受けて判定する（§2.3）。壊れていれば変更バナーを出さない扱いにする */
 function parseChangeSnapshot(json: string | null): ChangeSnapshot | null {
   if (json === null) return null
-  const parsed = JSON.parse(json) as ChangeSnapshotJson
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    return null
+  }
+  if (!isChangeSnapshotJson(parsed)) return null
   return {
     start: parsed.start ? new Date(parsed.start) : null,
     end: parsed.end ? new Date(parsed.end) : null,

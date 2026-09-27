@@ -81,6 +81,13 @@ async function setChangeSnapshot(
     .run()
 }
 
+/** previous_snapshot に ChangeSnapshotJson の形をしていない値を直接書き込む（不正な保存行を再現する） */
+async function setRawPreviousSnapshot(id: string, raw: string, changedAt: Date): Promise<void> {
+  await env.DB.prepare('UPDATE pages SET previous_snapshot = ?, changed_at = ? WHERE id = ?')
+    .bind(raw, changedAt.toISOString(), id)
+    .run()
+}
+
 // 「最終更新」表示は version（更新回数）で判定する（§8）ため、updated_at と合わせて version も進める
 async function markEdited(id: string, updatedAt: Date): Promise<void> {
   await env.DB.prepare('UPDATE pages SET updated_at = ?, version = version + 1 WHERE id = ?')
@@ -476,6 +483,40 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
         'footer',
         'report',
       ])
+    })
+
+    it('previous_snapshot が壊れた JSON の行はバナーを出さない（§2.3）', async () => {
+      const { deps, repo } = buildDetailDeps()
+      const id = pageId(23)
+      await createPage(repo, id)
+      await setRawPreviousSnapshot(id, '{not json', new Date(NOW.getTime() - 60 * 60 * 1000))
+
+      const { res, text } = await get(deps, `/${id}`)
+
+      expect(res.status).toBe(200)
+      expect(await collectSections(text)).not.toContain('change-banner')
+    })
+
+    it('previous_snapshot の項目の型が違う行はバナーを出さない（§2.3）', async () => {
+      const { deps, repo } = buildDetailDeps()
+      const id = pageId(24)
+      await createPage(repo, id)
+      await setRawPreviousSnapshot(
+        id,
+        JSON.stringify({
+          start: null,
+          end: null,
+          isAllDay: 'false',
+          titleChanged: false,
+          locationChanged: false,
+        }),
+        new Date(NOW.getTime() - 60 * 60 * 1000),
+      )
+
+      const { res, text } = await get(deps, `/${id}`)
+
+      expect(res.status).toBe(200)
+      expect(await collectSections(text)).not.toContain('change-banner')
     })
   })
 

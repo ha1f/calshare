@@ -1,3 +1,4 @@
+import type { JSX } from 'hono/jsx/jsx-runtime'
 import { Layout } from './Layout'
 
 export interface NotFoundProps {
@@ -5,7 +6,7 @@ export interface NotFoundProps {
 }
 
 /** hidden・期限切れのページを表示する（§4.1）。ページの存在自体を区別させないため、通常の 404 と同じ文言にする */
-export function NotFound({ serviceName }: NotFoundProps) {
+export function NotFound({ serviceName }: NotFoundProps): JSX.Element {
   return (
     <Layout title={`ページが見つかりません - ${serviceName}`}>
       <h1>このページは表示できません</h1>

@@ -5,7 +5,8 @@ import { addMonths } from '../../../src/core/time/jst'
 import type { CreatePageRequest, CreatePageResponse } from '../../../src/core/api/types'
 import type { EventFieldsJson } from '../../../src/core/types'
 import { createApp } from '../../../src/server/app'
-import { InvariantViolation, type PageRepository } from '../../../src/ports/pageRepository'
+import { InvariantViolation } from '../../../src/ports/pageRepository'
+import type { PageRepository } from '../../../src/ports/pageRepository'
 import { buildFakeDeps } from '../helpers/fakeDeps'
 import { errorCode, jsonRequest, TEST_ORIGIN } from '../helpers/jsonRequest'
 
@@ -526,11 +527,7 @@ describe('POST /api/pages', () => {
       fields: validFields({ start: start.toISOString(), end: end.toISOString() }),
     })
 
-    const res = await exports.default.fetch(`${TEST_ORIGIN}/api/pages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: TEST_ORIGIN },
-      body: JSON.stringify(body),
-    })
+    const res = await exports.default.fetch(postPages(body))
 
     expect(res.status).toBe(200)
     const json = await res.json<CreatePageResponse>()

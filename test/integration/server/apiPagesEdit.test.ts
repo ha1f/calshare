@@ -623,32 +623,28 @@ describe('PATCH /api/pages/:id', () => {
       fields: validFields({ start: start.toISOString(), end: end.toISOString() }),
       source: 'direct',
     }
-    const createRes = await exports.default.fetch(`${TEST_ORIGIN}/api/pages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: TEST_ORIGIN },
-      body: JSON.stringify(createBody),
-    })
+    const createRes = await exports.default.fetch(
+      jsonRequest('/api/pages', { method: 'POST', body: createBody }),
+    )
     expect(createRes.status).toBe(200)
     const created = await createRes.json<CreatePageResponse>()
 
     const newStart = new Date(start.getTime() + 60 * 60 * 1000)
     const newEnd = new Date(newStart.getTime() + 60 * 60 * 1000)
-    const patchRes = await exports.default.fetch(`${TEST_ORIGIN}/api/pages/${created.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Origin: TEST_ORIGIN,
-        Authorization: `Bearer ${created.editToken}`,
-      },
-      body: JSON.stringify({
-        rawText: '9/20 20時 渋谷で新宿飲み会',
-        fields: validFields({
-          title: '新宿飲み会',
-          start: newStart.toISOString(),
-          end: newEnd.toISOString(),
-        }),
-      }),
-    })
+    const patchRes = await exports.default.fetch(
+      patchPage(
+        created.id,
+        {
+          rawText: '9/20 20時 渋谷で新宿飲み会',
+          fields: validFields({
+            title: '新宿飲み会',
+            start: newStart.toISOString(),
+            end: newEnd.toISOString(),
+          }),
+        },
+        { token: created.editToken },
+      ),
+    )
 
     expect(patchRes.status).toBe(200)
     const pageRow = await env.DB.prepare('SELECT version, changed_at FROM pages WHERE id = ?')
