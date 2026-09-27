@@ -350,6 +350,15 @@ test('「自動に戻す」を押すと view ボタンにフォーカスが戻�
   await expect(page.getByTestId('view-location')).toBeFocused()
 })
 
+test('「場所にする」を押すとタイトルの入力欄にフォーカスが移る', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('#input').fill('9/20 19時 渋谷')
+
+  await page.getByTestId('use-as-location').click()
+
+  await expect(page.getByTestId('input-title')).toBeFocused()
+})
+
 test('日時編集欄の「自動に戻す」を押すと view ボタンにフォーカスが戻る', async ({ page }) => {
   await page.goto('/')
   await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
