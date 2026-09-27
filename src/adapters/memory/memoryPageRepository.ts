@@ -59,9 +59,8 @@ export function createMemoryPageStore(): MemoryPageStore {
 
 /** D1PageRepository と同じ契約を Map で再現するインメモリ実装。D1 実装と同じテストスイートで検証する */
 export function createMemoryPageRepository(
-  store: MemoryPageStore = createMemoryPageStore(),
+  pages: MemoryPageStore = createMemoryPageStore(),
 ): PageRepository {
-  const pages = store
   const eventIds = new Set<string>()
 
   return {
