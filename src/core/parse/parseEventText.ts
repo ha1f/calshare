@@ -2,16 +2,12 @@ import { DEFAULT_EVENT_DURATION_MINUTES } from '../config/limits'
 import { addDays, formatDateLabel, jstDate, toJstParts } from '../time/jst'
 import type { EventFields } from '../types'
 import { URL_PATTERN } from '../text/urlPattern'
-import {
-  detectDateTokens,
-  resolveDateToken,
-  type CalendarDay,
-  type DateResolution,
-  type DateTokenMatch,
-} from './dateTokens'
+import { detectDateTokens, resolveDateToken } from './dateTokens'
+import type { CalendarDay, DateResolution, DateTokenMatch } from './dateTokens'
 import { normalizeWidth } from './normalize'
 import { splitTitleLocationMemo } from './locationTitle'
-import { detectTimeToken, type TimeResolution } from './timeTokens'
+import { detectTimeToken } from './timeTokens'
+import type { TimeResolution } from './timeTokens'
 import type { ParseContext, ParseIssue, ParsedEvent } from './types'
 
 interface Span {

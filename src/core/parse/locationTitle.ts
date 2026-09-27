@@ -1,3 +1,4 @@
+import { requireDefined } from '../assert'
 import { isLocationStopPhrase } from './stopWords'
 
 const BOUNDARY_RE = /[\s、]/
@@ -7,7 +8,7 @@ function computeChunkStarts(text: string): number[] {
   const starts = new Array<number>(text.length)
   let currentStart = 0
   for (let i = 0; i < text.length; i++) {
-    if (BOUNDARY_RE.test(text[i])) currentStart = i + 1
+    if (BOUNDARY_RE.test(text.charAt(i))) currentStart = i + 1
     starts[i] = currentStart
   }
   return starts
@@ -44,7 +45,11 @@ function findLocation(text: string): LocationFound | null {
       continue
     }
 
-    const chunkStart = Math.max(chunkStarts[sepStart], searchStart)
+    // sepStart は同じ text 上の正規表現マッチ位置なので、text.length と同じ長さの chunkStarts の範囲内に必ず収まる
+    const chunkStart = Math.max(
+      requireDefined(chunkStarts[sepStart], 'chunkStarts: index out of range'),
+      searchStart,
+    )
     const candidate = text.slice(chunkStart, sepStart)
     if (candidate.length === 0) continue
     if (sepText === 'で' && isLocationStopPhrase(candidate + 'で')) {

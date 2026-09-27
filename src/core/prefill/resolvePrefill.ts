@@ -1,3 +1,4 @@
+import { requireDefined } from '../assert'
 import { parseEventText } from '../parse/parseEventText'
 import type { ParseContext } from '../parse/types'
 import { jstDate, toJstParts } from '../time/jst'
@@ -51,6 +52,11 @@ function isValidUtcDateTime(
   )
 }
 
+/** ALL_DAY_DATES_PATTERN・TIMED_DATES_PATTERN の各キャプチャグループは `?` を持たず、一致すれば必ず埋まる */
+function captureNumber(match: RegExpExecArray, index: number, patternName: string): number {
+  return Number(requireDefined(match[index], `${patternName}: missing capture group ${index}`))
+}
+
 /**
  * Google の `render?action=TEMPLATE` と同形式の `dates` パラメータをパースする（§5.8）。
  * 形式・暦・時刻のいずれかが不正、または終了が開始以前なら null を返す（呼び出し側は無視する）
@@ -58,7 +64,12 @@ function isValidUtcDateTime(
 function parseDatesParam(dates: string): DatesResolution | null {
   const allDay = ALL_DAY_DATES_PATTERN.exec(dates)
   if (allDay !== null) {
-    const [y1, m1, d1, y2, m2, d2] = allDay.slice(1).map(Number)
+    const y1 = captureNumber(allDay, 1, 'ALL_DAY_DATES_PATTERN')
+    const m1 = captureNumber(allDay, 2, 'ALL_DAY_DATES_PATTERN')
+    const d1 = captureNumber(allDay, 3, 'ALL_DAY_DATES_PATTERN')
+    const y2 = captureNumber(allDay, 4, 'ALL_DAY_DATES_PATTERN')
+    const m2 = captureNumber(allDay, 5, 'ALL_DAY_DATES_PATTERN')
+    const d2 = captureNumber(allDay, 6, 'ALL_DAY_DATES_PATTERN')
     if (!isValidJstDate(y1, m1, d1) || !isValidJstDate(y2, m2, d2)) return null
     const start = jstDate(y1, m1, d1)
     const end = jstDate(y2, m2, d2)
@@ -68,7 +79,18 @@ function parseDatesParam(dates: string): DatesResolution | null {
 
   const timed = TIMED_DATES_PATTERN.exec(dates)
   if (timed !== null) {
-    const [y1, m1, d1, h1, mi1, s1, y2, m2, d2, h2, mi2, s2] = timed.slice(1).map(Number)
+    const y1 = captureNumber(timed, 1, 'TIMED_DATES_PATTERN')
+    const m1 = captureNumber(timed, 2, 'TIMED_DATES_PATTERN')
+    const d1 = captureNumber(timed, 3, 'TIMED_DATES_PATTERN')
+    const h1 = captureNumber(timed, 4, 'TIMED_DATES_PATTERN')
+    const mi1 = captureNumber(timed, 5, 'TIMED_DATES_PATTERN')
+    const s1 = captureNumber(timed, 6, 'TIMED_DATES_PATTERN')
+    const y2 = captureNumber(timed, 7, 'TIMED_DATES_PATTERN')
+    const m2 = captureNumber(timed, 8, 'TIMED_DATES_PATTERN')
+    const d2 = captureNumber(timed, 9, 'TIMED_DATES_PATTERN')
+    const h2 = captureNumber(timed, 10, 'TIMED_DATES_PATTERN')
+    const mi2 = captureNumber(timed, 11, 'TIMED_DATES_PATTERN')
+    const s2 = captureNumber(timed, 12, 'TIMED_DATES_PATTERN')
     if (
       !isValidUtcDateTime(y1, m1, d1, h1, mi1, s1) ||
       !isValidUtcDateTime(y2, m2, d2, h2, mi2, s2)
