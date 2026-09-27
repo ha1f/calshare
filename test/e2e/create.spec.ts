@@ -309,3 +309,27 @@ test('textarea の自動リサイズで border 分の高さが不足してスク
   }))
   expect(clientHeight).toBeGreaterThanOrEqual(scrollHeight)
 })
+
+test('タイトル欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する（§6.5）', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
+  await expect(page.getByTestId('view-title')).toHaveText('飲み会')
+
+  const labeledTitle = page.getByLabel('タイトル').and(page.locator(':visible'))
+  await expect(labeledTitle).toHaveAttribute('data-testid', 'view-title')
+
+  await labeledTitle.click()
+  await expect(labeledTitle).toHaveAttribute('data-testid', 'input-title')
+})
+
+test('「自動に戻す」を押すと view ボタンにフォーカスが戻る', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
+
+  await page.getByTestId('view-location').click()
+  await page.getByTestId('reset-location').click()
+
+  await expect(page.getByTestId('view-location')).toBeFocused()
+})

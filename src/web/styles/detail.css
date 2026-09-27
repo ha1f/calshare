@@ -1,14 +1,14 @@
 .issuer {
   font-size: 0.85em;
-  color: #666;
+  color: var(--muted);
 }
 
 .change-banner {
   margin: 12px 0;
   padding: 8px 12px;
-  border: 1px solid #c90;
+  border: 1px solid var(--warn-border);
   border-radius: 4px;
-  background: #fff8e6;
+  background: var(--warn-bg);
 }
 
 .datetime {
@@ -29,7 +29,7 @@
 
 .calendar-actions a {
   padding: 10px 16px;
-  border: 1px solid #666;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   text-decoration: none;
   color: inherit;
@@ -37,19 +37,19 @@
 
 .calendar-notice {
   font-size: 0.85em;
-  color: #a60;
+  color: var(--warn);
   width: 100%;
 }
 
 .line-banner,
 .android-ics-notice {
   font-size: 0.85em;
-  color: #a60;
+  color: var(--warn);
 }
 
 .calendar-actions-empty {
   margin: 16px 0;
-  color: #666;
+  color: var(--muted);
 }
 
 .memo {
@@ -62,9 +62,9 @@
 
 footer p {
   font-size: 0.85em;
-  color: #666;
+  color: var(--muted);
 }
 
 .disclaimer {
-  color: #999;
+  color: var(--faint);
 }

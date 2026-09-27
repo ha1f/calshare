@@ -24,6 +24,8 @@ export const REPORT_COUNT_WARNING_THRESHOLD = 3
 export const WEBHOOK_FETCH_TIMEOUT_MS = 5000
 /** Google カレンダーリンクの details に載せるメモの最大文字数（§7.1） */
 export const MAX_CALENDAR_DETAILS_LENGTH = 500
+/** 作成・取得・更新 API の fetch を打ち切るまでの時間。回線が不安定でも送信ボタンが固まって見えないようにする（docs/guidelines.md §6.4） */
+export const API_REQUEST_TIMEOUT_MS = 10000
 export const PAGE_ID_LENGTH = 12
 export const CHANGE_BANNER_HOURS = 48
 export const DETAIL_CACHE_MAX_AGE_SECONDS = 60

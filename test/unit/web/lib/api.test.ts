@@ -21,8 +21,22 @@ describe('getPage', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/pages/abc', {
       headers: { Authorization: 'Bearer token-123' },
+      signal: expect.any(AbortSignal),
     })
     expect(response).toEqual({ id: 'abc', rawText: '飲み会' })
+  })
+
+  it('タイムアウト・中断は ApiRequestFailedError に変換する', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('timed out', 'TimeoutError')))
+
+    await expect(getPage('abc', 'token-123')).rejects.toBeInstanceOf(ApiRequestFailedError)
+  })
+
+  it('タイムアウト・中断以外の fetch の失敗はそのまま投げる', async () => {
+    const networkError = new TypeError('network error')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(networkError))
+
+    await expect(getPage('abc', 'token-123')).rejects.toBe(networkError)
   })
 
   it('2xx 以外なら ApiRequestFailedError を投げる', async () => {
@@ -95,6 +109,7 @@ describe('updatePage', () => {
         Authorization: 'Bearer token-123',
       },
       body: JSON.stringify(request),
+      signal: expect.any(AbortSignal),
     })
   })
 })

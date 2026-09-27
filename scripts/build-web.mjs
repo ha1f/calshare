@@ -1,4 +1,4 @@
-// src/web → dist/ のビルド。後続 PR はこのファイルを変更しない（§11.6）。
+// src/web → dist/ のビルド。
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -38,11 +38,15 @@ async function main() {
       entryPoints,
       bundle: true,
       format: 'esm',
-      target: 'es2020',
+      target: 'es2022',
       minify: true,
       outdir: path.join(distDir, 'assets/js'),
       outbase: srcWebDir,
       entryNames: '[dir]',
+      // create と edit が preview.ts / tapEdit.ts を共有しており、分割無しでは重複が大きい
+      // （実測: 分割無し 66,176 bytes → 分割あり 39,563 bytes、chunks/ 配下に共有チャンクとして出す）
+      splitting: true,
+      chunkNames: 'chunks/[name]-[hash]',
     })
   }
 

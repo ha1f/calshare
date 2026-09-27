@@ -17,7 +17,7 @@ export const VALIDATION_MESSAGES: Record<ValidationErrorCode, string> = {
  */
 export function apiErrorMessage(
   code: ApiErrorCode,
-  overrides: Partial<Record<ApiErrorCode, string>> = {},
+  overrides: Partial<Record<ApiErrorCode, string | undefined>> = {},
 ): string {
   if (Object.prototype.hasOwnProperty.call(overrides, code)) {
     const override = overrides[code]

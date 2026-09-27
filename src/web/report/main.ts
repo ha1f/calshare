@@ -20,7 +20,7 @@ function buildRequestBody(form: HTMLFormElement): CreateReportRequest | null {
 
 interface SubmitResult {
   ok: boolean
-  code?: string
+  code?: string | undefined
 }
 
 async function submitReport(pageId: string, body: CreateReportRequest): Promise<SubmitResult> {

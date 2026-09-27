@@ -1,4 +1,8 @@
-import { resolvePrefill, type PrefillResult } from '../../core/prefill/resolvePrefill'
+import {
+  resolvePrefill,
+  type PrefillParams,
+  type PrefillResult,
+} from '../../core/prefill/resolvePrefill'
 import type { ParseContext } from '../../core/parse/types'
 import type { CreateSource } from '../../core/types'
 
@@ -14,16 +18,20 @@ function readParam(params: URLSearchParams, name: string): string | undefined {
 /** `/new` のクエリ文字列から作成画面の初期値を組む（§5.8） */
 export function resolvePrefillFromSearch(search: string, ctx: ParseContext): PrefillResult {
   const params = new URLSearchParams(search)
-  return resolvePrefill(
-    {
-      text: readParam(params, 'text'),
-      dates: readParam(params, 'dates'),
-      location: readParam(params, 'location'),
-      details: readParam(params, 'details'),
-      q: readParam(params, 'q'),
-    },
-    ctx,
-  )
+  // PrefillParams は各キーが optional（exactOptionalPropertyTypes で undefined を明示代入できない）
+  // なので、値が無いキーはそもそも代入しない
+  const raw: PrefillParams = {}
+  const text = readParam(params, 'text')
+  const dates = readParam(params, 'dates')
+  const location = readParam(params, 'location')
+  const details = readParam(params, 'details')
+  const q = readParam(params, 'q')
+  if (text !== undefined) raw.text = text
+  if (dates !== undefined) raw.dates = dates
+  if (location !== undefined) raw.location = location
+  if (details !== undefined) raw.details = details
+  if (q !== undefined) raw.q = q
+  return resolvePrefill(raw, ctx)
 }
 
 /**

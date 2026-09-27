@@ -11,8 +11,9 @@ async function createPage(page: import('@playwright/test').Page, text: string): 
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
   const match = DONE_URL_PATTERN.exec(page.url())
-  if (match === null) throw new Error('failed to extract page id from /done URL')
-  return match[1]
+  const id = match?.[1]
+  if (id === undefined) throw new Error('failed to extract page id from /done URL')
+  return id
 }
 
 interface HistoryEntry {
@@ -139,4 +140,20 @@ test('pathname に id が無い（直接 /edit を開く）と / へ遷移する
   await page.goto('/edit')
 
   await page.waitForURL((url) => url.pathname === '/' && url.search === '')
+})
+
+test('編集画面でも場所欄は自動表示中は view ボタン、タップ後は input が同じラベルで解決する（§6.5）', async ({
+  page,
+}) => {
+  const id = await createPage(page, '9/20 19時 渋谷で飲み会')
+
+  await page.goto(`/${id}/edit`)
+  await expect(page.getByTestId('input-location')).toHaveValue('渋谷')
+
+  await page.getByTestId('reset-location').click()
+  const labeledLocation = page.getByLabel('場所').and(page.locator(':visible'))
+  await expect(labeledLocation).toHaveAttribute('data-testid', 'view-location')
+
+  await labeledLocation.click()
+  await expect(labeledLocation).toHaveAttribute('data-testid', 'input-location')
 })

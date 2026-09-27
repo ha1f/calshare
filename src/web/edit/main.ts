@@ -1,4 +1,5 @@
 import type { ApiErrorCode } from '../../core/api/types'
+import { requireDefined } from '../../core/assert'
 import { PREVIEW_DEBOUNCE_MS } from '../../core/config/limits'
 import { isValidPageId } from '../../core/id/crockford'
 import { fromEventFieldsJson, toEventFieldsJson } from '../../core/types'
@@ -23,7 +24,8 @@ function apiErrorMessage(code: ApiErrorCode): string {
 function extractIdFromPathname(pathname: string): string | null {
   const match = /^\/([^/]+)\/edit$/.exec(pathname)
   if (match === null) return null
-  return isValidPageId(match[1]) ? match[1] : null
+  const id = requireDefined(match[1], 'capture group 1 must exist when match succeeds')
+  return isValidPageId(id) ? id : null
 }
 
 /** GET で取得した現在値をプレビューに manual として埋める（§6.5） */

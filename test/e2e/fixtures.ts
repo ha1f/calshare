@@ -18,6 +18,10 @@ function ipForTest(testId: string): string {
   return `10.${(hash >>> 16) & 255}.${(hash >>> 8) & 255}.${hash & 255}`
 }
 
+// CSP 違反（require-trusted-types-for 'script' を含む）はブラウザが console.error に出す。
+// 全 spec 共通でこれを拾い、テスト終了後にまとめて落とす（§9.1・§6.6）
+const CSP_VIOLATION_PATTERN = /Refused to|Content Security Policy|Trusted ?(Types|HTML|Script)/
+
 export const test = base.extend({
   context: async ({ context }, use, testInfo) => {
     await context.setExtraHTTPHeaders({ 'CF-Connecting-IP': ipForTest(testInfo.testId) })
@@ -25,7 +29,14 @@ export const test = base.extend({
   },
   page: async ({ page }, use) => {
     await page.clock.setFixedTime(E2E_FIXED_NOW)
+    const cspViolations: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'error' && CSP_VIOLATION_PATTERN.test(message.text())) {
+        cspViolations.push(message.text())
+      }
+    })
     await use(page)
+    expect(cspViolations, 'CSP violation(s) logged to console').toEqual([])
   },
 })
 
@@ -43,8 +54,9 @@ export async function createPage(page: Page, text: string): Promise<string> {
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
   const match = DONE_URL_PATTERN.exec(page.url())
-  if (match === null) throw new Error('failed to extract page id from /done URL')
-  return match[1]
+  const id = match?.[1]
+  if (id === undefined) throw new Error('failed to extract page id from /done URL')
+  return id
 }
 
 export function waitForCreateRequest(page: Page) {

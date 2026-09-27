@@ -1192,7 +1192,7 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 ├── migrations/
 │   └── 0001_init.sql
 ├── scripts/
-│   ├── build-web.mjs              # src/web → dist/（src/web/*/main.ts を glob して esbuild。HTML / _headers 等はコピー。後続 PR は触らない）
+│   ├── build-web.mjs              # src/web → dist/（src/web/*/main.ts を glob して esbuild。HTML / _headers 等はコピー）
 │   ├── seed-local-r2.mjs          # test/fixtures/fonts/ のサブセット済みフォントをローカル R2 に投入（T10）
 │   └── fonts/subset.sh            # Noto Sans JP のサブセット生成（運用基盤 PR が用意。T10 はこれを再利用し新規スクリプトを作らない）
 ├── src/
@@ -1866,10 +1866,10 @@ export default defineConfig(async () => {
 - `src/core/**` に対して `no-restricted-imports` で相対パス以外の import を禁止する。確認済み（T1）: `group`（`ignore` パッケージ = gitignore 相当のグロブ）を使う `patterns: [{ group: ['**', '!./**', '!../**'] }]` は実装できなかった: `ignore` パッケージは `./x` のような相対パス文字列の否定パターン（`!./**`）を意図通りに除外せず、`./x` `../x/y` も一律に「制限対象」と判定してしまう（ESLint 10.10.0 + eslint 内蔵 `ignore` で実機確認）。代わりに `regex: '^(?!\\.\\.?/)'`（`./` `../` で始まらない import 指定子にだけマッチする正規表現）を使う `patterns: [{ regex: '^(?!\\.\\.?/)', message: 'core は相対 import のみ' }]` に変更した。`hono` の import はエラーになり、`./x` `../x/y` は通ることを確認済み。
 - `.prettierrc`: `{ "semi": false, "singleQuote": true, "printWidth": 100, "trailingComma": "all" }`。`.prettierignore`: `dist/` `dist-worker/` `.wrangler/` `worker-configuration.d.ts` `package-lock.json` `docs/`（実装時に追加。`docs/design.md` は手書きの日本語 Markdown で Prettier の整形結果と一致せず `prettier --check .` が赤くなるため。設計書自体を Prettier 対象にする意図は無かったと判断し除外した）。
 
-**`scripts/build-web.mjs`**（後続 PR はこのファイルを変更しない）
+**`scripts/build-web.mjs`**
 
 1. `dist/` を空にする。
-2. `src/web/*/main.ts` を glob してエントリにし、esbuild で `bundle: true, format: 'esm', target: 'es2020', minify: true, outdir: 'dist/assets/js', outbase: 'src/web', entryNames: '[dir]'` でビルドする（`src/web/create/main.ts` → `dist/assets/js/create.js`）。ファイル名にハッシュは付けない（`/assets/*` は `_headers` で `Cache-Control: public, max-age=300`）。エントリが 0 件（T1 時点）なら esbuild を呼ばない。
+2. `src/web/*/main.ts` を glob してエントリにし、esbuild で `bundle: true, format: 'esm', target: 'es2022', minify: true, outdir: 'dist/assets/js', outbase: 'src/web', entryNames: '[dir]', splitting: true, chunkNames: 'chunks/[name]-[hash]'` でビルドする（`src/web/create/main.ts` → `dist/assets/js/create.js`）。`create` と `edit` が共有する `preview.ts` / `tapEdit.ts` 等は `dist/assets/js/chunks/` の共有チャンクに出る（`_headers` の `/assets/*` はチャンクにも当たる）。ファイル名にハッシュは付けない（`/assets/*` は `_headers` で `Cache-Control: public, max-age=300`）。エントリが 0 件（T1 時点）なら esbuild を呼ばない。
 3. `src/web/styles/*.css` → `dist/assets/css/`、`src/web/img/*` → `dist/assets/img/` にコピーする。
 4. `src/web/pages/*.html` と `src/web/{robots.txt,favicon.ico,_headers}` を `dist/` 直下にコピーする。ルートファイルは存在チェックをせず、欠けていれば `copyFile` の `ENOENT` でビルドが落ちる（`_headers` を静かに欠落させて CSP の無い `dist/` を作らないため）。
 
