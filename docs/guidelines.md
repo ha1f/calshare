@@ -382,6 +382,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
   - `satori`: `versions: ['>=0.33.0']`
   - `vitest`: `update-types: ['version-update:semver-major']`
   - `typescript`: `update-types: ['version-update:semver-major']`
+  - `@types/node`: `update-types: ['version-update:semver-major']`（Node のメジャーを上げる PR でまとめて変える）
 - cooldown は 2026-07-14 以降の既定（3 日）に任せる。明示するなら `cooldown.default-days` を書く[^dependabot-cooldown]。
 - ignore を外す条件は §1.2 の四半期確認で判断する。
 
@@ -467,7 +468,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 | Playwright | reporter が固定 | CI で `github` を追加 |
 | Actions | v7 タグ、Node 解決をシェルで重複、secrets がジョブ / ワークフロー全体、`npx wrangler@4`（ワークフロー・`scripts/cf/ensure-secret.mjs`・runbook） | SHA 固定、`node-version-file`、ステップ単位の secrets、`persist-credentials: false`、wrangler を呼ぶ全ジョブに `npm ci` + `npx wrangler`、ci.yml に concurrency / timeout |
 | docs | design.md §2.5 のサイズ上限（Free 3MB / Paid 10MB）・起動 400ms | Limits ページの現行値（64 MiB uncompressed、1 秒）に更新 |
-| Dependabot | ignore なし、actions のグループなし | satori / vitest / typescript の ignore、actions の groups |
+| Dependabot | ignore なし、actions のグループなし | satori / vitest / typescript / @types/node の ignore、actions の groups |
 
 ---
 
