@@ -960,7 +960,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 - クライアント側の描画（①②④・編集画面）は `textContent` / `createElement` のみを使い `innerHTML` に文字列を入れない（ESLint で禁止）。
 - OGP 画像の入力はテキストノードとしてのみ扱い、文字列連結で SVG / CSS を組まない（§2.5）。
 - レスポンスヘッダ（Worker の全ルートは `server/lib/headers.ts` の定数を `server/middleware/securityHeaders.ts` の `securityHeaders()` ミドルウェアで付与、静的ページは `_headers` ファイル。§2.2）:
-  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'`
+  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; require-trusted-types-for 'script'`
   - `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`
   - `applySecurityHeaders` 自体は `app.use()` の中から呼ぶ Hono ミドルウェア（`server/middleware/securityHeaders.ts` の `securityHeaders()`）にし、`app.ts` の先頭に `app.use('*', securityHeaders())` を 1 行足して全ルートに適用する。`next()` の後に `c.res = new Response(c.res.body, c.res)` で包み直せば、Cache API から返るレスポンス（ヘッダが不変）にも付け直せる。これにより `POST /api/pages` 等の `/api/*` にも本節のヘッダが付く。`X-Robots-Tag` も含めて全ルートに一律で付ける（`/api/*` に付いても実害は無く、ルートごとに出し分ける分岐を持つ方がコストが高い）。
   - インラインスタイルは使わず、ビルド時に `/assets/*.css` へ出す（`'unsafe-inline'` を外すため）。`base-uri 'none'` は万一 HTML 注入があっても `<base href>` で `/assets/*.js` を外部に向けられないようにする。
@@ -1879,7 +1879,7 @@ export default defineConfig(async () => {
 
 ```
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; require-trusted-types-for 'script'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
 /done
