@@ -13,11 +13,8 @@ import { buildDeviceCookie } from '../lib/deviceCookie'
 import { validationApiError } from '../lib/errors'
 import { buildDetailUrl, buildIcsForPage } from '../lib/ics'
 import { readJsonBody } from '../middleware/jsonBody'
-import {
-  consumeCreateRateLimit,
-  resolveRequestIdentity,
-  type RequestIdentity,
-} from '../middleware/rateLimit'
+import { consumeCreateRateLimit, resolveRequestIdentity } from '../middleware/rateLimit'
+import type { RequestIdentity } from '../middleware/rateLimit'
 import { assertSameOriginJsonRequest } from '../middleware/sameOrigin'
 
 const CREATE_SOURCES: CreateSource[] = ['direct', 'detail_cta', 'prefill']

@@ -33,11 +33,18 @@ async function expectCalendarUaHandling(
   scope: string,
   expected: { openExternalBrowser: boolean; androidNotice: boolean },
 ): Promise<void> {
-  const googleUrl = new URL(await readHref(page.locator(`${scope} [data-calendar="google"]`)))
-  const icsUrl = new URL(await readHref(page.locator(`${scope} [data-calendar="ics"]`)))
-  expect(googleUrl.searchParams.has('openExternalBrowser')).toBe(expected.openExternalBrowser)
+  const googleLink = page.locator(`${scope} [data-calendar="google"]`)
+  const icsLink = page.locator(`${scope} [data-calendar="ics"]`)
+  // href への openExternalBrowser 付与は applyCalendarUaHandling が JS で行うため、
+  // 反映されるまでポーリングする（SSR 直後の href にはまだ付いていない）
+  await expect
+    .poll(async () => new URL(await readHref(googleLink)).searchParams.has('openExternalBrowser'))
+    .toBe(expected.openExternalBrowser)
+  await expect
+    .poll(async () => new URL(await readHref(icsLink)).searchParams.has('openExternalBrowser'))
+    .toBe(expected.openExternalBrowser)
+  const googleUrl = new URL(await readHref(googleLink))
   expect(googleUrl.searchParams.get('action')).toBe('TEMPLATE')
-  expect(icsUrl.searchParams.has('openExternalBrowser')).toBe(expected.openExternalBrowser)
   // バナー・注記はカレンダーボタンのコンテナの前後の兄弟として挿入される（内側ではない）ため、
   // ページ全体から探す。1 ページに 1 箇所しかカレンダー欄が無いので曖昧さは無い
   await expect(page.getByTestId('line-banner')).toHaveCount(expected.openExternalBrowser ? 1 : 0)

@@ -1,9 +1,9 @@
-// ESLint flat config。§9.1 の XSS 対策（innerHTML 等の禁止）と、
-// core が外部依存を持たないこと（相対 import のみ）を機械的に検査する。
+// ESLint flat config。§9.1 の XSS 対策（innerHTML 等の禁止）、
+// core が外部依存を持たないこと（相対 import のみ）、§2.2 の import の書き方を機械的に検査する。
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 
-const noRawHtml = {
+const noRestrictedSyntax = {
   'no-restricted-syntax': [
     'error',
     {
@@ -26,6 +26,10 @@ const noRawHtml = {
       selector: "Property[key.name='dangerouslySetInnerHTML']",
       message: 'dangerouslySetInnerHTML は使わない（§9.1）',
     },
+    {
+      selector: "ImportSpecifier[importKind='type']",
+      message: '値と型を同じモジュールから取るときは import type の行に分ける（§2.2）',
+    },
   ],
 }
 
@@ -44,7 +48,7 @@ export default tseslint.config(
   {
     files: ['**/*.{ts,tsx,js,mjs}'],
     rules: {
-      ...noRawHtml,
+      ...noRestrictedSyntax,
       // Deps を型で揃えるため使わない引数も受け取る routes/*.ts の規約（§11.5）に合わせ、
       // 先頭 _ の引数は未使用でも許可する
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
@@ -58,19 +62,9 @@ export default tseslint.config(
     files: ['scripts/**/*.mjs'],
     languageOptions: {
       globals: Object.fromEntries(
-        [
-          'process',
-          'console',
-          'fetch',
-          'URL',
-          'URLSearchParams',
-          'TextDecoder',
-          'TextEncoder',
-          'Buffer',
-          'AbortController',
-          'setTimeout',
-          'clearTimeout',
-        ].map((name) => [name, 'readonly']),
+        ['process', 'console', 'fetch', 'URL', 'TextDecoder', 'Buffer', 'setTimeout'].map(
+          (name) => [name, 'readonly'],
+        ),
       ),
     },
   },

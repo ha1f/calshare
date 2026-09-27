@@ -78,7 +78,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 ### 2.2 import の書き方
 
 - 相対パス、拡張子なし。`src/core` は相対 import のみ（ESLint の `no-restricted-imports` で機械的に検査。docs/design.md §11.1）。
-- 型だけを使う import は `import type { X } from '...'`。値と型を同じモジュールから取るときは 2 行に分ける（`verbatimModuleSyntax` の要求）。
+- 型だけを使う import は `import type { X } from '...'`。値と型を同じモジュールから取るときは 2 行に分ける。本リポジトリの書き方の統一であり、ESLint の `no-restricted-syntax`（§2.4）で検出する。`verbatimModuleSyntax` は inline の `type` 修飾子も許すので、tsc では検出されない。
 - Node の組み込みは `node:` プレフィックス付き（`scripts/**/*.mjs` のみ。src からは使わない）。
 - 並び順は「外部パッケージ → `core` → `ports` → `adapters` → 同じ層のローカル」を目安にする。ESLint での強制はしない（§9 の perfectionist の項）。
 - 動的 import はパスがリテラルのときだけ使う（例: `import('satori/yoga.wasm')`）。バンドラが静的に解析でき、実行時に取りに行くわけではない（`src/server/deps.ts` の注記）。
@@ -101,6 +101,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 - `innerHTML` `outerHTML` `insertAdjacentHTML` `dangerouslySetInnerHTML`（docs/design.md §9.1）
 - `src/core` からの非相対 import
 - 未使用変数（引数は `_` 始まりのみ許可。`Deps` を型で揃えるため使わない引数を受け取るルートがある）
+- 値と型を同じモジュールから取る inline の `type` 修飾子（§2.2）
 
 ---
 
@@ -116,7 +117,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
   - `@typescript-eslint/require-await` だけは off にする。ポート（`src/ports/*`）は Promise を返す契約で、メモリ実装や Fake のように同期で済む実装も `async` で書く。`async` を外して `Promise.resolve()` で返す書き方にすると、関数内の `throw` が reject にならず同期の例外になり、本物のアダプタと挙動がずれる。await 漏れは `no-floating-promises` と `await-thenable` が検出する。
   - `npm run lint` は先に `wrangler types` を実行する。`worker-configuration.d.ts`（生成物、gitignore 対象）が無いと `env` などの型が解決できず、`no-unsafe-*` が大量に出る。
   - lint の所要時間は導入前の約 1.6 倍（手元で 6 秒台 → 10 秒台、2026-09-27）。
-- プロジェクト固有のルールは設計原則に直結するものだけ持つ（§2.4）。汎用のスタイルプラグイン（unicorn、perfectionist、import-x）は入れない（§9）。
+- プロジェクト固有のルールは、設計原則に直結するもの（§2.4）と、tsc では検出できない書き方の統一（§2.2 の import の分割）だけを持つ。汎用のスタイルプラグイン（unicorn、perfectionist、import-x）は入れない（§9）。
 - `scripts/**/*.mjs` のグローバル定義は必要な名前だけを手書きで列挙する。`globals` パッケージ（`globals.node`）は許可範囲が数十個に広がるため入れない。
 
 ### 3.2 Prettier
@@ -312,7 +313,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 - ブラウザから API を呼ぶ `fetch`（作成・取得・更新・通報）には `signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS)` を渡す。`src/web/lib/api.ts` の `fetchWithTimeout` を使い、`fetch` を直接呼ばない。回線が不安定な環境（LINE 内蔵ブラウザ）で応答が返らないと、送信ボタンが無効のまま固まって見える。タイムアウト値は `core/config/limits.ts` に置き、`AbortError` / `TimeoutError` は `ApiRequestFailedError` 相当に変換してユーザーに文言を出す[^abortsignal-timeout]。
 - クリップボードは `navigator.clipboard.writeText` を試し、失敗時に `document.execCommand('copy')` にフォールバックする（`src/web/lib/clipboard.ts`）[^clipboard]。
 - Web Share API は `typeof navigator.share === 'function'` で機能検出してからボタンを出す。Firefox が未対応で Baseline に達していない[^web-share]。
-- localStorage の値は信頼しない。`JSON.parse` の結果を構造チェック（`isHistoryEntry`）してから使う。読み書きは try / catch で包み、使えない環境でも画面が動くようにする。
+- localStorage の値は信頼しない。`JSON.parse` の結果を構造チェック（`isStoredHistoryEntry`）してから使う。読み書きは try / catch で包み、使えない環境でも画面が動くようにする。
 - `structuredClone` は必要になったら使う。現状はフラットな構造の浅いコピーで足りている。
 
 ### 6.5 アクセシビリティ
