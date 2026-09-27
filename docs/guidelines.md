@@ -189,19 +189,21 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 - `createApp(deps): Hono<{ Bindings: Env }>`（`src/server/app.ts`）が唯一の組み立て場所。`routes/*.ts` は `xxxRoutes(deps): Hono<{ Bindings: Env }>` を export し、`app.ts` は `app.route('/', xxxRoutes(deps))` を docs/design.md §2.2 の評価順で 1 行ずつ足す。ルートの中身は `routes/*.ts` に置き、`app.ts` には書かない（docs/design.md §11.6）。
 - Hono 公式は「Rails 風のコントローラに分けず、ルート定義の場でハンドラを書く」ことと、大きなアプリは `app.route()` でサブアプリに分けることを推奨している[^hono-best-practices]。本リポジトリのルートごとのサブアプリはこの推奨に沿う。
 - ハンドラをルート定義から切り出すと `c.req.param()` の型推論が効かなくなる。切り出す必要があるときだけ `createFactory().createHandlers()` を使う[^hono-best-practices]。
-- パスパラメータは `:id{pattern}` で形式を絞る（`PAGE_ID_PATTERN`）。形式に合わないパスはルートに一致せず Hono の既定 404 になる。
+- パスパラメータは `:id{pattern}` で形式を絞る（`PAGE_ID_PATTERN`）。形式に合わないパスはどのルートにも一致せず、`app.notFound`（§5.4）が処理する（`:name{regexp}` は公式のルーティング構文）[^hono-routing]。
+- `xxxRoutes(deps)` は自分のルートを登録し終えてから返り値として `app.route('/', ...)` に渡す。Hono 公式も「先にルートを登録してから `route()` に渡す」順序を守らないとマウントされず 404 になる、という落とし穴を明記している[^hono-routing]。
 - `src/server/index.ts` は `export default { fetch, scheduled }` のみ。リクエストごとに `buildDeps(env)` で Deps を組み立てる。
 
 ### 5.2 Context と依存
 
-- 依存（D1・R2・時計・ID 生成・ロガー）は `Deps` から取る。`c.env` から直接バインディングを触らない。テストで `createApp(fakeDeps)` に差し替えられる設計を保つため。
+- 依存（D1・R2・時計・ID 生成・ロガー）は `Deps` から取る。`c.env` から直接バインディングを触らない。テストで `createApp(fakeDeps)` に差し替えられる設計を保つため。`ASSETS`（`Fetcher`）だけは例外で `c.env.ASSETS` を直接使う（`editPage.ts` `ogp.ts`）。結合テストは本物の Static Assets を経由して検証する設計（§7.2）で Fake が要らないため。
+- Hono 公式が示す依存の受け渡し方は `c.set()` / `c.get()`（`Variables` ジェネリクス、`c.var`）だが、本リポジトリは採らず `Deps` をクロージャで渡す。理由は 2 つ: (1) `c.set` はミドルウェアの登録有無に関わらず型だけが付き、登録されていないハンドラで `c.get()` が実行時 `undefined` を返しても型エラーにならない（`ContextVariableMap` の既知の注意点として公式ドキュメントが明記している）。`Deps` の引数は登録漏れがあれば型エラーになる。(2) `createApp(fakeDeps)` で丸ごと差し替えられ、Fake を渡す経路が 1 箇所で済む[^hono-context]。
 - `Request` レベルの API（ヘッダ・本文ストリーム）は `c.req.raw` を使う。`c.req.header()` など Hono のラッパでも構わないが、ミドルウェア関数（`assertSameOriginJsonRequest` `readJsonBody`）は `Request` を受け取る形にして Hono に依存させない。
-- `ctx.waitUntil` は `c.executionCtx` から取る。
-- ルート名をログに出すときは `routePath(c)`（`hono/route`）を使う。生の URL を出すと ID や入力がログに混ざる[^hono-route].
+- `ctx.waitUntil` は `c.executionCtx` から取る。Workers がリクエストごとに渡す ctx（`app.fetch(req, env, ctx)` の第 3 引数）を Hono が保持しているだけの getter で、ctx を渡さずに呼ぶと例外を投げる（`node_modules/hono@4.13.9` の `context.js`）[^hono-context]。
+- ルート名をログに出すときは `routePath(c)`（`hono/route`）を使う。生の URL を出すと ID や入力がログに混ざる[^hono-route]。`HonoRequest` には同名の `c.req.routePath` ゲッタ・`c.req.matchedRoutes` ゲッタも残っているが、いずれも `@deprecated` で「`hono/route` の同名ヘルパを使え」と型定義に明記されている（`node_modules/hono@4.13.9` で確認）。本リポジトリはすでに非推奨側を使っていない[^hono-request-source]。
 
 ### 5.3 ミドルウェア
 
-- `createMiddleware`（`hono/factory`）で書き、`app.use('*', ...)` で登録する。登録順が適用順なので、`securityHeaders()` は全ルートより先に置く。
+- `createMiddleware`（`hono/factory`）で書き、`app.use('*', ...)` で登録する。登録順が適用順なので、`securityHeaders()` は全ルートより先に置く。Hono 公式も「先に登録したミドルウェアの `next` 前の処理が最初に、`next` 後の処理が最後に実行される」と、外側のミドルウェアが内側を包む実行順を明記している[^hono-middleware]。
 - レスポンスのヘッダを触るミドルウェアは、`await next()` の後に `c.res = new Response(c.res.body, c.res)` で包み直してから `headers.set` する。Cache API から返る Response はヘッダが不変（docs/design.md §9.1）。
 - 状態変更 API の入口検査（Content-Type・同一オリジン・本文 byte 上限・JSON の形）は、ルート内で `assertSameOriginJsonRequest` → `readJsonBody(request, parse)` の順に呼ぶ。順序は docs/design.md §5.7。
 
@@ -212,14 +214,16 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
   - `HTTPException` は Hono 自身が投げることがあるので `err.getResponse()` をそのまま返す。
   - `c.req.path` が `/api/` で始まるルートでは、`ApiRequestError` もそれ以外の例外も `toApiErrorResponse` で JSON にする（後者は `{ code: 'INTERNAL' }` の 500）。HTML ルート（詳細・編集・通報ページ）では従来どおり `c.text('Internal Server Error', 500)`。現状の `routes/*.ts` の catch が非 `ApiRequestError` も JSON 500 にしており、`test/integration/server/apiPages.create.test.ts` が `errorCode(res) === 'INTERNAL'` を検査しているため、この分岐が無いと既存テストが落ちる。
   - 5xx になるものと `ApiRequestError` 以外の例外は `deps.logger.error` に `routePath(c)` と `pageId` を付けて記録する。
-  - `HTTPException.getResponse()` は Context を知らない。`securityHeaders()` が外側で包み直すので、ヘッダの付け直しは不要。
-- HTML ページ（詳細・通報）の 404 は `NotFound` ビューを `c.html(..., 404)` で返す。API の 404 は `ApiRequestError(404, 'NOT_FOUND')`。
+  - `HTTPException.getResponse()` は Context を知らない。`securityHeaders()` が外側で包み直すので、ヘッダの付け直しは不要。Hono の合成処理（`compose.ts`）は各階層の `dispatch` に `onError` を渡しており、例外は投げた階層でその場で `onError` に変換され、`context.res` に入った状態で呼び出し元へ、例外を投げずに戻る。つまり `securityHeaders()` の `await next()` は例外を受け取らず正常に完了し、後続の `c.res = new Response(...)` によるヘッダ付け直しが必ず実行される（`node_modules/hono@4.13.9` の `dist/compose.js` で確認）[^hono-compose]。
+  - `hono/csrf` `hono/body-limit` のような標準ミドルウェアを将来 `/api/*` に足す場合、それらが投げる `HTTPException` の `getResponse()` は JSON ではない（例: `hono/csrf` の既定応答は `text/plain` の `Forbidden`）。§5.7 の判断が続く限り起きないが、追加するときは `onError` 側で `/api/*` 判定に合わせて JSON へ詰め直すことを検討する。
+- HTML ページ（詳細・通報）の 404 は `NotFound` ビューを表示する。`detail.tsx` のように自分で `c.html(<NotFound />, 404)` を返してもよいし、`reportPage.tsx` のように `c.notFound()` を呼んで下の `app.notFound` に任せてもよい。API の 404 は `ApiRequestError(404, 'NOT_FOUND')`。
+- `createApp` の最上位 `app`（`app.ts`）に `app.notFound(...)` を登録する（現状は未登録）。Hono は `notFound` が「top-level app からしか呼ばれない」と明記しており、`routes/*.ts` の各サブアプリに `notFound` を登録しても効かない[^hono-app][^hono-base-source]。`c.notFound()` は呼び出し元のサブアプリではなく、その時点でリクエストを最初にディスパッチした app（＝ `createApp` の app）の `notFound` ハンドラを実行する（`hono-base.js` の `Context` 生成箇所で確認）ため、`app.notFound` を 1 箇所登録すれば揃う。現状 `reportPage.tsx` の `c.notFound()` は Hono 既定のプレーンテキスト 404（`c.text('404 Not Found', 404)`）を返し、`detail.tsx` の `NotFound` ビューと表示が揃っていない。登録するときは `onError` と同様に `c.req.path` で 3 通りに振り分ける: `/api/*` は JSON、`ics.ts` の `.ics` パス（`c.notFound()` を呼んでいる）はプレーンテキストのまま、それ以外の HTML ルート（`reportPage.tsx`）だけ `NotFound` ビューにする。
 - `ContentfulStatusCode` へのキャストは `onError` の中の 1 箇所だけに書く。
 
 ### 5.5 JSX（hono/jsx）
 
-- SSR は `hono/jsx` の自動エスケープに依存する。ユーザー入力は子要素か属性値としてだけ渡す。`dangerouslySetInnerHTML`・`raw`・文字列連結の HTML は禁止（ESLint で検出。docs/design.md §9.1）[^hono-jsx]。
-- `html` タグ付きテンプレート（`hono/html`）は `Layout.tsx` の `<!DOCTYPE html>` にだけ使う。hono/jsx は `<html>` を描いても DOCTYPE を付けない。
+- SSR は `hono/jsx` の自動エスケープに依存する。ユーザー入力は子要素か属性値としてだけ渡す。`dangerouslySetInnerHTML`・`raw`・文字列連結の HTML は禁止（ESLint で検出。docs/design.md §9.1）[^hono-jsx]。この前提が壊れた実例として、`hono/jsx` は 4.13.7 で「`Suspense`・`ErrorBoundary`・`Context.Provider` の子（または `fallback`）、または `renderToString()` / `renderToReadableStream()` にトップレベルの値として生の文字列をそのまま渡すとエスケープされない」XSS（GHSA-hxh3-vqpv-xpqv、影響範囲 `< 4.13.7`、修正版 `4.13.7`）を修正している。本リポジトリはこの 5 つのいずれも使っていない（`grep -rnE "Suspense|ErrorBoundary|Context\.Provider|createContext|renderToString|renderToReadableStream" src/` で 0 件、2026-09-27 実行）ため影響は無い。`^4.13.0` という範囲指定自体は 4.13.7 より前の版も許容するが、lockfile が固定する 4.13.9 は修正版に当たる。このアドバイザリは 2026-09-04 公開と新しく、`npm audit` が読む横断的な advisory データベースにはまだ乗っておらず（`gh api /advisories/GHSA-hxh3-vqpv-xpqv` は 404）、`npm audit` の 0 件はこの件の裏取りにならない。判断はリポジトリ個別の advisory（`gh api repos/honojs/hono/security-advisories`）が示す影響範囲 `< 4.13.7` に基づく[^hono-jsx-security]。
+- `html` タグ付きテンプレート（`hono/html`）は `Layout.tsx` の `<!DOCTYPE html>` にだけ使う。hono/jsx は `<html>` を描いても DOCTYPE を付けない。JSX Renderer ミドルウェア（`hono/jsx-renderer`）の `jsxRenderer()` は `docType` を渡さなければ同じことをするが、ミドルウェアとして登録した上で各ルートが `c.render(...)` を呼ぶ設計になり、`Layout` を「値を渡すだけの関数コンポーネント」として各 View から直接呼べる今の形より Context に依存する。値渡しのテストしやすさを優先し、`hono/jsx-renderer` は採らない[^hono-jsx-renderer]。
 - メモの改行は文字列を `\n` で分割し、要素の間に `<br>` を挟む JSX で表す。
 - 条件付き描画は `{cond && <X />}`。`Content` 型（`Layout.tsx`）に `boolean | undefined` を含めてあるのはこのため。
 - インライン `style` 属性・インライン `<script>` は書かない。CSP が `'self'` のみ（docs/design.md §9.1）。
@@ -229,25 +233,29 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 ### 5.6 ルートの型と API の契約
 
 - リクエスト・レスポンスの型は `src/core/api/types.ts` に置き、web と server で共用する。ルートは `const response: GetPageResponse = {...}` と型注釈を付けてから `c.json(response)` する。
-- Hono の RPC（`hc<AppType>`）は使わない。クライアント JS を最小に保つ（docs/concept.md）ため、fetch の薄いラッパ（`src/web/lib/api.ts`）で足りる。
+- Hono の RPC（`hc<AppType>`）は使わない。クライアント JS を最小に保つ（docs/concept.md）ため、fetch の薄いラッパ（`src/web/lib/api.ts`）で足りる。RPC の型推論は `app.get(...).post(...)` のようにメソッドチェーンで組み、`export type AppType = typeof app` した場合にだけ効く[^hono-best-practices][^hono-rpc]。本リポジトリの各 `routes/*.ts` は `xxxRoutes(deps): Hono<{ Bindings: Env }>` を返す独立した関数（docs/design.md §11.5・§11.6）で、チェーンさせず `app.route('/', xxxRoutes(deps))` で合成するため、採用するには route 定義そのものを組み替える必要があり、クライアント JS 削減という目的に対してコストが見合わない。
 
 ### 5.7 標準ミドルウェアを使う・使わない
 
 | ミドルウェア / ヘルパ | 判断 | 理由 |
 |---|---|---|
-| `hono/factory`（`createMiddleware`） | 使う | 型付きのミドルウェア定義の標準的な方法 |
-| `hono/route`（`routePath`） | 使う | ログにルートパターンを出す |
-| `hono/http-exception` | `onError` で受けるだけ | 自分では throw しない。`ApiRequestError` を使う |
-| `hono/cookie` | 使う（device cookie） | 属性付きの Set-Cookie を手書きしない |
+| `hono/factory`（`createMiddleware`） | 使う | 型付きのミドルウェア定義の標準的な方法[^hono-best-practices] |
+| `hono/route`（`routePath`） | 使う | ログにルートパターンを出す[^hono-route] |
+| `hono/http-exception` | `onError` で受けるだけ | 自分では throw しない。`ApiRequestError` を使う[^hono-exception] |
+| `hono/cookie` | 使う（device cookie） | `generateCookie()` は Context 無しで属性付きの Set-Cookie 文字列だけを作れる公式 API。手書きしない[^hono-cookie] |
 | `hono/html` | DOCTYPE のみ | 上記 §5.5 |
 | `hono/utils/http-status`（`ContentfulStatusCode`） | 型 import のみ。`onError` の 1 箇所 | `c.json(body, status)` の第 2 引数が `number` を受けないため。§5.4 の集約後は routes/*.ts から消える |
-| `hono/utils/cookie`・`hono/utils/html` | 型 import と、cookie の属性型・HTML エスケープ関数に限る | `utils/` 配下は公開 API としての文書化が薄い。上記 2 つ以外の `hono/utils/*` は足さない |
-| `secureHeaders()` | 使わない | 既定で HSTS・`X-Frame-Options` を足し、CSP の文字列表現も本リポジトリの 1 定数と一致しない。`_headers` との一致検査（§4.2）を保つため自前の `securityHeaders()` を使う[^hono-secure-headers] |
-| `hono/validator`・`@hono/zod-validator`・`@hono/standard-validator` | 使わない | Hono 公式は組み込み validator を thin と位置づけ第三者バリデータを推奨するが、本リポジトリは意図的に外れる。入力検証の中身は core の `validateEventFields`（順序付きの業務ルール）で、スキーマ検証ではない。JSON の形の検査は数行で済んでおり、依存を増やす利益が無い。API の形が増えたら server 層に限って再検討する（§9）[^hono-validation] |
-| `hono/logger` | 使わない | 構造化ログ（`Logger` ポート）に一本化する |
-| `hono/cors` | 使わない | 同一オリジンのみ。CORS を開けない（docs/design.md §9.8） |
-| `hono/cache` | 使わない | キーの正規化（クエリ落とし・`%XX` の統一）を `withEdgeCache` で行う必要がある |
-| `hono/etag`・`compress` | 使わない | エッジと Static Assets が担う |
+| `hono/utils/cookie`（`parse`）・`hono/utils/html`（`HtmlEscapedString`） | `parse` は値 import（`deviceCookie.ts`）、`HtmlEscapedString` は型 import（`Layout.tsx`）に限る | `getCookie(c, name)` は Context が要るが、`readDeviceId` は §5.2 の方針で `Request` しか受け取らないため、`hono/cookie` より低レベルな `parse` を使う。`utils/` 配下は公開 API としての文書化が薄いので、この 2 つ以外の `hono/utils/*` は足さない |
+| `secureHeaders()` | 使わない | (1) 既定で `Cross-Origin-Resource-Policy` `Cross-Origin-Opener-Policy` `Origin-Agent-Cluster` `Strict-Transport-Security` `X-DNS-Prefetch-Control` `X-Download-Options` `X-Permitted-Cross-Domain-Policies` `X-XSS-Protection` など `_headers`（§4.2）に無いヘッダを足す。全部 `false` にすれば消せるが、それなら自前で列挙するのと変わらない。(2) CSP はディレクティブ名ごとの配列を持つオブジェクト（`ContentSecurityPolicyOptions`）でしか渡せず、本リポジトリの 1 文字列定数（`CONTENT_SECURITY_POLICY`）をそのまま渡す口が無い。(3) 実装の `setHeaders()` は `ctx.res.headers.set(...)` を直接呼び、Cache API から返る不変ヘッダの Response（§4.5）を再ラップしない。`withEdgeCache` 経由のレスポンスに適用すると例外になりうる（`c.res` の getter は前段が書き込んだ Response をそのまま返すだけで、代入時のような再ラップは起きない。`node_modules/hono@4.13.9` の `context.js`・`secure-headers.ts` で確認）。自前の `securityHeaders()` は `next()` の後に `new Response(c.res.body, c.res)` で包み直してから `set` するため安全[^hono-secure-headers][^hono-secure-headers-source] |
+| `hono/csrf` | 使わない | フォームで送れる Content-Type（`application/x-www-form-urlencoded` `multipart/form-data` `text/plain`）のリクエストにしか Origin / `Sec-Fetch-Site` を検査しない。本リポジトリの状態変更 API は `application/json` 以外を 415 で弾く設計（docs/design.md §9.8）で、防ぎたい対象はまさに JSON リクエストだが `hono/csrf` はそれを検査対象外にする。さらに同じフォーム系 Content-Type のときに限っても、両ヘッダとも無いリクエストを既定で拒否し、本リポジトリの「両方無ければ通す」（Content-Type 検査に任せる）方針と逆になる。拒否時のレスポンスも `HTTPException(403, { res: new Response('Forbidden', ...) })`（`text/plain`）で、`assertSameOriginJsonRequest` が投げる `FORBIDDEN_ORIGIN` の JSON（`test/integration/server/sameOrigin.test.ts` が検査）と形が違う[^hono-csrf][^hono-csrf-source] |
+| `hono/body-limit` | 使わない | `Content-Length` 事前チェック→無ければストリームを数えながら打ち切る、という中身は `readJsonBody`（`jsonBody.ts`）と同等。`bodyLimit()` の `onError` は独立したコールバックで `ApiRequestError` / `toApiErrorResponse` の JSON 形式に合わせて書き直す必要があり、エラー整形の場所が増えるだけで削減にならない[^hono-body-limit] |
+| `hono/timing` | 使わない | クライアントに見える `Server-Timing` ヘッダを作るためのミドルウェアで、`Logger` ポートに一本化したサーバ側の構造化ログ（docs/design.md §9.6・`requestLog`）とは目的が違う。採用するとしてもログ基盤の置き換えにはならない[^hono-timing] |
+| `hono/request-id` | 今は採らない | リクエスト単位の相関 ID を `c.get('requestId')` で持てるが、docs/design.md §9.6 のログ設計は「ルート完了時に 1 行」を前提にしており相関 ID を使う設計になっていない。`rate_limited` 等の途中ログ（`rateLimit.ts`・`apiReports.ts`）と `requestLog.ts` の完了ログを ID で結びたくなったら、docs/design.md §9.6 の設計変更として検討する[^hono-request-id] |
+| `hono/validator`・`@hono/zod-validator`・`@hono/standard-validator` | 使わない | Hono 公式は組み込み validator を thin と位置づけ第三者バリデータ（Standard Schema 経由の Zod / Valibot / ArkType を含む）を推奨するが、本リポジトリは意図的に外れる。入力検証の中身は core の `validateEventFields`（順序付きの業務ルール）で、スキーマ検証ではない。JSON の形の検査は数行で済んでおり、依存を増やす利益が無い。API の形が増えたら server 層に限って再検討する（§9）[^hono-validation] |
+| `hono/logger` | 使わない | 色付き・人間可読の開発向けログで、構造化ログ（`Logger` ポート）の代わりにならない。一本化する[^hono-logger] |
+| `hono/cors` | 使わない | 同一オリジンのみ。CORS を開けない（docs/design.md §9.8）[^hono-cors] |
+| `hono/cache` | 使わない | キーの正規化（クエリ落とし・`%XX` の統一）を `withEdgeCache` で行う必要がある。加えて Cloudflare 公式は「カスタムドメインの Worker だけが機能する Cache 操作を持つ」としており、`hono/cache` も同じ制約を明記している。現状 `workers_dev: true`（§4.1）の間はどのみち恩恵が薄い（§12）[^hono-cache][^cf-cache-api] |
+| `hono/etag`・`compress` | 使わない | エッジと Static Assets が担う[^hono-etag] |
 
 ---
 
@@ -421,7 +429,8 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 | KV / Durable Objects | 採らない | `db.batch()` の原子性に依存しており、KV の結果整合では壊れる。DO に移す具体的な利益が無い | D1 の書き込みレイテンシやカウンタ競合を実測して問題が出たら |
 | D1 Sessions API | 今は採らない | GC・レート制限がプライマリ 1 台の整合を前提[^d1-read-replication] | §11 のオーナー判断 |
 | R2 ライフサイクルルール | 採らない | D1 行と R2 オブジェクトの削除順序を自前で保証する設計 | 無し |
-| Hono `secureHeaders` / `validator` / `logger` / `cors` / `cache` | 採らない | §5.7 | 同上 |
+| Hono `secureHeaders` / `csrf` / `body-limit` / `timing` / `validator` / `logger` / `cors` / `cache` / `etag` / `compress` / `jsx-renderer` | 採らない | §5.5・§5.7 | 無し |
+| Hono `request-id` | 今は採らない | §5.7 | docs/design.md §9.6 にログの相関 ID 設計が入ったら |
 | Hono RPC（`hc`） | 採らない | クライアント JS を最小に保つ | 無し |
 | eslint-plugin-perfectionist / import-x（import 順序） | 今は採らない | 差分が全ファイルに広がる。目視で乱れは無い | 導入するなら `perfectionist/sort-imports` 1 ルールだけを単独 PR で |
 | eslint-plugin-unicorn | 採らない | 300 超のルールを持つ opinionated なプラグイン。既存コードへの一括修正が要る | 個別ルールを「なぜ要るか」と共に足すときだけ |
@@ -481,6 +490,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 - CI に `npm audit signatures` を足す。署名を提供しないパッケージで誤検知しうるため、非ブロッキングから始める。
 - esbuild の splitting による削減量（§6.1）。metafile で測ってから判断する。
 - `reset()` が D1 のテーブル定義まで消すか（§7.2）。結合テストの setup 変更時に `sqlite_master` で確認し、結果を PR 説明に書く。
+- Cache API（`caches.default`、`withEdgeCache`）は Cloudflare 公式ドキュメントで「カスタムドメインの Worker だけが機能する Cache 操作を持つ」と明記されている[^cf-cache-api]。現状 `wrangler.jsonc` は `workers_dev: true`（§4.1。独自ドメインを割り当てるまでの暫定）なので、`*.workers.dev` 上で `withEdgeCache` が実際にヒットするかは未確認。ヒットしなくても `produce()` が都度実行されるだけで壊れないが、キャッシュ導入の効果（D1・R2 の負荷軽減）が出ていない可能性がある。デプロイ環境（workers.dev、後にカスタムドメイン）で同じリクエストを 2 回送り、2 回目に `cache.match` がヒットするかを確認し、結果を Issue に記録する。
 
 ---
 
@@ -503,10 +513,32 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 [^tsconfig-ref]: https://www.typescriptlang.org/tsconfig/
 [^hono-jsx]: https://hono.dev/docs/guides/jsx
 [^hono-best-practices]: https://hono.dev/docs/guides/best-practices
+[^hono-routing]: https://hono.dev/docs/api/routing （`:name{regexp}` の構文。「先にルートを登録してから `route()` に渡さないと 404 になる」落とし穴）
+[^hono-middleware]: https://hono.dev/docs/guides/middleware （「The process before the `next` of the first registered Middleware is executed first, and the process after the `next` is executed last」。先に登録したミドルウェアが後続を包む、いわゆる onion モデル）
 [^hono-exception]: https://hono.dev/docs/api/exception
 [^hono-route]: https://hono.dev/docs/helpers/route
+[^hono-cookie]: https://hono.dev/docs/helpers/cookie （`generateCookie()`。Context 無しで Set-Cookie 文字列だけを作れる）
 [^hono-secure-headers]: https://hono.dev/docs/middleware/builtin/secure-headers
-[^hono-validation]: https://hono.dev/docs/guides/validation
+[^hono-validation]: https://hono.dev/docs/guides/validation （Standard Schema Validator Middleware。Zod・Valibot・ArkType を同じ書き方で使える）
+[^hono-context]: https://hono.dev/docs/api/context （`c.set()` / `c.get()` / `c.var`。`ContextVariableMap` の注記: 「adds types globally to all contexts, regardless of whether the middleware that sets the variable has actually run」）
+[^hono-request-source]: `node_modules/hono/dist/types/request.d.ts`（4.13.9）。`HonoRequest` の `routePath` ゲッタ・`matchedRoutes` ゲッタはいずれも `@deprecated` で「Use routePath helper defined in "hono/route" instead」と明記されている
+[^hono-compose]: https://github.com/honojs/hono/blob/v4.13.9/src/compose.ts （`dispatch` は呼び出しごとに `onError` を持ち、例外はその階層で捕まえて `context.res` に変換してから正常に復帰する。呼び出し元の `await next()` は例外を受け取らない）
+[^hono-app]: https://hono.dev/docs/api/hono#not-found （「The `notFound` method is only called from the top-level app」）
+[^hono-base-source]: https://github.com/honojs/hono/blob/v4.13.9/src/hono-base.ts （`route()` はサブアプリのルートを親の router にマージするだけで `notFoundHandler` は引き継がない。`#dispatch()` が `Context` 生成時に自分の `#notFoundHandler` を渡し、`Context#notFound()` はそれを呼ぶだけなので、実際に呼ばれるのは常にトップレベル app の handler になる）
+[^hono-jsx-security]: https://github.com/honojs/hono/releases/tag/v4.13.7 （GHSA-hxh3-vqpv-xpqv。`Suspense`・`ErrorBoundary`・`Context.Provider`・`renderToString()`・`renderToReadableStream()` に渡した生文字列がエスケープされない XSS の修正。`gh api repos/honojs/hono/security-advisories` で `vulnerable_version_range: "< 4.13.7"`、`patched_versions: "4.13.7"` を確認）
+[^hono-jsx-renderer]: https://hono.dev/docs/middleware/builtin/jsx-renderer
+[^hono-rpc]: https://hono.dev/docs/guides/rpc （`export type AppType = typeof app` はメソッドチェーンで定義したときに型推論が効く）
+[^hono-secure-headers-source]: https://github.com/honojs/hono/blob/v4.13.9/src/middleware/secure-headers/secure-headers.ts （`contentSecurityPolicy` はディレクティブごとの配列を持つオブジェクトのみ受け付ける。`setHeaders` は `ctx.res.headers.set(...)` を直接呼び、Response を包み直さない）
+[^hono-csrf]: https://hono.dev/docs/middleware/builtin/csrf
+[^hono-csrf-source]: https://github.com/honojs/hono/blob/v4.13.9/src/middleware/csrf/index.ts （`isRequestedByFormElementRe` に一致する Content-Type のときだけ検査する。`application/json` は一致せずスキップされる。検査対象のときに `Origin` と `Sec-Fetch-Site` が両方無いと、`isAllowedSecFetchSite`／`isAllowedOrigin` がどちらも `false` を返し拒否される）
+[^hono-body-limit]: https://hono.dev/docs/middleware/builtin/body-limit
+[^hono-timing]: https://hono.dev/docs/middleware/builtin/timing
+[^hono-request-id]: https://hono.dev/docs/middleware/builtin/request-id
+[^hono-logger]: https://hono.dev/docs/middleware/builtin/logger （「It's a simple logger」。色付きのステータスコードと人間可読の経過時間を出す開発向けミドルウェア）
+[^hono-cors]: https://hono.dev/docs/middleware/builtin/cors
+[^hono-cache]: https://hono.dev/docs/middleware/builtin/cache （「The Cache middleware currently supports Cloudflare Workers projects using custom domains」）
+[^cf-cache-api]: https://developers.cloudflare.com/workers/runtime-apis/cache/ （「Workers deployed to custom domains have access to functional cache operations」）
+[^hono-etag]: https://hono.dev/docs/middleware/builtin/etag
 [^tseslint-typed]: https://typescript-eslint.io/getting-started/typed-linting
 [^prettier-35]: https://prettier.io/blog/2025/02/09/3.5.0
 [^workers-dev]: https://developers.cloudflare.com/workers/configuration/routing/workers-dev/

@@ -46,10 +46,10 @@
 
 ### 1.2 コストとの整合（concept §08〜§09 との突き合わせ）
 
-**Workers Paid（$5/月）を前提にする。** これは「無料枠で回す」方針からの唯一かつ意図的な逸脱で、理由は次の 2 点。concept §09 の「Phase 1 は変動費がほぼゼロ…無料枠のまま放置できる」とは固定費 $5/月の分だけ食い違うので、Paid 契約の承認（H2）を §14.2 の未決事項に明示し、承認後に concept §09 へ「Phase 1 の固定費は Workers Paid $5/月のみ（OGP 生成のため）」を追記する。
+**Workers Paid（$5/月）を前提にする。** これは「無料枠で回す」方針からの唯一かつ意図的な逸脱で、理由は CPU 時間の上限（次の 1 点目）。concept §09 の「Phase 1 は変動費がほぼゼロ…無料枠のまま放置できる」とは固定費 $5/月の分だけ食い違うので、Paid 契約の承認（H2）を §14.2 の未決事項に明示し、承認後に concept §09 へ「Phase 1 の固定費は Workers Paid $5/月のみ（OGP 生成のため）」を追記する。
 
 - Workers Free の CPU 時間上限は **1 リクエストあたり 10ms**。satori + resvg のラスタライズは 100〜300ms 級なので Free では完走せず、超過は例外ではなく isolate の強制終了（エラー 1102）になるため `try/catch` のフォールバックも効かない。OGP 画像は認知獲得の主経路（concept §03）なので、これを諦める選択肢はない。
-- Workers Free のスクリプトサイズ上限は 3MB（gzip 後）。resvg の wasm（gzip 後 1MB 前後）+ satori + yoga で 2MB 前後になり、余裕がない。Paid は 10MB。
+- Worker のサイズ上限は Free / Paid とも uncompressed 64 MiB（圧縮後サイズの上限は無い。2026-09-27 に Limits ページで確認）。resvg の wasm + satori + yoga を含めても余裕があり、サイズは Paid を選ぶ理由にならない。`wrangler deploy --dry-run` の出力サイズは推移の記録として PR に残す（docs/guidelines.md §8.1）。
 
 **Paid の込み枠に対する試算（月 10 万ページ作成・詳細ページ月 100 万 PV の想定）**
 
@@ -235,7 +235,7 @@ async function handleOgp(id: string, request: Request, env: Env, ctx: ExecutionC
 
 - **フォールバック画像**: `dist/assets/img/ogp-fallback.png`（ソースは `src/web/img/ogp-fallback.png`。サービス名だけを描いた静的 PNG）を `env.ASSETS.fetch(new URL('/assets/img/ogp-fallback.png', request.url))` で取得し、`new Response(res.body, res)` で包み直して `Cache-Control` を付けて返す（§2.2 の規約）。wasm 例外・フォント取得失敗・タイムアウトのいずれでもカードが壊れない。
 - **ネガティブキャッシュ**: 生成に失敗し続けるページで毎回 CPU を消費しないよう、失敗マーカー（R2 の `ogp/{id}/{version}.failed`、`OGP_FAILURE_CACHE_SECONDS = 300` 秒で無効）を置く。同じ入力は同じ結果になるので、失敗マーカーが切れても同じ version では再び失敗する。これを「そのページの OGP は恒久的にフォールバック」として受け入れる代わりに、レンダラの例外の主因になりうる制御文字・絵文字を描画前に落とす（下記「入力の前処理」）。サブセット未収録の漢字・記号は例外にはならず豆腐（空白）になるだけなので、ここでは対象にしない。
-- **satori の読み込み方**: satori の既定エントリ（`satori`）はレイアウトエンジン yoga の asm.js 版をモジュール読み込み時に初期化する。Workers には「スクリプトのトップレベル評価は 400ms 以内」という起動時間制限があり、これに掛かるとデプロイ自体が失敗し、`wrangler deploy --dry-run` では検出できない。そのため **`satori/standalone` エントリを使う。設計時点で想定していた `satori/wasm` + `yoga-wasm-web` は現行の satori では無くなっており（`satori/standalone` に統合され、`yoga.wasm`（`satori/yoga.wasm` として同梱）を `init()` に渡す形に変わった）、実装時点の実物（`node_modules/satori/package.json` の `exports`）に合わせてこちらを使う。**
+- **satori の読み込み方**: satori の既定エントリ（`satori`）はレイアウトエンジン yoga の asm.js 版をモジュール読み込み時に初期化する。Workers には「グローバルスコープの評価は 1 秒以内」という起動時間制限があり、これに掛かるとデプロイ自体が失敗し、`wrangler deploy --dry-run` では検出できない。そのため **`satori/standalone` エントリを使う。設計時点で想定していた `satori/wasm` + `yoga-wasm-web` は現行の satori では無くなっており（`satori/standalone` に統合され、`yoga.wasm`（`satori/yoga.wasm` として同梱）を `init()` に渡す形に変わった）、実装時点の実物（`node_modules/satori/package.json` の `exports`）に合わせてこちらを使う。**
   **satori のバージョンは `0.32.0` に固定する（`^0.33.0` 以降は不可、実機確認済み）**: satori 0.33.0 でテキストシェイピングに `harfbuzzjs` が追加されたが、`harfbuzzjs` は自身の wasm（`hb.wasm`）を Node の `fs.readFile` 相当（`readAll`）で読む実装で、これを差し替える公開 API が satori 0.33 系に無い。`satori/standalone` の `init()` は yoga の wasm しか受け付けないため、Workers（fs を持たない）では `harfbuzzjs` の初期化が `no such file or directory` で必ず失敗する（vitest-pool-workers で実機確認済み）。`harfbuzzjs` 導入前の最終版である `0.32.0` を使うことでこの依存を避ける。
   resvg は `@resvg/resvg-wasm` の `initWasm()` に `index_bg.wasm` を渡す。どちらの wasm も `import` で静的に束ね（wrangler の既定 `CompiledWasm` ルールが `**/*.wasm` に効くため `wrangler.jsonc` の `rules` 追加は不要、実機確認済み）、`init`/`initWasm` は初回 render 時に遅延実行する。トップレベルで重い初期化は行わない。初期化結果と `R2` から読んだフォントはモジュールスコープでメモ化する。T10 の完了条件に「`wrangler dev` の起動と初回リクエストが通る」「1 回の render に要する CPU 時間（フォントパース込み）の実測」を含め、実機の起動制限は T19 の初回デプロイで確認する。
 - **フォント**: satori はデフォルトフォントを持たず `fonts` オプションが必須。Noto Sans JP のサブセット（**JIS 第 1 水準** + かな + 英数記号 + 一般的な約物。約 765KiB、実測済み）を **R2 の `fonts/NotoSansJP-Regular.subset.otf` に置き**、isolate 内でモジュールスコープにメモ化して読み込む。スクリプトに同梱しないのは Paid でも 10MB（gzip 後）の上限があるため。サブセット生成は運用基盤の PR が provisioning 用に用意した `scripts/fonts/subset.sh`（pyftsubset を呼ぶ）に一本化し、T10 で新たに `scripts/subset-font.mjs` は作らない。第 2 水準（「麹町」「髙」のような人名・地名の字）は含めない。第 1 水準のみにした理由と、含まない文字が OGP 画像上で豆腐になる制限は `docs/licenses/noto-sans-jp.md`・`docs/runbooks/fonts.md` に記録する。OFL のライセンスファイルは `test/fixtures/fonts/OFL.txt` に含める。**satori は `SatoriOptions.fonts`（配列オブジェクト自体）を鍵にした `WeakMap` でパース結果をキャッシュする**（`node_modules/satori/dist/standalone.js` の該当箇所をソースで確認済み）。したがって `fonts: [{ data, ... }]` を render のたびに新しい配列リテラルで渡すと毎回キャッシュミスしてパースし直しになる。`createSatoriOgpRenderer` は `fonts` 配列を wasm・フォントと同じタイミングで 1 回だけ組み立て、以後の render すべてで同じ配列参照を渡すことでこのキャッシュを効かせる（T10 で実測: この対策により 2 回目以降の render が短縮した。§14.1）。
@@ -1167,7 +1167,7 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
   CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID は GitHub Secrets。手順は docs/runbooks/deploy.md。
 ```
 
-`test:integration` はモック不要でネットワーク到達性も不要なので、GitHub Actions のホストランナー内で完結する。e2e は `npx playwright install --with-deps chromium` を含める。`wrangler deploy --dry-run` を build に含め、スクリプトサイズ上限（Paid 10MB gzip）を毎 PR で検出する。未ログイン・プレースホルダ `database_id` で通ることは確認済み（T1、§11.7）。ただし **`--dry-run` は Workers の起動時間制限（トップレベル評価 400ms）を検出しない**ので、wasm の初期化を遅延させる設計（§2.5）を守り、実機の確認は T19 の初回デプロイで行う。
+`test:integration` はモック不要でネットワーク到達性も不要なので、GitHub Actions のホストランナー内で完結する。e2e は `npx playwright install --with-deps chromium` を含める。`wrangler deploy --dry-run` を build に含め、バンドルが組めることと出力サイズの推移を毎 PR で確認する（上限は uncompressed 64 MiB で、検出が目的ではない）。未ログイン・プレースホルダ `database_id` で通ることは確認済み（T1、§11.7）。ただし **`--dry-run` は Workers の起動時間制限（グローバルスコープの評価 1 秒）を検出しない**ので、wasm の初期化を遅延させる設計（§2.5）を守り、実機の確認は T19 の初回デプロイで行う。
 
 `deploy.yml` は `ci.yml` の成功を GitHub Actions の機能（`workflow_run` 等）で待ち合わせていない。`main` への push はブランチ保護で ci.yml の必須チェックを通過した PR のマージに限られる前提で、デプロイ自体のゲートは `DEPLOY_ENABLED` の 1 点に絞っている（docs/runbooks/deploy.md）。
 
@@ -2013,7 +2013,7 @@ H1〜H14 の運用手順は docs/runbooks/README.md にまとめてある。各�
 | 項目 | 内容 | 対応方針 |
 |---|---|---|
 | OGP 生成の CPU 時間と wasm 初期化 → 実測済み（T10） | `wrangler dev`（ローカル、壁時計。isolate の CPU-ms とは異なる）で計測: 初回（wasm 初期化 + R2 からのフォント取得 + render + PNG エンコード）約 80〜100ms、2 回目以降（wasm・フォント・`fonts` 配列の参照をすべてメモ化した状態での render + エンコードのみ）約 20〜25ms、Cache API ヒットは約 3ms。`fonts` 配列を使い回して satori 内部の WeakMap キャッシュを効かせる対策（上記「フォント」）をした後の数値。500ms 超のリスクは実測範囲では観測されず | Cache API・R2・ネガティブキャッシュで再生成を防ぐ構成は既存のまま。本番の isolate 内 CPU-ms は T19 の初回デプロイで別途確認する。超過が常態化したら OGP 生成専用 Worker（Service Binding）へ分離 |
-| Workers の起動時間制限（要検証） | satori の既定エントリ（asm.js 版 yoga）はトップレベル評価が 400ms を超えてデプロイが失敗しうる。`wrangler deploy --dry-run` では検出できない | `satori/standalone` + wasm import + 遅延 init（§2.5）。T19 の初回デプロイで確認 |
+| Workers の起動時間制限（要検証） | satori の既定エントリ（asm.js 版 yoga）はグローバルスコープの評価が 1 秒を超えてデプロイが失敗しうる。`wrangler deploy --dry-run` では検出できない | `satori/standalone` + wasm import + 遅延 init（§2.5）。T19 の初回デプロイで確認 |
 | vitest-pool-workers での wasm import → 確認済み（T10、§10.2） | `.wasm` の静的 import・`init()`/`initWasm()`・satori + resvg-wasm による PNG 生成のすべてが pool-workers 上で動くことを `test/integration/ogp/satoriOgpRenderer.test.ts` で確認した。Node 側への切り出しは不要だった | 対応不要。satori のバージョンは `harfbuzzjs`（fs 前提の wasm 読み込みで Workers 非対応）が入る前の `0.32.0` に固定する必要があった（上記「satori の読み込み方」） |
 | `_headers` ファイルの対応 → 確認済み（T1、§10.2） | wrangler のバージョンによっては Static Assets で `_headers` が効かない懸念だったが、pool-workers・`wrangler dev` のいずれでも効くことを確認した | 対応不要。効かなくなった場合の代替は `run_worker_first` で Worker を通す案（§2.2、§14.3） |
 | CPU-ms が Paid の込み枠上限近傍 | 月 10 万作成規模で 1,500〜3,000 万 CPU-ms | 超過分は月数十円。H12 の監視ルール |
