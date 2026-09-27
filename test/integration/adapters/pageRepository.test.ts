@@ -9,6 +9,7 @@ import {
   type NewPageInput,
   type PageRepository,
 } from '../../../src/ports/pageRepository'
+import { insertPageRow } from '../helpers/insertPageRow'
 
 const NOW = new Date('2026-09-16T01:00:00.000Z')
 
@@ -22,17 +23,6 @@ function eventFields(overrides: Partial<EventFields> = {}): EventFields {
     isAllDay: false,
     ...overrides,
   }
-}
-
-/** events を持たないページ行を直接作る。InvariantViolation（events 0 行）を再現するのに使う */
-async function insertBarePage(id: string): Promise<void> {
-  const now = NOW.toISOString()
-  await env.DB.prepare(
-    `INSERT INTO pages (id, edit_token_hash, raw_text, source, creator_ip_hash, creator_device_id, created_at, updated_at, expires_at)
-     VALUES (?, 'token-hash', 'raw', 'direct', 'ip-hash', 'device-id', ?, ?, ?)`,
-  )
-    .bind(id, now, now, now)
-    .run()
 }
 
 function buildInput(overrides: Partial<NewPageInput> = {}): NewPageInput {
@@ -593,14 +583,14 @@ describe('D1PageRepository', () => {
 
   it('events が 0 行のページを読むと InvariantViolation を投げる', async () => {
     const repo = createD1PageRepository(env.DB)
-    await insertBarePage('page-invariant-empty')
+    await insertPageRow(env.DB, 'page-invariant-empty', NOW)
 
     await expect(repo.findById('page-invariant-empty')).rejects.toThrow(InvariantViolation)
   })
 
   it('events が 0 行のページを update すると InvariantViolation を投げる', async () => {
     const repo = createD1PageRepository(env.DB)
-    await insertBarePage('page-invariant-empty-update')
+    await insertPageRow(env.DB, 'page-invariant-empty-update', NOW)
 
     await expect(
       repo.update('page-invariant-empty-update', {

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createD1ReportRepository } from '../../../src/adapters/d1/d1ReportRepository'
 import { createMemoryReportRepository } from '../../../src/adapters/memory/memoryReportRepository'
 import type { NewReportInput, ReportRepository } from '../../../src/ports/reportRepository'
+import { insertPageRow } from '../helpers/insertPageRow'
 
 function buildReport(overrides: Partial<NewReportInput> = {}): NewReportInput {
   return {
@@ -17,14 +18,8 @@ function buildReport(overrides: Partial<NewReportInput> = {}): NewReportInput {
 }
 
 /** reports.page_id は pages(id) の FK。D1 は外部キー制約が有効なので先にページ行を用意する */
-async function seedD1Page(id: string): Promise<void> {
-  const now = new Date('2026-09-01T00:00:00.000Z').toISOString()
-  await env.DB.prepare(
-    `INSERT INTO pages (id, edit_token_hash, raw_text, source, creator_ip_hash, creator_device_id, created_at, updated_at, expires_at)
-     VALUES (?, 'token-hash', 'raw', 'direct', 'ip-hash', 'device-id', ?, ?, ?)`,
-  )
-    .bind(id, now, now, now)
-    .run()
+function seedD1Page(id: string): Promise<void> {
+  return insertPageRow(env.DB, id, new Date('2026-09-01T00:00:00.000Z'))
 }
 
 /** D1ReportRepository と memoryReportRepository の両方に流す契約テスト */
