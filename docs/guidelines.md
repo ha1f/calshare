@@ -86,9 +86,9 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 
 ### 2.3 型の書き方
 
-- 境界（サーバが受け取るリクエストの JSON、web が受け取るエラー本文、localStorage、D1 の行）から入る値は `unknown` で受け、手書きの判定で狭めてから core の型に変換する。`as` は判定が済んだ直後の 1 箇所だけに使う（`src/server/routes/apiPagesEdit.ts` の `parseUpdatePageRequest`、`src/web/lib/history.ts` の `isStoredHistoryEntry` が手本）。
+- 境界（サーバが受け取るリクエストの JSON、web が受け取るエラー本文、localStorage、D1 の TEXT 列に入れた JSON）から入る値は `unknown` で受け、手書きの判定で狭めてから core の型に変換する。`as` は判定が済んだ直後の 1 箇所だけに使う（`src/server/routes/apiPagesEdit.ts` の `parseUpdatePageRequest`、`src/web/lib/history.ts` の `isStoredHistoryEntry` が手本）。
   - web が受け取るエラー本文は Cloudflare の 502 など API 以外が返すこともあるので判定の対象にする。web が自分の API から受け取る成功レスポンスは、`src/core/api/types.ts` の型をサーバと共用しているので型注釈で受けてよい。
-  - D1 の行は、書き込むのが本リポジトリのアダプタと scripts に限られるので `.first<T>()` などで型付けしてよい。JSON を入れた TEXT 列だけは unknown で受けて判定する。
+  - D1 の行は、書き込むのが本リポジトリのアダプタと scripts に限られるので `.first<T>()` などで型付けしてよい。スキーマが中身を保証しない JSON を入れた TEXT 列だけは unknown で受けて判定する。
 - 状態は判別可能なユニオン（`{ mode: 'auto' } | { mode: 'manual'; value: T }`、`{ ok: true } | { ok: false; code }`）で表す。`enum` は使わず、文字列リテラルのユニオンと `as const` を使う。
 - 依存は `Deps`（`src/server/deps.ts`）の引数で渡す。モジュールスコープのシングルトンやグローバルからの参照はしない。テストは Fake を渡して差し替える（docs/design.md §11.4）。
 - `any` は使わない。`@ts-ignore` は使わず、必要なら `@ts-expect-error` に理由を添える。

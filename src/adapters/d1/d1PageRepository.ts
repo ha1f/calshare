@@ -57,7 +57,7 @@ function serializeChangeSnapshot(snapshot: ChangeSnapshot): string {
   return JSON.stringify(json)
 }
 
-function isNullableIsoDateString(value: unknown): value is string | null {
+function isNullableDateString(value: unknown): value is string | null {
   return value === null || (typeof value === 'string' && !Number.isNaN(Date.parse(value)))
 }
 
@@ -65,15 +65,19 @@ function isChangeSnapshotJson(value: unknown): value is ChangeSnapshotJson {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
   return (
-    isNullableIsoDateString(v.start) &&
-    isNullableIsoDateString(v.end) &&
+    isNullableDateString(v.start) &&
+    isNullableDateString(v.end) &&
     typeof v.isAllDay === 'boolean' &&
     typeof v.titleChanged === 'boolean' &&
     typeof v.locationChanged === 'boolean'
   )
 }
 
-/** previous_snapshot は列自体をスキーマが保証しない JSON なので unknown で受けて判定する（§2.3）。壊れていれば変更バナーを出さない扱いにする */
+/**
+ * previous_snapshot はスキーマが中身を保証しない JSON なので unknown で受けて判定する（docs/guidelines.md §2.3）。
+ * assertSingleEvent と違い例外にはせず、壊れていれば変更バナーを出さない扱いにする。
+ * 項目を足したときに古い行で詳細ページ全体が 500 にならないようにするため
+ */
 function parseChangeSnapshot(json: string | null): ChangeSnapshot | null {
   if (json === null) return null
   let parsed: unknown
