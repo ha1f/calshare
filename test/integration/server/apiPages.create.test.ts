@@ -1,4 +1,4 @@
-import { env, SELF } from 'cloudflare:test'
+import { env, exports } from 'cloudflare:workers'
 import { describe, expect, it, vi } from 'vitest'
 import { isValidPageId } from '../../../src/core/id/crockford'
 import { addMonths } from '../../../src/core/time/jst'
@@ -126,7 +126,7 @@ describe('POST /api/pages', () => {
       expect(res.status).toBe(200)
       const setCookie = res.headers.get('Set-Cookie')
       expect(setCookie).toMatch(/^cs_device=[0-9a-f-]{36}/)
-      const newDeviceId = setCookie?.split(';')[0].split('=')[1]
+      const newDeviceId = setCookie?.split(';')[0]?.split('=')[1]
       expect(newDeviceId).not.toBe(cookieValue)
       const json = (await res.json()) as CreatePageResponse
       const page = await deps.pages.findById(json.id)
@@ -519,14 +519,14 @@ describe('POST /api/pages', () => {
     })
   })
 
-  it('SELF.fetch（本物のアダプタ）でも作成でき、D1 に pages/events が 1 行ずつ、R2 に ics が置かれる', async () => {
+  it('exports.default.fetch（本物のアダプタ）でも作成でき、D1 に pages/events が 1 行ずつ、R2 に ics が置かれる', async () => {
     const start = new Date(Date.now() + 24 * 60 * 60 * 1000)
     const end = new Date(start.getTime() + 60 * 60 * 1000)
     const body = createBody({
       fields: validFields({ start: start.toISOString(), end: end.toISOString() }),
     })
 
-    const res = await SELF.fetch(`${TEST_ORIGIN}/api/pages`, {
+    const res = await exports.default.fetch(`${TEST_ORIGIN}/api/pages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: TEST_ORIGIN },
       body: JSON.stringify(body),

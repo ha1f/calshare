@@ -1,4 +1,4 @@
-import { env, SELF } from 'cloudflare:test'
+import { env, exports } from 'cloudflare:workers'
 import { describe, expect, it, vi } from 'vitest'
 import { hashEditToken } from '../../../src/core/token/hashEditToken'
 import type {
@@ -615,7 +615,7 @@ describe('PATCH /api/pages/:id', () => {
     expect(errorSpy).toHaveBeenCalledWith('update_page_put_ics_failed', expect.anything())
   })
 
-  it('SELF.fetch（本物のアダプタ）でも更新でき、D1 の version・changed_at と R2 の ics が更新される', async () => {
+  it('exports.default.fetch（本物のアダプタ）でも更新でき、D1 の version・changed_at と R2 の ics が更新される', async () => {
     const start = new Date(Date.now() + 24 * 60 * 60 * 1000)
     const end = new Date(start.getTime() + 60 * 60 * 1000)
     const createBody: CreatePageRequest = {
@@ -623,7 +623,7 @@ describe('PATCH /api/pages/:id', () => {
       fields: validFields({ start: start.toISOString(), end: end.toISOString() }),
       source: 'direct',
     }
-    const createRes = await SELF.fetch(`${TEST_ORIGIN}/api/pages`, {
+    const createRes = await exports.default.fetch(`${TEST_ORIGIN}/api/pages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: TEST_ORIGIN },
       body: JSON.stringify(createBody),
@@ -633,7 +633,7 @@ describe('PATCH /api/pages/:id', () => {
 
     const newStart = new Date(start.getTime() + 60 * 60 * 1000)
     const newEnd = new Date(newStart.getTime() + 60 * 60 * 1000)
-    const patchRes = await SELF.fetch(`${TEST_ORIGIN}/api/pages/${created.id}`, {
+    const patchRes = await exports.default.fetch(`${TEST_ORIGIN}/api/pages/${created.id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',

@@ -4,6 +4,7 @@ import satori from 'satori/standalone'
 import type { Font } from 'satori/standalone'
 import yogaWasm from 'satori/yoga.wasm'
 import { describe, expect, it, vi } from 'vitest'
+import { requireDefined } from '../../../src/core/assert'
 import { createSatoriOgpRenderer, toOgpInput } from '../../../src/adapters/ogp/satoriOgpRenderer'
 import { ogpTemplate } from '../../../src/adapters/ogp/ogpTemplate'
 import { OGP_IMAGE_HEIGHT, OGP_IMAGE_WIDTH } from '../../../src/core/config/limits'
@@ -120,7 +121,8 @@ describe('createSatoriOgpRenderer', () => {
       ].map((m) => Number(m[1]))
 
     const oneLineSvg = await render(baseInput())
-    const twoLinesHeight = rectHeights(oneLineSvg)[3] // '渋谷'（1 行）の高さ
+    // '渋谷'（1 行）の高さ
+    const twoLinesHeight = requireDefined(rectHeights(oneLineSvg)[3], 'rectHeights has index 3')
 
     const longLocationSvg = await render(baseInput({ location: 'あ'.repeat(200) }))
     const longLocationHeight = rectHeights(longLocationSvg)[3]

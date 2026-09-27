@@ -5,7 +5,7 @@ export interface JsonRequestOptions {
   method: 'POST' | 'PATCH'
   body: unknown
   /** Origin 不一致や text/plain のテスト用に既定のヘッダを上書きできる */
-  headers?: Record<string, string>
+  headers?: Record<string, string> | undefined
 }
 
 export function jsonRequest(path: string, options: JsonRequestOptions): Request {

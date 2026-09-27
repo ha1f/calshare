@@ -1,7 +1,9 @@
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { HTTPException } from 'hono/http-exception'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
+import { requireDefined } from '../../../src/core/assert'
 import { consoleLogger } from '../../../src/adapters/logger/consoleLogger'
 import { PAGE_ID_PATTERN } from '../../../src/core/id/crockford'
 import { createApp } from '../../../src/server/app'
@@ -122,7 +124,10 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     vi.spyOn(deps.rateLimiter, 'consume').mockImplementation(
       async (rules: RateLimitRule[]): Promise<{ allowed: boolean; exceeded: RateLimitRule[] }> => ({
         allowed: false,
-        exceeded: [rules.find((rule) => rule.bucketKey.startsWith('device:')) ?? rules[0]],
+        exceeded: [
+          rules.find((rule) => rule.bucketKey.startsWith('device:')) ??
+            requireDefined(rules[0], 'rules is always non-empty in this test'),
+        ],
       }),
     )
 

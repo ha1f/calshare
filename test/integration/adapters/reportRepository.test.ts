@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createD1ReportRepository } from '../../../src/adapters/d1/d1ReportRepository'
 import { createMemoryReportRepository } from '../../../src/adapters/memory/memoryReportRepository'
@@ -114,14 +114,6 @@ function runReportRepositoryTests(
 }
 
 describe('D1ReportRepository', () => {
-  // D1 のストレージ分離はテストファイル単位で、同じファイル内の it() 間ではテーブルの中身が残る。
-  // pages を消せば reports も CASCADE で消える。この beforeEach は runReportRepositoryTests の
-  // 呼び出しより前に書く必要がある（vitest の beforeEach は登録順に実行されるため、
-  // 内部の seedPage 用 beforeEach より先に DELETE が走る順序になる）
-  beforeEach(async () => {
-    await env.DB.prepare('DELETE FROM pages').run()
-  })
-
   runReportRepositoryTests(() => createD1ReportRepository(env.DB), seedD1Page)
 
   it('inserted のときだけ reports の行が増える', async () => {

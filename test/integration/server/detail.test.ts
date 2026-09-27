@@ -1,5 +1,7 @@
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
+import { describe, expect, it } from 'vitest'
+import { requireDefined } from '../../../src/core/assert'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { createApp } from '../../../src/server/app'
@@ -16,7 +18,7 @@ const CROCKFORD_CHARS = '0123456789abcdefghjkmnpqrstvwxyz'
 
 /** PAGE_ID_PATTERN（Crockford Base32 小文字 12 文字）を満たすテスト用 ID を重複無く発行する */
 function pageId(n: number): string {
-  return CROCKFORD_CHARS[n].repeat(12)
+  return requireDefined(CROCKFORD_CHARS[n], 'CROCKFORD_CHARS: index out of range').repeat(12)
 }
 
 function eventFields(overrides: Partial<EventFields> = {}): EventFields {
@@ -140,12 +142,6 @@ async function get(deps: Deps, path: string): Promise<{ res: Response; text: str
 }
 
 describe('GET /:id（詳細ページ、§6.3）', () => {
-  beforeEach(async () => {
-    // pageRepository.test.ts と同様、テーブル全体を走査しうる操作の前に掃除する（§11.7 の実測メモ）
-    await env.DB.prepare('DELETE FROM events').run()
-    await env.DB.prepare('DELETE FROM pages').run()
-  })
-
   it('要素の順序が §6.3 のとおり（発行者スロットは Phase 1 では空のため出ない）', async () => {
     const { deps, repo } = buildDetailDeps()
     const id = pageId(0)
