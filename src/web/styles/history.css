@@ -13,13 +13,13 @@
   align-items: center;
   gap: 8px;
   padding: 8px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 4px;
 }
 
 .history-item.is-expired {
-  color: #999;
-  border-color: #ddd;
+  color: var(--faint);
+  border-color: var(--border-faint);
 }
 
 .history-title {
@@ -32,7 +32,7 @@
 
 .history-datetime {
   font-size: 0.9em;
-  color: #666;
+  color: var(--muted);
 }
 
 .is-expired .history-datetime {
@@ -41,7 +41,7 @@
 
 .history-edit-link {
   font-size: 0.9em;
-  color: #06c;
+  color: var(--link);
 }
 
 .is-expired .history-edit-link {
@@ -50,9 +50,9 @@
 
 .history-expired-badge {
   font-size: 0.85em;
-  color: #c00;
+  color: var(--error);
 }
 
 .empty-message {
-  color: #666;
+  color: var(--muted);
 }

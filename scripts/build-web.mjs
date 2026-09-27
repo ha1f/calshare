@@ -1,4 +1,4 @@
-// src/web → dist/ のビルド。後続 PR はこのファイルを変更しない（§11.6）。
+// src/web → dist/ のビルド。
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -38,11 +38,12 @@ async function main() {
       entryPoints,
       bundle: true,
       format: 'esm',
-      target: 'es2020',
+      target: 'es2022',
       minify: true,
       outdir: path.join(distDir, 'assets/js'),
       outbase: srcWebDir,
       entryNames: '[dir]',
+      // splitting は使わない。共有チャンクが別リクエストになり、ページ単体の初回ロードが増える
     })
   }
 

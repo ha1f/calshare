@@ -1,4 +1,5 @@
 import type { CreateReportRequest } from '../../core/api/types'
+import { fetchWithTimeout } from '../lib/api'
 
 const SUCCESS_MESSAGE = '報告を受け付けました。ご協力ありがとうございます。'
 const RATE_LIMITED_MESSAGE = 'しばらく時間をおいてから試してください。'
@@ -20,15 +21,19 @@ function buildRequestBody(form: HTMLFormElement): CreateReportRequest | null {
 
 interface SubmitResult {
   ok: boolean
-  code?: string
+  code?: string | undefined
 }
 
 async function submitReport(pageId: string, body: CreateReportRequest): Promise<SubmitResult> {
-  const res = await fetch(`/api/pages/${pageId}/reports`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  const res = await fetchWithTimeout(
+    `/api/pages/${pageId}/reports`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    'submit report',
+  )
   if (res.ok) return { ok: true }
   const code = await res
     .json()

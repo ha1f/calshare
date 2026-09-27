@@ -21,8 +21,9 @@ async function createPage(page: Page, text: string): Promise<string> {
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
   const match = DONE_URL_PATTERN.exec(page.url())
-  if (match === null) throw new Error('failed to extract page id from /done URL')
-  return match[1]
+  const id = match?.[1]
+  if (id === undefined) throw new Error('failed to extract page id from /done URL')
+  return id
 }
 
 // e2e は create API を叩くたびに ip:unknown のレート制限バケットを共有で消費する（§9.3・§10.4）ため、

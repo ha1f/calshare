@@ -8,6 +8,7 @@ function headerValueFor(path: string, headerName: string): string | undefined {
   if (pathIndex === -1) return undefined
   for (let i = pathIndex + 1; i < lines.length; i++) {
     const line = lines[i]
+    if (line === undefined) break
     if (!line.startsWith('  ') && !line.startsWith('\t')) break // 次のパスブロックに入った
     const [name, ...rest] = line.trim().split(':')
     if (name === headerName) return rest.join(':').trim()

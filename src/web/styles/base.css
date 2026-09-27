@@ -1,3 +1,42 @@
+/* ダークモードでは背景だけ暗転して文字が薄いグレーのまま残ることがあるため、色は変数にして両方を明示する。
+   文字に使う色は --bg に対するコントラスト比を 4.5:1 以上にする */
+:root {
+  color-scheme: light dark;
+  --fg: #111;
+  --bg: #fff;
+  --border: #ccc;
+  --border-strong: #666;
+  --border-faint: #ddd;
+  --muted: #666;
+  --muted-strong: #444;
+  --faint: #757575;
+  --link: #06c;
+  --error: #c00;
+  --success: #080;
+  --warn: #a60;
+  --warn-border: #c90;
+  --warn-bg: #fff8e6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #eee;
+    --bg: #121212;
+    --border: #444;
+    --border-strong: #888;
+    --border-faint: #333;
+    --muted: #aaa;
+    --muted-strong: #ccc;
+    --faint: #888;
+    --link: #7ab8ff;
+    --error: #ff8a80;
+    --success: #7fd99a;
+    --warn: #e0a458;
+    --warn-border: #8a6415;
+    --warn-bg: #332b0f;
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -7,6 +46,8 @@
 body {
   margin: 0;
   padding: 16px;
+  color: var(--fg);
+  background: var(--bg);
   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif;
   line-height: 1.6;
 }

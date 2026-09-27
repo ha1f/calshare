@@ -63,7 +63,7 @@ test('期限切れの項目はグレー表示になる', async ({ page }) => {
   await expect(item).toHaveCount(1)
   await expect(item).toHaveClass(/is-expired/)
   await expect(page.getByTestId('history-expired-badge')).toHaveText('期限切れ')
-  await expect(page.getByTestId('history-title-link')).toHaveCSS('color', 'rgb(153, 153, 153)')
+  await expect(page.getByTestId('history-title-link')).toHaveCSS('color', 'rgb(117, 117, 117)')
 })
 
 test('履歴が無いときは空状態の文言が出る', async ({ page }) => {

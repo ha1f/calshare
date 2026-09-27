@@ -22,17 +22,17 @@
   align-items: center;
   gap: 8px;
   padding: 8px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 4px;
 }
 
 .preview-item.is-manual {
-  border-color: #666;
+  border-color: var(--border-strong);
 }
 
 .preview-item-label {
   font-size: 0.85em;
-  color: #666;
+  color: var(--muted);
   min-width: 3.5em;
 }
 
@@ -43,12 +43,15 @@
   border: none;
   padding: 0;
   font: inherit;
+  color: inherit;
   cursor: pointer;
 }
 
 .preview-item-input {
   flex: 1;
   font: inherit;
+  color: inherit;
+  background: var(--bg);
   padding: 4px;
 }
 
@@ -78,14 +81,14 @@
 .location-swap-link {
   background: none;
   border: none;
-  color: #06c;
+  color: var(--link);
   font-size: 0.85em;
   padding: 0;
   cursor: pointer;
 }
 
 .error-message {
-  color: #c00;
+  color: var(--error);
   margin: 8px 0;
 }
 
@@ -102,5 +105,5 @@
 .help {
   margin-top: 24px;
   font-size: 0.9em;
-  color: #444;
+  color: var(--muted-strong);
 }

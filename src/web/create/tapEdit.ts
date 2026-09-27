@@ -119,19 +119,37 @@ function buildTextItem(
   const root = createElement('div', { className: 'preview-item' })
   root.dataset.field = config.key
 
-  root.appendChild(createElement('span', { className: 'preview-item-label', text: config.label }))
+  const labelId = `label-${config.key}`
+  const valueId = `value-${config.key}`
+  root.appendChild(
+    createElement('span', {
+      className: 'preview-item-label',
+      text: config.label,
+      attrs: { id: labelId },
+    }),
+  )
 
-  const valueText = createElement('span', { className: 'preview-item-value' })
+  const valueText = createElement('span', {
+    className: 'preview-item-value',
+    attrs: { id: valueId },
+  })
   const viewButton = createElement('button', {
     className: 'preview-item-view',
-    attrs: { type: 'button' },
+    // 値も読み上げさせるため label と value の両方を参照する（input 側は value が入力値そのもの）
+    attrs: { type: 'button', 'aria-labelledby': `${labelId} ${valueId}` },
   })
   viewButton.dataset.testid = `view-${config.key}`
   viewButton.appendChild(valueText)
 
   const input: HTMLInputElement | HTMLTextAreaElement = config.multiline
-    ? createElement('textarea', { className: 'preview-item-input' })
-    : createElement('input', { className: 'preview-item-input', attrs: { type: 'text' } })
+    ? createElement('textarea', {
+        className: 'preview-item-input',
+        attrs: { 'aria-labelledby': labelId },
+      })
+    : createElement('input', {
+        className: 'preview-item-input',
+        attrs: { type: 'text', 'aria-labelledby': labelId },
+      })
   input.dataset.testid = `input-${config.key}`
   input.hidden = true
 
@@ -160,6 +178,7 @@ function buildTextItem(
   resetLink.addEventListener('click', () => {
     config.resetToAuto(state)
     onChange()
+    viewButton.focus()
   })
 
   return {
@@ -198,7 +217,7 @@ function isManualField(state: CreateState, key: 'title' | 'location' | 'memo'): 
 }
 
 /** タイトル・場所・メモの 3 項目を組み立てる。日時は buildDatetimeItem が別に担う */
-function textItemConfigs(): TextItemConfig[] {
+function textItemConfigs(): [TextItemConfig, TextItemConfig, TextItemConfig] {
   return [
     {
       key: 'title',
@@ -248,12 +267,23 @@ function buildDatetimeItem(
 ): { element: HTMLElement; update(): void } {
   const root = createElement('div', { className: 'preview-item' })
   root.dataset.field = 'datetime'
-  root.appendChild(createElement('span', { className: 'preview-item-label', text: '日時' }))
+  const labelId = 'label-datetime'
+  const valueId = 'value-datetime'
+  root.appendChild(
+    createElement('span', {
+      className: 'preview-item-label',
+      text: '日時',
+      attrs: { id: labelId },
+    }),
+  )
 
-  const valueText = createElement('span', { className: 'preview-item-value' })
+  const valueText = createElement('span', {
+    className: 'preview-item-value',
+    attrs: { id: valueId },
+  })
   const viewButton = createElement('button', {
     className: 'preview-item-view',
-    attrs: { type: 'button' },
+    attrs: { type: 'button', 'aria-labelledby': `${labelId} ${valueId}` },
   })
   viewButton.dataset.testid = 'view-datetime'
   viewButton.appendChild(valueText)
@@ -332,6 +362,7 @@ function buildDatetimeItem(
   resetLink.addEventListener('click', () => {
     state.datetime = { mode: 'auto' }
     onChange()
+    viewButton.focus()
   })
 
   function update(): void {
@@ -395,8 +426,10 @@ export function createPreviewView(
   state: CreateState,
   onChange: () => void,
 ): PreviewView {
-  const items = textItemConfigs().map((config) => buildTextItem(config, state, onChange))
-  const [titleItem, locationItem, memoItem] = items
+  const [titleConfig, locationConfig, memoConfig] = textItemConfigs()
+  const titleItem = buildTextItem(titleConfig, state, onChange)
+  const locationItem = buildTextItem(locationConfig, state, onChange)
+  const memoItem = buildTextItem(memoConfig, state, onChange)
   const datetimeItem = buildDatetimeItem(state, onChange)
   const locationSwapLink = buildLocationSwapLink(state, onChange)
 
