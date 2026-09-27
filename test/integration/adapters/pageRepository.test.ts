@@ -4,11 +4,8 @@ import { D1_MAX_BIND_PARAMS } from '../../../src/core/config/limits'
 import type { ChangeSnapshot, EventFields } from '../../../src/core/types'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { createMemoryPageRepository } from '../../../src/adapters/memory/memoryPageRepository'
-import {
-  InvariantViolation,
-  type NewPageInput,
-  type PageRepository,
-} from '../../../src/ports/pageRepository'
+import { InvariantViolation } from '../../../src/ports/pageRepository'
+import type { NewPageInput, PageRepository } from '../../../src/ports/pageRepository'
 import { insertPageRow } from '../helpers/insertPageRow'
 
 const NOW = new Date('2026-09-16T01:00:00.000Z')

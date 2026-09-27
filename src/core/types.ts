@@ -94,7 +94,10 @@ export type CreateSource = 'direct' | 'detail_cta' | 'prefill'
 /** 通報理由（§9.4）。API リクエスト・ports/notifier・ports/reportRepository で共用 */
 export type ReportReason = 'spam' | 'personal_info' | 'inappropriate' | 'other'
 
-/** core/validate が返す検証エラー（§5.7）。API の ApiError.code の一部でもあるので T1 でここに置く */
+/**
+ * core/validate が返す検証エラー（§5.7）。ApiErrorCode や server・web のメッセージ表からも
+ * 参照するので、core/validate ではなく共有型としてここに置く
+ */
 export type ValidationErrorCode =
   | 'EMPTY_INPUT'
   | 'INPUT_TOO_LONG'

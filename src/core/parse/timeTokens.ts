@@ -96,7 +96,8 @@ function resolveEnd(
   startTotalMinutes: number,
 ): { hour: number; minute: number; nextDay: boolean } {
   if (atom.isColon || atom.prefix !== null) {
-    const hour = atom.isColon ? atom.hour : applyPrefix(atom.hour, atom.prefix as Prefix)
+    const hour =
+      atom.isColon || atom.prefix === null ? atom.hour : applyPrefix(atom.hour, atom.prefix)
     const total = hour * 60 + atom.minute
     return { hour, minute: atom.minute, nextDay: total <= startTotalMinutes }
   }

@@ -1,8 +1,5 @@
-import {
-  resolvePrefill,
-  type PrefillParams,
-  type PrefillResult,
-} from '../../core/prefill/resolvePrefill'
+import { resolvePrefill } from '../../core/prefill/resolvePrefill'
+import type { PrefillParams, PrefillResult } from '../../core/prefill/resolvePrefill'
 import type { ParseContext } from '../../core/parse/types'
 import type { CreateSource } from '../../core/types'
 

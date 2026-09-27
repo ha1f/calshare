@@ -8,9 +8,8 @@ import {
   effectiveLocation,
   effectiveMemo,
   effectiveTitle,
-  type CreateState,
-  type DatetimeValue,
 } from './preview'
+import type { CreateState, DatetimeValue } from './preview'
 
 /** 項目タップ〜編集〜「自動に戻す」の 4 項目分を組み立てる（§6.1） */
 export interface PreviewView {

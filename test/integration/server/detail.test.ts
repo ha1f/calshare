@@ -420,7 +420,7 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
       const { deps, repo } = buildDetailDeps()
       const id = pageId(9)
       // snapshot と日時を変えておく。同じだと dateTimeChanged が常に false になり、
-      // 48 時間判定を素通りしても（バグで無条件表示になっても）テストが偽陽性で通ってしまう
+      // 48 時間判定が効いていなくても（バグで無条件表示になっても）テストが偽陽性で通ってしまう
       await createPage(repo, id, {
         event: {
           start: new Date('2026-09-21T10:00:00.000Z'),

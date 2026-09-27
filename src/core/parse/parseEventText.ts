@@ -91,10 +91,9 @@ function resolveDateTime(
   now: Date,
 ): ResolvedRange {
   if (dateResolution !== null && dateResolution.consumed) {
-    if (dateResolution.issues.length > 0) return { start: null, end: null, isAllDay: false }
+    const { start: startDay, end: endDay } = dateResolution
+    if (startDay === null || endDay === null) return { start: null, end: null, isAllDay: false }
 
-    const startDay = dateResolution.start as CalendarDay
-    const endDay = dateResolution.end as CalendarDay
     const isRange = startDay.y !== endDay.y || startDay.m !== endDay.m || startDay.d !== endDay.d
     if (isRange) {
       // 複数日の終日予定（規則 A2）。時刻付きの複数日レンジは仕様上サポートしない（§5.3）

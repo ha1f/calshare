@@ -1,13 +1,13 @@
 import { requireDefined } from '../../core/assert'
 import { D1_MAX_BIND_PARAMS } from '../../core/config/limits'
 import type { ChangeSnapshot, CreateSource, Jsonified } from '../../core/types'
-import {
-  InvariantViolation,
-  type EventRecord,
-  type NewPageInput,
-  type PagePatch,
-  type PageRecord,
-  type PageRepository,
+import { InvariantViolation } from '../../ports/pageRepository'
+import type {
+  EventRecord,
+  NewPageInput,
+  PagePatch,
+  PageRecord,
+  PageRepository,
 } from '../../ports/pageRepository'
 
 interface PageRow {
