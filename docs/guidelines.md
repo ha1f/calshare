@@ -296,7 +296,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 - アニメーション・トランジションを足すときは `@media (prefers-reduced-motion: reduce)` で無効化する記述を同じ PR で書く[^prefers-reduced-motion]。
 - CSS nesting・`:has()`・論理プロパティは使ってよいが、既存の書き方を書き換えるためだけの変更はしない。
 - `field-sizing: content` はまだ Baseline Newly Available（Widely Available は 2028 年見込み）。JS の `autoResizeTextarea` を置き換えない[^field-sizing]。
-- `<form>` は使わない。プレビュー編集欄の `<input>` で Enter を押したときの暗黙送信を避けるため。送信は `<button type="button">` の click で行う。
+- プレビュー編集欄を持つ画面（作成・編集: `index.html` `new.html` `edit.html`）では `<form>` は使わない。プレビュー編集欄の `<input>` で Enter を押したときの暗黙送信を避けるため。送信は `<button type="button">` の click で行う。SSR の通報画面（`views/ReportPage.tsx`）は、入力が radio と textarea だけで暗黙送信が起きても困らず Enter で送信できたほうが望ましいため、`<form>` と `type="submit"` を使ってよい。
 
 ### 6.3 DOM 操作
 
@@ -316,10 +316,10 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 ### 6.5 アクセシビリティ
 
 - 動的に現れるメッセージには最初からマークアップで役割を付ける。エラー（`#error-message` `#load-error-message` `#copy-error`）は `role="alert"`、成功・結果（`#copy-message`）は `aria-live="polite"`。SSR 側（`views/ReportPage.tsx` の `#report-result`）は既に付いている。JS は `textContent` と `hidden` の操作だけにし、属性を後から足さない[^aria-live]。
-- 入力欄とボタンにはラベルを結ぶ。タップ編集欄（`tapEdit.ts` の `buildTextItem` `buildDatetimeItem`）は「タイトル」「場所」「メモ」「日時」の `<span>` に `id="label-<key>"` を振り、排他表示される `viewButton`（自動）と `input`（手動）の両方から `aria-labelledby` で参照する。`viewButton` は現在の値も読み上げさせるため、値の `<span>`（`id="value-<key>"`）も並べて参照する。`<label for>` は 1 要素しか指せないため使わない。`startInput` / `endInput` は既に `<label>` で包まれているので対象外[^label]。
+- 入力欄とボタンにはラベルを結ぶ。タップ編集欄（`tapEdit.ts` の `buildTextItem` `buildDatetimeItem`）は「タイトル」「場所」「メモ」「日時」の `<span>` に `id="label-<key>"` を振り、排他表示される `viewButton`（自動）と `input`（手動）の両方から `aria-labelledby` で参照する。`viewButton` は現在の値も読み上げさせるため、値の `<span>`（`id="value-<key>"`）も並べて参照する。`<label for>` は 1 要素しか指せないため、排他表示される `viewButton` と `input` の 2 要素を 1 つのラベルから指すタップ編集欄では使わない。`startInput` / `endInput` は既に `<label>` で包まれているので対象外[^label]。作成・編集画面（`index.html` `new.html` `edit.html`）の `#input` は参照先が 1 つなので、見た目を変えない `.visually-hidden` の `<label for>` で結ぶ。
 - フォーカスを持つ要素を隠すときは、隠す側が次のフォーカス先を決めて `focus()` を呼ぶ。「自動に戻す」で入力欄を `hidden` にしたら `viewButton.focus()` する。
-- 色だけで状態を伝えない。`is-manual` のような状態は文言（「手動」）も併記する。
-- 文字に使う色は、ライト・ダークとも背景色に対するコントラスト比を 4.5:1 以上にする（WCAG 2.2 達成基準 1.4.3）[^wcag-contrast]。色の定義場所は §6.3。
+- 色だけで状態を伝えない。`is-manual` の状態は、入力欄への切り替えと「自動に戻す」ボタンの表示で伝わり、枠線の色は補助として使う。
+- 文字に使う色は、ライト・ダークとも背景色に対するコントラスト比を 4.5:1 以上にする（WCAG 2.2 達成基準 1.4.3）[^wcag-contrast]。色の定義場所は §6.2。
 
 ### 6.6 CSP との整合
 
@@ -358,7 +358,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 ### 7.3 e2e（Playwright）
 
 - 全 spec は `test/e2e/fixtures.ts` の `test` / `expect` を import する。フィクスチャが時刻固定（`page.clock.setFixedTime`）とテストごとの送信元 IP（`CF-Connecting-IP`）を与える[^playwright-clock][^playwright-fixtures]。
-- ロケータは `getByRole` `getByTestId` `getByLabel` を優先し、CSS セレクタは `#input` のような安定した id に限る。アサーションは `toHaveText` `toBeVisible` など自動リトライ付きのものだけ。`isVisible()` の戻り値を `expect` に渡さない。`waitForTimeout` は使わない[^playwright-best-practices]。
+- ロケータは `getByRole` `getByTestId` `getByLabel` を優先し、CSS セレクタは `#input` のような安定した id に限る。実装が構造や JS のフックとして使っている `data-section` `data-calendar` 属性は、CSS セレクタで引いてよい。アサーションは `toHaveText` `toBeVisible` など自動リトライ付きのものだけ。`isVisible()` の戻り値を `expect` に渡さない。`waitForTimeout` は使わない[^playwright-best-practices]。
 - `retries` は CI で 1。再試行は trace とスクリーンショットを残すためで、`failOnFlakyTests: true` により再試行で通っても job は落ちる。flaky を隠さない[^playwright-testconfig]。
 - reporter は CI では `github` + `html`、ローカルでは `list` + `html`。GitHub の PR 上に失敗行の注釈を出す[^playwright-reporters]。
 - `webServer` は `seed-local-r2.mjs → build → wrangler dev` を起動し、`/api/health` で待つ。`E2E_PORT` で作業ツリーごとにポートを分ける。`.wrangler/state` を作り直すときは `wrangler d1 migrations apply calshare --local` を再実行する（docs/design.md §10.4）。

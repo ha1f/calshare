@@ -39,13 +39,23 @@ export function applyCalendarUaHandling(container: Element, userAgent: string): 
 
   if (isLineUserAgent(userAgent)) {
     for (const link of links) link.href = addOpenExternalBrowserParam(link.href)
-    container.before(createElement('p', { className: 'line-banner', text: LINE_BANNER_TEXT }))
+    container.before(
+      createElement('p', {
+        className: 'line-banner',
+        text: LINE_BANNER_TEXT,
+        attrs: { 'data-testid': 'line-banner' },
+      }),
+    )
   }
 
   if (isAndroidUserAgent(userAgent)) {
     const icsLink = container.querySelector<HTMLAnchorElement>('a[data-calendar="ics"]')
     icsLink?.after(
-      createElement('p', { className: 'android-ics-notice', text: ANDROID_ICS_NOTICE_TEXT }),
+      createElement('p', {
+        className: 'android-ics-notice',
+        text: ANDROID_ICS_NOTICE_TEXT,
+        attrs: { 'data-testid': 'android-ics-notice' },
+      }),
     )
   }
 }

@@ -9,7 +9,8 @@ import { ApiRequestFailedError, getPage, updatePage } from '../lib/api'
 import { autoResizeTextarea, requireElement } from '../lib/dom'
 import { readHistory, updateHistoryEntry } from '../lib/history'
 import { apiErrorMessage as sharedApiErrorMessage, VALIDATION_MESSAGES } from '../lib/messages'
-import { createInitialState, effectiveFields, interpret, type CreateState } from '../create/preview'
+import { createInitialState, effectiveFields, interpret } from '../create/preview'
+import type { CreateState } from '../create/preview'
 import { createPreviewView } from '../create/tapEdit'
 
 /** UNAUTHORIZED・NOT_FOUND はこの画面固有の文言にする（§6.5） */

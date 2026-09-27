@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiRequestFailedError, createPage, getPage, updatePage } from '../../../../src/web/lib/api'
+import {
+  ApiRequestFailedError,
+  createPage,
+  getPage,
+  readApiError,
+  updatePage,
+} from '../../../../src/web/lib/api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -86,6 +92,30 @@ describe('getPage', () => {
     await expect(getPage('abc', 'wrong-token')).rejects.toMatchObject({
       message: expect.stringContaining('get page') as string,
     })
+  })
+})
+
+describe('readApiError', () => {
+  it.each([
+    ['本文が空オブジェクト', jsonResponse(500, {})],
+    ['code が文字列でない', jsonResponse(500, { code: 123 })],
+    ['code が未知の文字列', jsonResponse(500, { code: 'UNKNOWN_CODE' })],
+    ['本文が null', jsonResponse(500, null)],
+    [
+      '本文が JSON でない（HTML の 502 など）',
+      new Response('<html>Bad Gateway</html>', { status: 502 }),
+    ],
+  ])('%s なら INTERNAL になる', async (_label, response) => {
+    const error = await readApiError(response, 'test operation')
+    expect(error.code).toBe('INTERNAL')
+  })
+
+  it('本文の code が既知の ApiErrorCode ならそのまま使う', async () => {
+    const error = await readApiError(
+      jsonResponse(429, { code: 'RATE_LIMITED', message: '' }),
+      'test operation',
+    )
+    expect(error.code).toBe('RATE_LIMITED')
   })
 })
 

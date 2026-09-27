@@ -87,16 +87,26 @@ test('履歴から編集して保存すると /done に再掲され、履歴と�
   await page.goto(`/${id}`)
   await expect(page.locator('[data-section="datetime"]')).toHaveText('9月21日(月) 20:00〜21:00')
   await expect(page.locator('[data-section="location"]')).toContainText('新宿')
-  await expect(page.locator('.change-banner')).toContainText(
+  const changeBanner = page.locator('[data-section="change-banner"]')
+  await expect(changeBanner).toContainText(
     '日時: 9月20日(日) 19:00〜20:00 → 9月21日(月) 20:00〜21:00',
   )
-  await expect(page.locator('.change-banner')).toContainText('場所が変更されました')
-  await expect(page.locator('.change-banner')).not.toContainText('タイトルが変更されました')
-  await expect(page.locator('body')).not.toContainText('渋谷')
+  await expect(changeBanner).toContainText('場所が変更されました')
+  await expect(changeBanner).not.toContainText('タイトルが変更されました')
+  await expect(page.getByText('渋谷')).toHaveCount(0)
 
   // version > 1 になったページは「最終更新」とカレンダーボタン直下の免責が出る（§6.3・§8）
   await expect(page.locator('[data-section="footer"]')).toContainText('最終更新:')
-  await expect(page.locator('[data-section="calendar"] .calendar-notice')).toBeVisible()
+  await expect(
+    page.locator('[data-section="calendar"]').getByText('最新はこのページで確認してください'),
+  ).toBeVisible()
+})
+
+test('入力欄にスクリーンリーダー向けのラベルが結ばれている', async ({ page }) => {
+  const id = await createPage(page, '9/20 19時 渋谷で飲み会')
+
+  await page.goto(`/${id}/edit`)
+  await expect(page.getByLabel('予定の文章')).toHaveAttribute('id', 'input')
 })
 
 test('保存ボタンを連打しても PATCH は 1 回しか送られない', async ({ page }) => {

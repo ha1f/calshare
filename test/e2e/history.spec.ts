@@ -31,7 +31,7 @@ test('作成すると履歴の一覧に出る', async ({ page }) => {
     'href',
     /^\/[0-9a-hjkmnp-tv-z]{12}\/edit$/,
   )
-  await expect(page.locator('.history-datetime')).toHaveText('9月20日(日) 19:00〜20:00')
+  await expect(page.getByTestId('history-datetime')).toHaveText('9月20日(日) 19:00〜20:00')
   await expect(page.getByTestId('empty-message')).toBeHidden()
 })
 
@@ -77,8 +77,11 @@ test('履歴が無いときは空状態の文言が出る', async ({ page }) => 
 test('ヘッダの見え方が / と揃っている', async ({ page }) => {
   await page.goto('/history')
 
-  await expect(page.locator('.app-header')).toHaveCSS('display', 'flex')
-  await expect(page.locator('.app-title')).toHaveCSS('text-decoration-line', 'none')
+  await expect(page.getByRole('banner')).toHaveCSS('display', 'flex')
+  await expect(page.getByRole('link', { name: 'calshare' })).toHaveCSS(
+    'text-decoration-line',
+    'none',
+  )
 })
 
 test('localStorage に不正な id を仕込んでもリンクが生成されない', async ({ page }) => {
@@ -120,8 +123,9 @@ test('localStorage に不正な id を仕込んでもリンクが生成されな
   await expect(page.getByTestId('history-title-link')).toHaveText('正しい予定')
   await expect(page.getByTestId('empty-message')).toBeHidden()
 
+  // getByRole('link') は既定で hidden な <a> を除外するため、ここでは含めて拾う
   const hrefs = await page
-    .locator('a')
+    .getByRole('link', { includeHidden: true })
     .evaluateAll((els) => els.map((el) => el.getAttribute('href')))
   for (const href of hrefs) {
     if (href === '/') continue

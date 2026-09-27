@@ -1,5 +1,5 @@
-import type { CreateReportRequest } from '../../core/api/types'
-import { fetchWithTimeout } from '../lib/api'
+import type { ApiErrorCode, CreateReportRequest } from '../../core/api/types'
+import { fetchWithTimeout, readApiError } from '../lib/api'
 
 const SUCCESS_MESSAGE = '報告を受け付けました。ご協力ありがとうございます。'
 const RATE_LIMITED_MESSAGE = 'しばらく時間をおいてから試してください。'
@@ -19,10 +19,7 @@ function buildRequestBody(form: HTMLFormElement): CreateReportRequest | null {
   return { reason, comment: rawComment === '' ? null : rawComment }
 }
 
-interface SubmitResult {
-  ok: boolean
-  code?: string | undefined
-}
+type SubmitResult = { ok: true } | { ok: false; code: ApiErrorCode }
 
 async function submitReport(pageId: string, body: CreateReportRequest): Promise<SubmitResult> {
   const res = await fetchWithTimeout(
@@ -35,11 +32,8 @@ async function submitReport(pageId: string, body: CreateReportRequest): Promise<
     'submit report',
   )
   if (res.ok) return { ok: true }
-  const code = await res
-    .json()
-    .then((json) => (json as { code?: string }).code)
-    .catch(() => undefined)
-  return { ok: false, code }
+  const error = await readApiError(res, 'submit report')
+  return { ok: false, code: error.code }
 }
 
 function main(): void {
@@ -66,6 +60,7 @@ function main(): void {
         if (response.ok) {
           result.textContent = SUCCESS_MESSAGE
           form.hidden = true
+          result.focus()
           return
         }
         result.textContent =

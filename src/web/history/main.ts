@@ -1,7 +1,8 @@
 import { formatDateLabel } from '../../core/time/jst'
 import { fromEventFieldsJson } from '../../core/types'
-import { createElement } from '../lib/dom'
-import { readHistory, type HistoryEntry } from '../lib/history'
+import { createElement, requireElement } from '../lib/dom'
+import { readHistory } from '../lib/history'
+import type { HistoryEntry } from '../lib/history'
 
 interface DisplayEntry {
   id: string
@@ -39,6 +40,7 @@ function renderEntry(entry: DisplayEntry, now: Date): HTMLLIElement {
   const dateEl = createElement('span', {
     className: 'history-datetime',
     text: entry.dateLabel,
+    attrs: { 'data-testid': 'history-datetime' },
   })
   const editLink = createElement('a', {
     className: 'history-edit-link',
@@ -60,11 +62,8 @@ function renderEntry(entry: DisplayEntry, now: Date): HTMLLIElement {
 }
 
 function main(): void {
-  const listEl = document.getElementById('history-list')
-  const emptyEl = document.getElementById('empty-message')
-  if (!(listEl instanceof HTMLElement) || !(emptyEl instanceof HTMLElement)) {
-    throw new Error('history screen: #history-list or #empty-message is missing')
-  }
+  const listEl = requireElement('history-list', HTMLUListElement)
+  const emptyEl = requireElement<HTMLElement>('empty-message')
 
   const entries: DisplayEntry[] = []
   for (const entry of readHistory()) {

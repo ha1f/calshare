@@ -1,5 +1,5 @@
 import type {
-  ApiError,
+  ApiErrorCode,
   CreatePageRequest,
   CreatePageResponse,
   GetPageResponse,
@@ -8,11 +8,32 @@ import type {
 } from '../../core/api/types'
 import { API_REQUEST_TIMEOUT_MS } from '../../core/config/limits'
 
+/** ApiErrorCode の実行時の一覧。コードを足し忘れると satisfies がコンパイルエラーにする */
+const API_ERROR_CODES = {
+  EMPTY_INPUT: true,
+  INPUT_TOO_LONG: true,
+  INVALID_RANGE: true,
+  PAST_EVENT: true,
+  BEYOND_MAX_LEAD_TIME: true,
+  TOO_MANY_URLS: true,
+  UNSUPPORTED_MEDIA_TYPE: true,
+  FORBIDDEN_ORIGIN: true,
+  INVALID_REQUEST: true,
+  RATE_LIMITED: true,
+  UNAUTHORIZED: true,
+  NOT_FOUND: true,
+  INTERNAL: true,
+} satisfies Record<ApiErrorCode, true>
+
+function isApiErrorCode(value: unknown): value is ApiErrorCode {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(API_ERROR_CODES, value)
+}
+
 /** 作成・取得・更新 API が 2xx 以外を返したとき、または `fetchWithTimeout` がタイムアウト・中断したときに投げる。呼び出し側は code でエラー文言を出し分ける（§5.7） */
 export class ApiRequestFailedError extends Error {
   constructor(
     public readonly status: number,
-    public readonly code: ApiError['code'],
+    public readonly code: ApiErrorCode,
     operation: string,
   ) {
     super(`${operation} request failed: ${code}`)
@@ -46,13 +67,22 @@ export async function fetchWithTimeout(
   }
 }
 
-async function readApiError(response: Response, operation: string): Promise<ApiRequestFailedError> {
+/** レスポンス本文が JSON でない（Cloudflare が返す 502 の HTML など）場合や、code が未知の場合は 'INTERNAL' にする */
+export async function readApiError(
+  response: Response,
+  operation: string,
+): Promise<ApiRequestFailedError> {
+  let body: unknown
   try {
-    const body = (await response.json()) as ApiError
-    return new ApiRequestFailedError(response.status, body.code, operation)
+    body = await response.json()
   } catch {
     return new ApiRequestFailedError(response.status, 'INTERNAL', operation)
   }
+  const code =
+    typeof body === 'object' && body !== null && 'code' in body && isApiErrorCode(body.code)
+      ? body.code
+      : 'INTERNAL'
+  return new ApiRequestFailedError(response.status, code, operation)
 }
 
 /** 作成 API を呼ぶ（§6.1）。同一オリジンの fetch なので Content-Type だけ指定すればよい（§9.8） */

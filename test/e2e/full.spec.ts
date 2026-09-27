@@ -17,7 +17,7 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
   const detailHref = await page.locator('#url-display').getAttribute('href')
   if (detailHref === null) throw new Error('url-display の href が無い')
   await page.goto(new URL(detailHref).pathname)
-  await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('飲み会')
 
   // 詳細 →「作ってみる」→ 新しい予定を作成する（source が detail_cta で記録される。§6.1・§6.3）。
   // ここで最初のページを編集対象にすると、直前の詳細ページ表示で Cache API に載った
@@ -40,11 +40,10 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
   await page.goto('/history')
   await expect(page.getByTestId('history-item')).toHaveCount(2)
 
-  // 履歴 → 編集（2 件あるので id で編集リンクを特定する）
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${id}/edit$`)),
-    page.locator(`a[href="/${id}/edit"]`).click(),
-  ])
+  // 履歴 → 編集（新しい順に並ぶため先頭が 2 件目。取り違えていないことを href で確かめてから押す）
+  const editLink = page.getByTestId('history-edit-link').first()
+  await expect(editLink).toHaveAttribute('href', `/${id}/edit`)
+  await Promise.all([page.waitForURL(new RegExp(`/${id}/edit$`)), editLink.click()])
   await expect(page.getByTestId('start-input')).toHaveValue('2026-09-20T19:00')
   await page.getByTestId('start-input').fill('2026-09-21T20:00')
   await page.getByTestId('end-input').fill('2026-09-21T21:00')
@@ -59,7 +58,7 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
 
   // 詳細ページの変更バナー（このページは編集前に詳細を見ていないので Cache API に古い内容が無い）
   await page.goto(`/${id}`)
-  await expect(page.locator('.change-banner')).toContainText(
+  await expect(page.locator('[data-section="change-banner"]')).toContainText(
     '日時: 9月20日(日) 19:00〜20:00 → 9月21日(月) 20:00〜21:00',
   )
 

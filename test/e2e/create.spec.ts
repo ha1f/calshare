@@ -6,6 +6,13 @@ import {
   waitForCreateRequest,
 } from './fixtures'
 
+test('入力欄にスクリーンリーダー向けのラベルが結ばれている', async ({ page }) => {
+  for (const path of ['/', '/new']) {
+    await page.goto(path)
+    await expect(page.getByLabel('予定の文章')).toHaveAttribute('id', 'input')
+  }
+})
+
 test('入力〜プレビュー〜作成〜/done への遷移まで（シナリオ1）', async ({ page }) => {
   await page.goto('/')
   await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
@@ -73,7 +80,7 @@ test('場所を空にすると場所なしとして作成される（シナリ�
   if (detailHref === null) throw new Error('url-display の href が無い')
   await page.goto(new URL(detailHref).pathname)
   // 詳細ページが正しく描画されたことを先に確認する（404 等で空白になっても location の要素数は同じく 0 になるため）
-  await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('飲み会')
   await expect(page.locator('[data-section="location"]')).toHaveCount(0)
 })
 
@@ -116,7 +123,7 @@ test('詳細ページにメモが表示され、URL を含めても自動リン�
 
   const memo = page.locator('[data-section="memo"]')
   await expect(memo).toContainText('https://example.com/pay')
-  await expect(memo.locator('a')).toHaveCount(0)
+  await expect(memo.getByRole('link')).toHaveCount(0)
 })
 
 test('13 ヶ月超の日付は下書きとして作成できる（シナリオ11）', async ({ page }) => {

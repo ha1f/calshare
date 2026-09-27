@@ -36,16 +36,16 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const id = await createPage(page, '9/20 19時 渋谷で飲み会')
 
+  await expect(page.locator('#url-display')).toHaveText(PAGE_URL_PATTERN)
   const url = await page.locator('#url-display').textContent()
-  expect(url).toMatch(PAGE_URL_PATTERN)
   // API が返す url は wrangler dev に渡した PUBLIC_ORIGIN から組まれる。E2E_PORT で
   // ポートを変えても実際に配信しているサーバのアドレスと一致することを固定する
   expect(url?.startsWith(`${baseURL}/`)).toBe(true)
 
-  expect(await readHref(page.locator('#line-share-link'))).toBe(
-    `https://line.me/R/share?text=${encodeURIComponent(url ?? '')}`,
-  )
-  expect(await page.locator('#edit-link').getAttribute('href')).toBe(`/${id}/edit`)
+  await expect
+    .poll(() => readHref(page.locator('#line-share-link')))
+    .toBe(`https://line.me/R/share?text=${encodeURIComponent(url ?? '')}`)
+  await expect(page.locator('#edit-link')).toHaveAttribute('href', `/${id}/edit`)
   // §10.3 の基準時刻の下で作成しているため、終了 9/20 20:00 JST から
   // RETENTION_DAYS_AFTER_LAST_EVENT 日後の暦日が期限表示に出る
   await expect(page.locator('#expires-notice')).toHaveText('9/27 まで表示されます')
@@ -61,8 +61,9 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   expect(googleUrl.hostname).toBe('calendar.google.com')
   expect(googleUrl.searchParams.get('dates')).toBe('20260920T100000Z/20260920T110000Z')
 
-  const icsUrl = new URL(await readHref(page.locator('#ics-link')))
-  expect(icsUrl.pathname).toBe(`/${id}.ics`)
+  await expect
+    .poll(async () => new URL(await readHref(page.locator('#ics-link'))).pathname)
+    .toBe(`/${id}.ics`)
 
   // 初回作成時には「送り直してください」は出ない。編集完了後の状態は、履歴の
   // version を直接書き換えて再現してから再訪する（§6.2・§8）
@@ -77,11 +78,12 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   await page.goto(`/done?id=${id}`)
   await expect(page.locator('#resend-notice')).toBeVisible()
 
+  await expect(page.locator('#url-display')).toHaveAttribute('href', /^https?:\/\//)
   const href = await page.locator('#url-display').getAttribute('href')
   if (href === null) throw new Error('url-display の href が無い')
   expect(new URL(href).origin).toBe(baseURL)
   await page.goto(href)
-  await expect(page.locator('h1[data-section="title"]')).toHaveText('飲み会')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('飲み会')
 
   const sections = await page
     .locator('[data-section]')
