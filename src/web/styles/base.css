@@ -56,6 +56,19 @@ textarea {
   width: 100%;
 }
 
+/* スクリーンリーダー向けのラベルなど、見た目は変えずに読み上げだけに使う要素に付ける（§6.5） */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* `<header class="app-header">` を持つ画面すべてが対象。画面固有の CSS に置くと、それを読み込まない画面ではヘッダが崩れる */
 .app-header {
   display: flex;

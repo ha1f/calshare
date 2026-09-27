@@ -3,15 +3,12 @@ import { isValidPageId } from '../../core/id/crockford'
 import { buildGoogleCalendarUrl } from '../../core/google/buildGoogleCalendarUrl'
 import { toJstParts } from '../../core/time/jst'
 import { fromEventFieldsJson } from '../../core/types'
-import type { EventFieldsJson } from '../../core/types'
 import { copyToClipboard } from '../lib/clipboard'
 import { requireElement } from '../lib/dom'
+import { readHistory } from '../lib/history'
 import type { HistoryEntry } from '../lib/history'
 import { applyCalendarUaHandling } from '../lib/lineUa'
 import { canShare, shareUrl } from '../lib/share'
-
-// web/lib/history.ts の STORAGE_KEY と同じ値にする。片方だけ変えると完成画面が履歴を読めなくなる
-const HISTORY_STORAGE_KEY = 'calshare.history'
 
 /**
  * expiresAt は JST 0 時ちょうどのことがあり、そのまま暦日に変換すると実際には見えなくなる日を
@@ -42,53 +39,25 @@ function isHttpUrl(value: string): boolean {
  * 従い、fields や日時が壊れていれば見つからなかった扱いにする（この画面が例外で止まらないように）
  */
 function findValidHistoryEntry(id: string): HistoryEntry | null {
-  let raw: string | null
-  try {
-    raw = localStorage.getItem(HISTORY_STORAGE_KEY)
-  } catch {
-    return null
-  }
-  if (raw === null) return null
+  const entry = readHistory().find((e) => e.id === id)
+  if (entry === undefined) return null
 
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
-  }
-  if (!Array.isArray(parsed)) return null
-
-  const found = (parsed as unknown[]).find(
-    (v) => typeof v === 'object' && v !== null && (v as Record<string, unknown>).id === id,
-  )
-  if (found === undefined) return null
-
-  const entry = found as Record<string, unknown>
   if (
-    typeof entry.url !== 'string' ||
     !isHttpUrl(entry.url) ||
-    typeof entry.editToken !== 'string' ||
-    typeof entry.fields !== 'object' ||
-    entry.fields === null ||
-    typeof entry.expiresAt !== 'string' ||
     Number.isNaN(Date.parse(entry.expiresAt)) ||
-    typeof entry.createdAt !== 'string' ||
     Number.isNaN(Date.parse(entry.createdAt)) ||
-    typeof entry.updatedAt !== 'string' ||
     Number.isNaN(Date.parse(entry.updatedAt))
   ) {
     return null
   }
 
   try {
-    fromEventFieldsJson(entry.fields as EventFieldsJson)
+    fromEventFieldsJson(entry.fields)
   } catch {
     return null
   }
 
-  // localStorage の内容は信頼しない（§6.4）。version が数値でない項目は未編集として 1 を補う
-  const version = typeof entry.version === 'number' ? entry.version : 1
-  return { ...entry, version } as unknown as HistoryEntry
+  return entry
 }
 
 function main(): void {

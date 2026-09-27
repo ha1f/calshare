@@ -6,8 +6,10 @@ import { ApiRequestFailedError, createPage } from '../lib/api'
 import { autoResizeTextarea, requireElement } from '../lib/dom'
 import { addHistoryEntry } from '../lib/history'
 import { apiErrorMessage, VALIDATION_MESSAGES } from '../lib/messages'
-import { createInitialState, effectiveFields, interpret, type CreateState } from './preview'
-import { resolveCreateSource, resolvePrefillFromSearch, type PrefillResult } from './prefill'
+import { createInitialState, effectiveFields, interpret } from './preview'
+import type { CreateState } from './preview'
+import { resolveCreateSource, resolvePrefillFromSearch } from './prefill'
+import type { PrefillResult } from './prefill'
 import { createPreviewView } from './tapEdit'
 
 function applyPrefill(state: CreateState, prefill: PrefillResult): void {

@@ -40,8 +40,8 @@ async function expectCalendarUaHandling(
   expect(icsUrl.searchParams.has('openExternalBrowser')).toBe(expected.openExternalBrowser)
   // バナー・注記はカレンダーボタンのコンテナの前後の兄弟として挿入される（内側ではない）ため、
   // ページ全体から探す。1 ページに 1 箇所しかカレンダー欄が無いので曖昧さは無い
-  await expect(page.locator('.line-banner')).toHaveCount(expected.openExternalBrowser ? 1 : 0)
-  await expect(page.locator('.android-ics-notice')).toHaveCount(expected.androidNotice ? 1 : 0)
+  await expect(page.getByTestId('line-banner')).toHaveCount(expected.openExternalBrowser ? 1 : 0)
+  await expect(page.getByTestId('android-ics-notice')).toHaveCount(expected.androidNotice ? 1 : 0)
 }
 
 test('LINE / Android UA でカレンダーボタンの案内が完成画面・詳細ページの両方に出る（シナリオ10）', async ({

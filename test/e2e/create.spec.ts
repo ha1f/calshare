@@ -6,6 +6,11 @@ import {
   waitForCreateRequest,
 } from './fixtures'
 
+test('入力欄にスクリーンリーダー向けのラベルが結ばれている', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByLabel('予定の文章')).toHaveAttribute('id', 'input')
+})
+
 test('入力〜プレビュー〜作成〜/done への遷移まで（シナリオ1）', async ({ page }) => {
   await page.goto('/')
   await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
@@ -116,7 +121,7 @@ test('詳細ページにメモが表示され、URL を含めても自動リン�
 
   const memo = page.locator('[data-section="memo"]')
   await expect(memo).toContainText('https://example.com/pay')
-  await expect(memo.locator('a')).toHaveCount(0)
+  await expect(memo.getByRole('link')).toHaveCount(0)
 })
 
 test('13 ヶ月超の日付は下書きとして作成できる（シナリオ11）', async ({ page }) => {

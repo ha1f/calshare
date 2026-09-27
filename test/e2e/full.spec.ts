@@ -41,10 +41,13 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
   await expect(page.getByTestId('history-item')).toHaveCount(2)
 
   // 履歴 → 編集（2 件あるので id で編集リンクを特定する）
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${id}/edit$`)),
-    page.locator(`a[href="/${id}/edit"]`).click(),
-  ])
+  const editLinkForId = page
+    .getByTestId('history-item')
+    .filter({
+      has: page.getByTestId('history-edit-link').and(page.locator(`[href="/${id}/edit"]`)),
+    })
+    .getByTestId('history-edit-link')
+  await Promise.all([page.waitForURL(new RegExp(`/${id}/edit$`)), editLinkForId.click()])
   await expect(page.getByTestId('start-input')).toHaveValue('2026-09-20T19:00')
   await page.getByTestId('start-input').fill('2026-09-21T20:00')
   await page.getByTestId('end-input').fill('2026-09-21T21:00')
@@ -59,7 +62,7 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
 
   // 詳細ページの変更バナー（このページは編集前に詳細を見ていないので Cache API に古い内容が無い）
   await page.goto(`/${id}`)
-  await expect(page.locator('.change-banner')).toContainText(
+  await expect(page.locator('[data-section="change-banner"]')).toContainText(
     '日時: 9月20日(日) 19:00〜20:00 → 9月21日(月) 20:00〜21:00',
   )
 

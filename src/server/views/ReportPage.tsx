@@ -47,7 +47,7 @@ export const ReportPage: FC<ReportPageProps> = ({ pageId, serviceName }) => (
           報告する
         </button>
       </form>
-      <p id="report-result" role="status" aria-live="polite"></p>
+      <p id="report-result" role="status" aria-live="polite" tabindex={-1}></p>
     </main>
   </Layout>
 )

@@ -60,7 +60,7 @@ export async function createPage(page: Page, text: string): Promise<string> {
   return id
 }
 
-export function waitForCreateRequest(page: Page) {
+export function waitForCreateRequest(page: Page): Promise<Request> {
   return page.waitForRequest((r) => r.url().endsWith('/api/pages') && r.method() === 'POST')
 }
 

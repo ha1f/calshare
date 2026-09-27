@@ -4,7 +4,7 @@ test('通報フォームから送信すると受付メッセージが出る（�
   const id = await createPage(page, '9/20 19時 渋谷で飲み会')
 
   await page.goto(`/${id}/report`)
-  await page.locator('input[name="reason"][value="inappropriate"]').check()
+  await page.getByRole('radio', { name: '不快な内容' }).check()
   await page.locator('#comment').fill('不快な内容が含まれています')
 
   const [response] = await Promise.all([
@@ -25,6 +25,7 @@ test('通報フォームから送信すると受付メッセージが出る（�
     '報告を受け付けました。ご協力ありがとうございます。',
   )
   await expect(page.locator('#report-form')).toBeHidden()
+  await expect(page.locator('#report-result')).toBeFocused()
 })
 
 test('応答が返らないと約10秒でタイムアウトし、送信ボタンが再び押せる状態に戻る', async ({
@@ -34,7 +35,7 @@ test('応答が返らないと約10秒でタイムアウトし、送信ボタン
   await page.route(`**/api/pages/${id}/reports`, () => {}) // fulfill しないことで応答なしを再現する
 
   await page.goto(`/${id}/report`)
-  await page.locator('input[name="reason"][value="inappropriate"]').check()
+  await page.getByRole('radio', { name: '不快な内容' }).check()
   const submitButton = page.getByRole('button', { name: '報告する' })
   await submitButton.click()
   await expect(submitButton).toBeDisabled()
