@@ -139,7 +139,7 @@ function runReportRepositoryTests(
     expect(results.filter((r) => r.kind === 'inserted')).toHaveLength(1)
   })
 
-  it('inserted なら report_count が 1 増える。duplicate では増えない（§4.3 の batch）', async () => {
+  it('inserted なら report_count が 1 増える。duplicate では増えない（docs/guidelines.md §4.3 の batch）', async () => {
     const repo = createRepo()
     const dedupeSince = new Date('2026-09-15T00:00:00.000Z')
 
@@ -155,11 +155,18 @@ function runReportRepositoryTests(
     )
     expect(duplicate).toEqual({ kind: 'duplicate' })
 
-    const secondInsert = await repo.insertIfNotDuplicate(
-      buildReport({ id: 'report-count-c', pageId: 'page-2' }),
+    // 直前の duplicate が誤って加算していないことを、同じページへの正規の 2 件目（別 ipHash）で確かめる
+    const secondReporter = await repo.insertIfNotDuplicate(
+      buildReport({ id: 'report-count-c', ipHash: 'ip-hash-2' }),
       dedupeSince,
     )
-    expect(secondInsert).toEqual({ kind: 'inserted', reportCount: 1 })
+    expect(secondReporter).toEqual({ kind: 'inserted', reportCount: 2 })
+
+    const otherPage = await repo.insertIfNotDuplicate(
+      buildReport({ id: 'report-count-d', pageId: 'page-2' }),
+      dedupeSince,
+    )
+    expect(otherPage).toEqual({ kind: 'inserted', reportCount: 1 })
   })
 }
 

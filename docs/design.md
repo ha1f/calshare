@@ -1003,7 +1003,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 - 詳細ページ最下部の「不適切なページを報告」→ `/:id/report`（SSR のフォーム。理由の選択肢: スパム / 個人情報 / 不快な内容 / その他、任意の自由記述 500 文字まで）→ `web/report/main.ts` が `POST /api/pages/:id/reports` へ **JSON で送信**する（素の HTML form の POST は使わない。§9.8）。JS が無効な環境では送信できないが、通報導線はスパム対策であり主要動線ではないので許容する。
 - API は `reason` を列挙値（`spam` / `personal_info` / `inappropriate` / `other`）で検証し、`comment` は 500 文字超を 400 にする（§5.7）。hidden / 期限切れのページへの通報は 404。
-- 受理したら `ReportRepository.insertIfNotDuplicate`（§11.4）が `reports` への 1 行 INSERT と `pages.report_count` の +1 を同じ `db.batch()` で行い、更新後の件数を返す（保存と加算のどちらかだけが成功する状態を作らない、§4.3）。同一 `ip_hash`・同一ページの 24 時間以内の重複は `duplicate` を返し、INSERT も加算も行わずに 200（§9.3）。受理できたら Discord / Slack Webhook へ即時通知。Webhook 失敗は通報自体を失敗させない（`ctx.waitUntil` で送る）。応答が無い送信先で専有し続けないよう `WEBHOOK_FETCH_TIMEOUT_MS` でタイムアウトさせる。
+- 受理したら `ReportRepository.insertIfNotDuplicate`（§11.4）が `reports` への 1 行 INSERT と `pages.report_count` の +1 を同じ `db.batch()` で行い、更新後の件数を返す（保存と加算のどちらかだけが成功する状態を作らない、docs/guidelines.md §4.3）。同一 `ip_hash`・同一ページの 24 時間以内の重複は `duplicate` を返し、INSERT も加算も行わずに 200（§9.3）。受理できたら Discord / Slack Webhook へ即時通知。Webhook 失敗は通報自体を失敗させない（`ctx.waitUntil` で送る）。応答が無い送信先で専有し続けないよう `WEBHOOK_FETCH_TIMEOUT_MS` でタイムアウトさせる。
 - **Webhook の種別**は `REPORT_WEBHOOK_URL` のホストで判定する（vars は増やさない）: `discord.com` / `discordapp.com` → Discord、`hooks.slack.com` → Slack。どちらでもないホストは `webhookNotifier` が warn ログを出して送らない（通報の受理は成功する）。`REPORT_WEBHOOK_URL` が未設定（ローカル・CI）のときは `buildDeps` が `fakeNotifier` を配線する（§11.5）。
 - **通知本文の扱い**（`webhookNotifier`）: 通報者は匿名なので、通知はそのまま「運用者 1 人に任意のリンクを踏ませるチャネル」になりうる。次を仕様にする。
   - 本文に載せる URL は `config.publicOrigin` から組んだ詳細ページ URL の 1 本だけ。コメント内の URL は「[リンク]」に置換（`URL_PATTERN`）した上で `MAX_WEBHOOK_COMMENT_LENGTH = 200` 文字で切り詰める（全文は D1 の `reports` で見る）。
@@ -1402,7 +1402,6 @@ export type GetPageResponse = PageSummaryJson & { rawText: string }
 export interface UpdatePageRequest { rawText: string; fields: EventFieldsJson }
 export type UpdatePageResponse = PageSummaryJson
 export interface CreateReportRequest { reason: ReportReason; comment: string | null }
-export interface CreateReportResponse { ok: true }   // 重複でも受理と同じ本文を返す（§9.4）
 export type ApiErrorCode =
   | ValidationErrorCode | 'UNSUPPORTED_MEDIA_TYPE' | 'FORBIDDEN_ORIGIN' | 'INVALID_REQUEST'
   | 'RATE_LIMITED' | 'UNAUTHORIZED' | 'NOT_FOUND' | 'INTERNAL'
@@ -1498,7 +1497,7 @@ export type InsertReportResult = { kind: 'inserted'; reportCount: number } | { k
 export interface ReportRepository {
   /**
    * 同一 ipHash・同一 pageId の通報が dedupeSince 以降に既にあれば duplicate を返して INSERT しない（§9.3 の 24 時間デデュープ）。
-   * 無ければ同じ db.batch() で reports に INSERT し pages.report_count を +1 する（§4.3）。保存と加算のどちらかだけが成功する状態を作らない
+   * 無ければ同じ db.batch() で reports に INSERT し pages.report_count を +1 する（docs/guidelines.md §4.3）。保存と加算のどちらかだけが成功する状態を作らない
    */
   insertIfNotDuplicate(report: NewReportInput, dedupeSince: Date): Promise<InsertReportResult>
 }

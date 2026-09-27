@@ -37,7 +37,7 @@ export function createD1ReportRepository(db: D1Database): ReportRepository {
           dedupeSince.toISOString(),
         )
       // INSERT が重複で見送られたときは id が reports に無いので EXISTS が false になり、
-      // report_count はここでは加算されない（保存と加算を同じ batch で揃える。§4.3）
+      // report_count はここでは加算されない（保存と加算を同じ batch で揃える。docs/guidelines.md §4.3）
       const updateStmt = db
         .prepare(
           `UPDATE pages SET report_count = report_count + 1

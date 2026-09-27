@@ -13,7 +13,7 @@ export type InsertReportResult = { kind: 'inserted'; reportCount: number } | { k
 export interface ReportRepository {
   /**
    * 同一 ipHash・同一 pageId の通報が dedupeSince 以降に既にあれば duplicate を返して INSERT しない（§9.3 の 24 時間デデュープ）。
-   * 無ければ同じ db.batch() で reports に INSERT し pages.report_count を +1 する（§4.3）。保存と加算のどちらかだけが成功する状態を作らない
+   * 無ければ同じ db.batch() で reports に INSERT し pages.report_count を +1 する（docs/guidelines.md §4.3）。保存と加算のどちらかだけが成功する状態を作らない
    */
   insertIfNotDuplicate(report: NewReportInput, dedupeSince: Date): Promise<InsertReportResult>
 }
