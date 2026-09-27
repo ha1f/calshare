@@ -1,3 +1,4 @@
+import type { JSX } from 'hono/jsx/jsx-runtime'
 import { CHANGE_BANNER_HOURS } from '../../core/config/limits'
 import { buildGoogleCalendarUrl } from '../../core/google/buildGoogleCalendarUrl'
 import { formatDateLabel, toJstParts } from '../../core/time/jst'
@@ -69,7 +70,7 @@ export interface DetailPageProps {
 }
 
 /** 詳細ページ（§6.3）。要素の順序はここで固定する。hono/jsx の自動エスケープにのみ依存する（§9.1） */
-export function DetailPage({ page, config, now }: DetailPageProps) {
+export function DetailPage({ page, config, now }: DetailPageProps): JSX.Element {
   const { event } = page
   const detailUrl = buildDetailUrl(config.publicOrigin, page.id)
   const dateLabel = formatDateLabel(event)

@@ -1,4 +1,5 @@
 import { html } from 'hono/html'
+import type { JSX } from 'hono/jsx/jsx-runtime'
 import type { HtmlEscapedString } from 'hono/utils/html'
 
 /**
@@ -23,7 +24,7 @@ export interface LayoutProps {
  * サーバ SSR ページ（詳細・通報・404）の共通シェル。動的ルートは常に noindex にするため
  * `robots` メタは固定する（トップ・完成・履歴は静的アセット側で配信するので対象外、§9.5）
  */
-export function Layout({ title, cssHref, scriptSrc, head, children }: LayoutProps) {
+export function Layout({ title, cssHref, scriptSrc, head, children }: LayoutProps): JSX.Element {
   // hono/jsx は <html> を描画しても DOCTYPE を付けないため、html タグでリテラルとして先頭に足す
   return html`<!DOCTYPE html>${(
       <html lang="ja">

@@ -57,9 +57,41 @@ function serializeChangeSnapshot(snapshot: ChangeSnapshot): string {
   return JSON.stringify(json)
 }
 
+// serializeChangeSnapshot が書き込むのは toISOString() の形だけなので、その形へ戻して一致するかで判定する。
+// Date.parse は '2026' のような ISO8601 以外の文字列も受理するため、判定には使えない
+function isNullableDateString(value: unknown): value is string | null {
+  if (value === null) return true
+  if (typeof value !== 'string') return false
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.toISOString() === value
+}
+
+function isChangeSnapshotJson(value: unknown): value is ChangeSnapshotJson {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    isNullableDateString(v.start) &&
+    isNullableDateString(v.end) &&
+    typeof v.isAllDay === 'boolean' &&
+    typeof v.titleChanged === 'boolean' &&
+    typeof v.locationChanged === 'boolean'
+  )
+}
+
+/**
+ * previous_snapshot はスキーマが中身を保証しない JSON なので unknown で受けて判定する（docs/guidelines.md §2.3）。
+ * assertSingleEvent と違い例外にはせず、壊れていれば変更バナーを出さない扱いにする。
+ * 項目を足したときに古い行で詳細ページ全体が 500 にならないようにするため
+ */
 function parseChangeSnapshot(json: string | null): ChangeSnapshot | null {
   if (json === null) return null
-  const parsed = JSON.parse(json) as ChangeSnapshotJson
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    return null
+  }
+  if (!isChangeSnapshotJson(parsed)) return null
   return {
     start: parsed.start ? new Date(parsed.start) : null,
     end: parsed.end ? new Date(parsed.end) : null,

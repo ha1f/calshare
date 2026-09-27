@@ -1,3 +1,4 @@
+import type { MiddlewareHandler } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import {
   CONTENT_SECURITY_POLICY,
@@ -22,7 +23,7 @@ export function applySecurityHeaders(res: Response): Response {
  * 全ルートに `applySecurityHeaders` を適用する Hono ミドルウェア（§9.1）。
  * Cache API から返るレスポンスはヘッダが不変なため、`new Response` で包み直してから付け直す
  */
-export function securityHeaders() {
+export function securityHeaders(): MiddlewareHandler {
   return createMiddleware(async (c, next) => {
     await next()
     c.res = applySecurityHeaders(new Response(c.res.body, c.res))

@@ -1,4 +1,5 @@
-import { buildIcs, type IcsInput } from '../../core/ics/buildIcs'
+import { buildIcs } from '../../core/ics/buildIcs'
+import type { IcsInput } from '../../core/ics/buildIcs'
 import type { PageRecord } from '../../ports/pageRepository'
 import type { Deps } from '../deps'
 

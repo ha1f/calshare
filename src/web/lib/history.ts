@@ -15,7 +15,10 @@ export interface HistoryEntry {
   version: number
 }
 
-function isHistoryEntry(value: unknown): value is HistoryEntry {
+/** localStorage に残っている形。version を追加する前に保存された項目は持たないか、数値でないことがある */
+type StoredHistoryEntry = Omit<HistoryEntry, 'version'> & { version?: unknown }
+
+function isStoredHistoryEntry(value: unknown): value is StoredHistoryEntry {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
   return (
@@ -32,8 +35,8 @@ function isHistoryEntry(value: unknown): value is HistoryEntry {
 }
 
 /** localStorage の内容は信頼しない（§6.4）。version が数値でない項目は未編集として 1 を補う */
-function withNormalizedVersion(entry: HistoryEntry): HistoryEntry {
-  return typeof entry.version === 'number' ? entry : { ...entry, version: 1 }
+function toHistoryEntry(entry: StoredHistoryEntry): HistoryEntry {
+  return { ...entry, version: typeof entry.version === 'number' ? entry.version : 1 }
 }
 
 /**
@@ -47,7 +50,7 @@ export function readHistory(): HistoryEntry[] {
     if (raw === null) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(isHistoryEntry).map(withNormalizedVersion)
+    return parsed.filter(isStoredHistoryEntry).map(toHistoryEntry)
   } catch {
     return []
   }
