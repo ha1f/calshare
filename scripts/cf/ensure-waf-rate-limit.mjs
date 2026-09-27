@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// /api/* へのレート制限ルール（design §9.3 の D1 カウンタの手前に置く保険、§4.3・H13）を
+// /api/* へのレート制限ルール（design §9.3 の D1 カウンタの手前に置く保険、§4.3）を
 // http_ratelimit フェーズのルールセットに冪等に作る。既存ルールは description で識別し、
 // 内容が変わっていれば更新する（Cloudflare のルールセットは配列全体を PUT する API のため、
 // 対象ルール以外を壊さないよう既存の rules 配列を読んでから該当ルールだけ差し替える）。
@@ -8,7 +8,7 @@
 // docs/runbooks/provisioning.md にも同じ注記がある）:
 // - Free プランでの rate limiting の下限値（period・requests_per_period・mitigation_timeout の
 //   最小値と組み合わせ制約）。ここでは design の「10 秒に 10 リクエスト超」をそのまま渡す。
-// - action: 'block' の応答は Cloudflare 側で固定の 403 になる（H13 の記述にある「429」は
+// - action: 'block' の応答は Cloudflare 側で固定の 403 になる（design.md §9.3 にある「429」は
 //   D1 側のアプリケーションレベルの制限のレスポンスコードであり、WAF 側の 403 とは別物）。
 //   429 で応答させるには action の customize（Enterprise 機能の可能性）が要るかもしれない。
 // - http_ratelimit フェーズにルールが 1 つも無いときに GET が 404 になるのか、
@@ -120,7 +120,10 @@ function formatText({ domain, action, rule, dryRun }) {
       ],
       ['ルール', rule.description],
       ['expression', rule.expression],
-      ['action', `${rule.action}（応答は 403。design H13 の「429」は D1 側の制限を指す。要検証）`],
+      [
+        'action',
+        `${rule.action}（応答は 403。design.md §9.3 の「429」は D1 側の制限を指す。要検証）`,
+      ],
       [
         'period / requests_per_period / mitigation_timeout',
         `${rule.ratelimit.period}s / ${rule.ratelimit.requests_per_period} / ${rule.ratelimit.mitigation_timeout}s`,

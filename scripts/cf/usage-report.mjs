@@ -1,6 +1,6 @@
 // Cloudflare の当月使用量を GraphQL Analytics API で取得し、
 // Workers Paid の込み枠に対する割合をしきい値と比較するレポートを出す。
-// design.md §1.2（コストとの整合）・§14.1（CPU-ms が込み枠上限近傍）・H12 に対応する。
+// design.md §1.2（コストとの整合）・§14.1（CPU-ms が込み枠上限近傍）に対応する。
 //
 // 割合計算としきい値判定（summarizeUsage）は GraphQL のレスポンス形に依存しない純粋関数にし、
 // 実測値の取得（fetchUsage）と分離してある。GraphQL のデータセット名・フィールド名は
@@ -184,7 +184,7 @@ export async function runReport({
   // GraphQL は HTTP 200 のまま { data: null, errors: [...] } を返すことがあり、
   // createCfApi は success フィールドを見ないのでこれを例外にできない。
   // ここで弾かないと extractUsage が空を返し、全項目 unavailable のまま
-  // 「超過なし」としてジョブが緑で終わってしまう（H12 の監視が機能しなくなる）。
+  // 「超過なし」としてジョブが緑で終わってしまう（使用量の監視が機能しなくなる）。
   if (json.errors?.length) {
     const detail = json.errors.map((e) => e.message).join('; ')
     throw new Error(

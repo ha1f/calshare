@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Worker のシークレットが登録済みかどうかを判定し、無ければ生成して登録する。
-// design.md H6・H7（RATE_LIMIT_PEPPER・REPORT_WEBHOOK_URL の登録）、
+// RATE_LIMIT_PEPPER・REPORT_WEBHOOK_URL の登録に使い、
 // docs/runbooks/{provisioning,deploy}.md から呼ばれる。
 //
 // 登録済み判定は `wrangler secret list --format json` の標準出力を JSON.parse して行い、

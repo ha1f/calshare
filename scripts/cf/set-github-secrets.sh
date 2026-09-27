@@ -12,7 +12,7 @@ usage() {
 環境変数（未設定なら対話的に入力を求める。REPORT_WEBHOOK_URL のみ空で進める選択もできる）:
   CLOUDFLARE_API_TOKEN   必須。docs/runbooks/cloudflare-api-token.md の手順で発行したトークン
   CLOUDFLARE_ACCOUNT_ID  必須。Cloudflare ダッシュボードで確認できる Account ID
-  REPORT_WEBHOOK_URL     任意。通報通知用の Discord/Slack Incoming Webhook URL（H7）
+  REPORT_WEBHOOK_URL     任意。通報通知用の Discord/Slack Incoming Webhook URL
 
   --dry-run   gh を呼ばず、登録される Secret 名の一覧だけを表示する
   --help      このヘルプを表示する

@@ -1,6 +1,6 @@
 name: deploy
 
-# H9: 公開の承認ゲート。DEPLOY_ENABLED を true にする1回の操作が公開承認になる（docs/runbooks/deploy.md）。
+# 公開の承認ゲート。DEPLOY_ENABLED を true にする1回の操作が公開承認になる（docs/runbooks/deploy.md）。
 on:
   push:
     branches: [main]
@@ -80,7 +80,7 @@ jobs:
         run: npx wrangler deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"
 
       # RATE_LIMIT_PEPPER が未登録のまま公開されると、ip_hash の HMAC 鍵が無い状態で動く
-      # （H6。design.md §9.3）。provision workflow の再実行をオーナー作業として残さないよう、
+      # （design.md §9.3）。provision workflow の再実行をオーナー作業として残さないよう、
       # デプロイ直後に Worker が存在する状態でここで確認・登録する。
       - name: RATE_LIMIT_PEPPER を確認・登録する
         env:
@@ -90,7 +90,7 @@ jobs:
 
       # provision の secrets ジョブは Worker が未デプロイのうちはスキップするため、初回デプロイの
       # 前に REPORT_WEBHOOK_URL の GitHub Secret だけ設定していた場合、ここで登録するまで
-      # Worker 側に反映されない（H7。docs/runbooks/provisioning.md）。
+      # Worker 側に反映されない（docs/runbooks/provisioning.md）。
       - name: REPORT_WEBHOOK_URL を確認・登録する
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -98,7 +98,7 @@ jobs:
           REPORT_WEBHOOK_URL: ${{ secrets.REPORT_WEBHOOK_URL }}
         run: |
           if [ -z "${REPORT_WEBHOOK_URL:-}" ]; then
-            echo "REPORT_WEBHOOK_URL の GitHub Secret が未設定のためスキップしました（H7 は任意）" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "REPORT_WEBHOOK_URL の GitHub Secret が未設定のためスキップしました（通報通知の設定は任意）" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           node scripts/cf/ensure-secret.mjs --name REPORT_WEBHOOK_URL --value "$REPORT_WEBHOOK_URL" --force | tee -a "$GITHUB_STEP_SUMMARY"

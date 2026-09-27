@@ -1,6 +1,6 @@
 name: moderation
 
-# H11: 通報の一次対応。通知を見たオーナーがこの workflow を手動実行して非表示 / 解除する
+# 通報の一次対応。通知を見たオーナーがこの workflow を手動実行して非表示 / 解除する
 # （docs/runbooks/moderation.md）。SQL の組み立ては scripts/cf/moderation-sql.mjs で行い、
 # ここでは page_id・ハッシュ値を絶対に run: のコマンド文字列へ直接埋め込まない
 # （workflow_dispatch の入力はユーザ由来なのでシェルインジェクションの経路になる）。

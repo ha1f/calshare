@@ -129,7 +129,7 @@ jobs:
           fi
 
   # (3) RATE_LIMIT_PEPPER を生成して Worker のシークレットに登録し、
-  #     REPORT_WEBHOOK_URL が GitHub Secrets にあれば同様に登録する（H6・H7 の自動化）。
+  #     REPORT_WEBHOOK_URL が GitHub Secrets にあれば同様に登録する。
   #     Worker が一度もデプロイされていない場合はスキップする（deploy.yml が同じ処理を
   #     デプロイ直後に行うため、ここでは既に登録済みであることの確認になる）。
   secrets:
@@ -156,7 +156,7 @@ jobs:
         if: steps.scaffold.outputs.present == 'true'
         run: npm ci
 
-      # wrangler.jsonc の name は apply-service-name.mjs（H1）でサービス名とともに変わるため、
+      # wrangler.jsonc の name は apply-service-name.mjs でサービス名とともに変わるため、
       # ここで固定値にすると改名後は常にスキップになる（docs/runbooks/rename.md）。
       - name: Worker 名を決める
         id: worker-name
@@ -188,13 +188,13 @@ jobs:
           WORKER_NAME: ${{ steps.worker-name.outputs.name }}
         run: |
           if [ -z "${REPORT_WEBHOOK_URL:-}" ]; then
-            echo "REPORT_WEBHOOK_URL の GitHub Secret が未設定のためスキップしました（H7 は任意）" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "REPORT_WEBHOOK_URL の GitHub Secret が未設定のためスキップしました（通報通知の設定は任意）" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           node scripts/cf/ensure-secret.mjs --name REPORT_WEBHOOK_URL --value "$REPORT_WEBHOOK_URL" --force \
             --require-deployed --worker-name "$WORKER_NAME" | tee -a "$GITHUB_STEP_SUMMARY"
 
-  # (4) ドメインが決まっていればゾーンを作り、/api/* の WAF レート制限ルールを設定する（H3・H13）。
+  # (4) ドメインが決まっていればゾーンを作り、/api/* の WAF レート制限ルールを設定する。
   #     ゾーンが active になっていれば、routes・workers_dev を書き換える PR も自動作成する
   #     （docs/runbooks/custom-domain.md の手順 3。オーナーに残るのはこの PR の確認だけにする）。
   zone_and_waf:
@@ -264,7 +264,7 @@ jobs:
               --body "provision workflow が自動生成しました。マージすると workers_dev が false になり *.workers.dev が閉じます。GITHUB_TOKEN で作成した PR のため CI（pull_request トリガー）は自動で走りません（docs/runbooks/provisioning.md）。"
           fi
 
-  # (5) OGP 用フォントのサブセットを R2 に配置する（H8 のアップロード作業の自動化）。
+  # (5) OGP 用フォントのサブセットを R2 に配置する（docs/runbooks/fonts.md のアップロード作業の自動化）。
   #     scripts/fonts/ 一式が無ければスキップする。
   font:
     needs: preflight
