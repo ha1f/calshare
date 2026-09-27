@@ -1,4 +1,5 @@
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'

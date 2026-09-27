@@ -1,5 +1,7 @@
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
+import { describe, expect, it } from 'vitest'
+import { requireDefined } from '../../../src/core/assert'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { createMemoryObjectStorage } from '../../../src/adapters/memory/memoryObjectStorage'
@@ -21,7 +23,7 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
 /** PAGE_ID_PATTERN（Crockford Base32 小文字 12 文字）を満たすテスト用 ID を重複無く発行する */
 function pageId(n: number): string {
-  return CROCKFORD_CHARS[n].repeat(12)
+  return requireDefined(CROCKFORD_CHARS[n], 'CROCKFORD_CHARS: index out of range').repeat(12)
 }
 
 async function createPage(repo: PageRepository, id: string): Promise<void> {
@@ -117,11 +119,6 @@ async function expectPngBody(res: Response): Promise<void> {
 }
 
 describe('GET /:id/ogp.png（OGP 画像、§2.5）', () => {
-  beforeEach(async () => {
-    await env.DB.prepare('DELETE FROM events').run()
-    await env.DB.prepare('DELETE FROM pages').run()
-  })
-
   it('初回だけレンダラを呼び、waitUntil の完了後は R2 に生成結果がある', async () => {
     const renderer = countingRenderer()
     const { deps, repo } = buildOgpDeps({ ogpRenderer: renderer })
@@ -294,7 +291,7 @@ describe('GET /:id/ogp.png（OGP 画像、§2.5）', () => {
 
   it('R2 への書き込み（putOgpImage）が失敗しても waitUntil は例外にならずログに残る', async () => {
     const clock = fakeClock(NOW)
-    const warnings: Array<{ event: string; data?: Record<string, unknown> }> = []
+    const warnings: Array<{ event: string; data?: Record<string, unknown> | undefined }> = []
     const logger: Logger = {
       info() {},
       warn: (event, data) => warnings.push({ event, data }),

@@ -1,4 +1,4 @@
-// `cloudflare:test` の env は Cloudflare.Env 型。テスト専用のバインディングと secrets をここでマージする。
+// `cloudflare:workers` の env は Cloudflare.Env 型。テスト専用のバインディングと secrets をここでマージする。
 import type { D1Migration } from '@cloudflare/vitest-pool-workers'
 
 declare global {

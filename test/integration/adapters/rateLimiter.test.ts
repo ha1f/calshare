@@ -1,26 +1,9 @@
-import { env } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { requireDefined } from '../../../src/core/assert'
 import { createD1RateLimiter } from '../../../src/adapters/d1/d1RateLimiter'
 import { createMemoryRateLimiter } from '../../../src/adapters/memory/memoryRateLimiter'
 import type { RateLimiter, RateLimitRule } from '../../../src/ports/rateLimiter'
-
-// このアダプタの担当外（D1 スキーマのタスクが migrations/ に置く）なので、§3 の定義どおりに
-// テストのセットアップだけでテーブルを作る。migrations/ には何も追加しない。
-// db.exec() は改行区切りで文を分割するため、複数行にまたがる CREATE TABLE には使えない。
-// 単一のステートメントなので prepare().run() で実行する。
-async function createRateLimitCountersTable(): Promise<void> {
-  await env.DB.exec('DROP TABLE IF EXISTS rate_limit_counters')
-  await env.DB.prepare(
-    `CREATE TABLE rate_limit_counters (
-      scope TEXT NOT NULL,
-      bucket_key TEXT NOT NULL,
-      window_kind TEXT NOT NULL,
-      window_start TEXT NOT NULL,
-      count INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (scope, bucket_key, window_kind, window_start)
-    )`,
-  ).run()
-}
 
 function ipRule(overrides: Partial<RateLimitRule> = {}): RateLimitRule {
   return { scope: 'create', bucketKey: 'ip:aaa', window: 'hour', limit: 2, ...overrides }
@@ -32,8 +15,7 @@ describe.each([
 ] as const)('%s RateLimiter', (_name, createLimiter) => {
   let limiter: RateLimiter
 
-  beforeEach(async () => {
-    await createRateLimitCountersTable()
+  beforeEach(() => {
     limiter = createLimiter()
   })
 
@@ -156,10 +138,6 @@ describe.each([
 })
 
 describe('D1RateLimiter（テーブル行の検証）', () => {
-  beforeEach(async () => {
-    await createRateLimitCountersTable()
-  })
-
   it('上限超過後にリクエストを重ねても rate_limit_counters の行数は増えない', async () => {
     const limiter = createD1RateLimiter(env.DB)
     const now = new Date('2026-09-16T01:00:00.000Z')
@@ -173,6 +151,6 @@ describe('D1RateLimiter（テーブル行の検証）', () => {
       count: number
     }>()
     expect(results).toHaveLength(1)
-    expect(results[0].count).toBe(1)
+    expect(requireDefined(results[0], 'results has exactly 1 row').count).toBe(1)
   })
 })

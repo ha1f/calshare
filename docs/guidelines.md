@@ -329,7 +329,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
   - `exports.default.fetch()` は `SELF.fetch()` と同じく Static Assets のルーティング層を通らない。静的アセットは `env.ASSETS.fetch()` で直接検証する（`test/integration/server/staticAssets.test.ts`）。
   - `applyD1Migrations` `createExecutionContext` `waitOnExecutionContext` `reset` は `cloudflare:test` のまま使う（非推奨タグは無い）。
 - ストレージ分離はテストファイル単位。同一ファイルの `it()` 間でデータが残る。`test/integration/setup.ts` の `beforeEach` で `reset()`（全バインディングのデータを削除）を呼び、その直後に `applyD1Migrations` を再適用する。各ファイルに `DELETE FROM ...` を書かない[^pool-workers-isolation][^pool-workers-test-apis]。
-  - `reset()` は「全バインディングのデータを削除する」とだけ文書化されており、D1 のテーブル定義まで消えるかは書かれていない。消える場合に備えて `applyD1Migrations` を必ず後ろに置く（テーブルが残る場合も適用済みを飛ばすので無害）。導入 PR で `reset()` 直後に `sqlite_master` を読んで実際の挙動を PR 説明に記録する。
+  - `reset()` は D1 のテーブル定義も削除する（実測。`reset()` 直後の `sqlite_master` が空配列になることを確認した）。`applyD1Migrations` を必ず後ろに置く。
   - 導入前後で `npm run test:integration` の所要時間を比べ、大きく伸びる（目安 1.5 倍超）なら `DELETE FROM` 方式に戻して理由を setup.ts に書く。
 - `ctx.waitUntil` の完了を待つ経路（OGP の R2 put、Webhook）は `createExecutionContext()` で ctx を作って `app.fetch(req, env, ctx)` を直接呼び、`waitOnExecutionContext(ctx)` の後に検証する。
 - 状態変更 API のリクエストは `test/integration/helpers/jsonRequest.ts` で組む（Content-Type・Origin を付ける）。
@@ -491,7 +491,6 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
 - `package.json` の `imports`（`#core/*`）で test 配下の深い相対 import（`../../../../src/core/...` が 61 ファイル）を短くする。`moduleResolution: bundler` ではサブパス import の拡張子省略はサポート外（Working as Intended）で、対象パターンに `.ts` を付ける（`"#core/*": "./src/core/*.ts"`）必要がある[^ts-imports-issue]。tsc・esbuild・Vitest（Vite）・wrangler の 4 系統で同じ解決になるかが未検証。
 - CI に `npm audit signatures` を足す。署名を提供しないパッケージで誤検知しうるため、非ブロッキングから始める。
 - esbuild の splitting による削減量（§6.1）。metafile で測ってから判断する。
-- `reset()` が D1 のテーブル定義まで消すか（§7.2）。結合テストの setup 変更時に `sqlite_master` で確認し、結果を PR 説明に書く。
 - Cache API（`caches.default`、`withEdgeCache`）は Cloudflare 公式ドキュメントで「カスタムドメインの Worker だけが機能する Cache 操作を持つ」と明記されている[^cf-cache-api]。現状 `wrangler.jsonc` は `workers_dev: true`（§4.1。独自ドメインを割り当てるまでの暫定）なので、`*.workers.dev` 上で `withEdgeCache` が実際にヒットするかは未確認。ヒットしなくても `produce()` が都度実行されるだけで壊れないが、キャッシュ導入の効果（D1・R2 の負荷軽減）が出ていない可能性がある。デプロイ環境（workers.dev、後にカスタムドメイン）で同じリクエストを 2 回送り、2 回目に `cache.match` がヒットするかを確認し、結果を Issue に記録する。
 
 ---

@@ -1,5 +1,5 @@
-import { env } from 'cloudflare:test'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { env } from 'cloudflare:workers'
+import { describe, expect, it } from 'vitest'
 import { D1_MAX_BIND_PARAMS } from '../../../src/core/config/limits'
 import type { ChangeSnapshot, EventFields } from '../../../src/core/types'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
@@ -9,6 +9,7 @@ import {
   type NewPageInput,
   type PageRepository,
 } from '../../../src/ports/pageRepository'
+import { insertPageRow } from '../helpers/insertPageRow'
 
 const NOW = new Date('2026-09-16T01:00:00.000Z')
 
@@ -500,7 +501,7 @@ function withPageDeletedAfterEventsCheck(db: D1Database, pageId: string): D1Data
         bind: (..._args: unknown[]) => ({
           all: async <T = unknown>() => {
             const result = await db.prepare(sql).bind(pageId).all<T>()
-            await db.prepare('DELETE FROM pages WHERE id = ?').bind(pageId).run()
+            await createD1PageRepository(db).deleteByIds([pageId])
             return result
           },
         }),
@@ -511,12 +512,6 @@ function withPageDeletedAfterEventsCheck(db: D1Database, pageId: string): D1Data
 }
 
 describe('D1PageRepository', () => {
-  // D1 のストレージ分離はテストファイル単位で、同じファイル内の it() 間ではテーブルの中身が残る。
-  // pages を消せば events も CASCADE で消える
-  beforeEach(async () => {
-    await env.DB.prepare('DELETE FROM pages').run()
-  })
-
   runPageRepositoryTests(() => createD1PageRepository(env.DB))
 
   it('update: 存在確認と UPDATE の間にページが削除されても not_found を返す', async () => {
@@ -588,28 +583,14 @@ describe('D1PageRepository', () => {
 
   it('events が 0 行のページを読むと InvariantViolation を投げる', async () => {
     const repo = createD1PageRepository(env.DB)
-    await repo.create(
-      buildInput({
-        id: 'page-invariant-empty',
-        event: { id: 'evt-invariant-empty', ...eventFields() },
-      }),
-    )
-    await env.DB.prepare('DELETE FROM events WHERE page_id = ?').bind('page-invariant-empty').run()
+    await insertPageRow(env.DB, 'page-invariant-empty', NOW)
 
     await expect(repo.findById('page-invariant-empty')).rejects.toThrow(InvariantViolation)
   })
 
   it('events が 0 行のページを update すると InvariantViolation を投げる', async () => {
     const repo = createD1PageRepository(env.DB)
-    await repo.create(
-      buildInput({
-        id: 'page-invariant-empty-update',
-        event: { id: 'evt-invariant-empty-update', ...eventFields() },
-      }),
-    )
-    await env.DB.prepare('DELETE FROM events WHERE page_id = ?')
-      .bind('page-invariant-empty-update')
-      .run()
+    await insertPageRow(env.DB, 'page-invariant-empty-update', NOW)
 
     await expect(
       repo.update('page-invariant-empty-update', {

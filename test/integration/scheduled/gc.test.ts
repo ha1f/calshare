@@ -1,10 +1,10 @@
 import {
   createExecutionContext,
   createScheduledController,
-  env,
   waitOnExecutionContext,
 } from 'cloudflare:test'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { env } from 'cloudflare:workers'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { systemClock } from '../../../src/adapters/clock/systemClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
@@ -28,10 +28,6 @@ const NOW = new Date('2026-09-16T01:00:00.000Z')
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
-/**
- * ページ ID を一意にする。R2 はテストファイル内で状態が残るため、同じ ID を使い回すと
- * 前のテストが残した ics / ogp オブジェクトを誤って検証してしまう。
- */
 function uniqueId(name: string): string {
   return `${name}-${crypto.randomUUID()}`
 }
@@ -301,11 +297,6 @@ describe('runGc（Fake Deps）', () => {
 })
 
 describe('runGc（本物の D1 / R2）', () => {
-  beforeEach(async () => {
-    await env.DB.prepare('DELETE FROM pages').run()
-    await env.DB.prepare('DELETE FROM rate_limit_counters').run()
-  })
-
   runGcContractTests((overrides) => {
     const clock = fakeClock(NOW)
     return buildFakeDeps({
@@ -319,10 +310,6 @@ describe('runGc（本物の D1 / R2）', () => {
 })
 
 describe('scheduled ハンドラ（src/server/index.ts）', () => {
-  beforeEach(async () => {
-    await env.DB.prepare('DELETE FROM pages').run()
-  })
-
   afterEach(() => {
     vi.restoreAllMocks()
   })

@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from '../../../src/server/app'
 import { buildFakeDeps } from '../helpers/fakeDeps'

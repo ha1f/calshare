@@ -1,8 +1,8 @@
-import { env } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import { TEST_ORIGIN } from '../helpers/jsonRequest'
 
-// SELF.fetch は Worker の手前にある Static Assets のルーティング層（§2.2）を経由しないので、
+// exports.default.fetch は Worker の手前にある Static Assets のルーティング層（§2.2）を経由しないので、
 // env.ASSETS.fetch で直接検証する。アセット層 + Worker のフルスタックでのルーティングは e2e が担う。
 describe('Static Assets（env.ASSETS.fetch 経由）', () => {
   it('/ が静的 HTML を返す', async () => {

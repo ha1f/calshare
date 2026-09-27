@@ -1,5 +1,7 @@
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
+import { describe, expect, it, vi } from 'vitest'
+import { requireDefined } from '../../../src/core/assert'
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { X_ROBOTS_TAG } from '../../../src/server/lib/headers'
@@ -19,7 +21,7 @@ const CROCKFORD_CHARS = '0123456789abcdefghjkmnpqrstvwxyz'
 
 /** PAGE_ID_PATTERN（Crockford Base32 小文字 12 文字）を満たすテスト用 ID を重複無く発行する */
 function pageId(n: number): string {
-  return CROCKFORD_CHARS[n].repeat(12)
+  return requireDefined(CROCKFORD_CHARS[n], 'CROCKFORD_CHARS: index out of range').repeat(12)
 }
 
 function eventFields(overrides: Partial<EventFields> = {}): EventFields {
@@ -121,11 +123,6 @@ async function get(deps: Deps, path: string): Promise<Response> {
 }
 
 describe('GET /:id.ics（ics 配信、§7.2）', () => {
-  beforeEach(async () => {
-    await env.DB.prepare('DELETE FROM events').run()
-    await env.DB.prepare('DELETE FROM pages').run()
-  })
-
   it('text/calendar で配信され、本文が buildIcsForPage の出力と一致する', async () => {
     const { deps, repo } = buildIcsDeps()
     const id = pageId(0)

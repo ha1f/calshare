@@ -1,4 +1,5 @@
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import { createApp } from '../../../src/server/app'
 import { CONTENT_SECURITY_POLICY, X_ROBOTS_TAG } from '../../../src/server/lib/headers'
