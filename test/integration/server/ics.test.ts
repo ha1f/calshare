@@ -332,7 +332,9 @@ describe('GET /:id.ics（ics 配信、§7.2）', () => {
     const putError = new Error('r2 down')
     const storage: ObjectStorage = {
       ...baseDeps.storage,
-      putIcs: () => Promise.reject(putError),
+      async putIcs() {
+        throw putError
+      },
     }
     const errorSpy = vi.fn()
     const logger: Logger = { info: vi.fn(), warn: vi.fn(), error: errorSpy }

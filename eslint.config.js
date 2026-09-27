@@ -48,6 +48,9 @@ export default tseslint.config(
       // Deps を型で揃えるため使わない引数も受け取る routes/*.ts の規約（§11.5）に合わせ、
       // 先頭 _ の引数は未使用でも許可する
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // ポートは Promise を返す契約なので、同期で済む実装も async で書く。async を外すと
+      // 関数内の throw が reject にならず、呼び出し側の .catch や rejects に届かない
+      '@typescript-eslint/require-await': 'off',
     },
   },
   {

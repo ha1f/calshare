@@ -731,7 +731,7 @@ export interface TextInterpreter {
 
 // src/core/interpret/ruleBasedInterpreter.ts — Phase 1 の唯一の実装
 export const ruleBasedInterpreter: TextInterpreter = {
-  interpret: (input, ctx) => new Promise((resolve) => resolve(parseEventText(input, ctx))),
+  interpret: async (input, ctx) => parseEventText(input, ctx),
 }
 ```
 
@@ -1140,7 +1140,7 @@ npm run test:integration  # vitest run --project integration（vitest-pool-worke
 npm run test:e2e          # playwright test（webServer で build → wrangler dev を自動起動。E2E_PORT=8791 のように指定すると別ポートで起動し、複数の作業ツリーで同時に走らせられる。
                            # wrangler dev には --var PUBLIC_ORIGIN:http://localhost:<port> も渡すので、API が返す url は実際のポートと一致する）
 npm run test              # unit + integration
-npm run lint              # eslint . && prettier --check .
+npm run lint              # wrangler types → eslint . && prettier --check .（型情報付き lint が worker-configuration.d.ts を読む）
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
 ```
 

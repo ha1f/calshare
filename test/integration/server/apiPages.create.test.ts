@@ -441,7 +441,9 @@ describe('POST /api/pages', () => {
     const errorSpy = vi.spyOn(deps.logger, 'error')
     const brokenPages: PageRepository = {
       ...deps.pages,
-      findById: () => Promise.reject(new InvariantViolation('page does not have exactly 1 event')),
+      findById: async () => {
+        throw new InvariantViolation('page does not have exactly 1 event')
+      },
     }
     const app = createApp({ ...deps, pages: brokenPages })
 

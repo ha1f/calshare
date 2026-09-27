@@ -17,9 +17,9 @@ export function createFakeOgpRenderer(): OgpRenderer & { calls: OgpInput[] } {
   const calls: OgpInput[] = []
   return {
     calls,
-    render: (input: OgpInput) => {
+    render: async (input: OgpInput) => {
       calls.push(input)
-      return Promise.resolve(decodeBase64(TRANSPARENT_PIXEL_PNG_BASE64))
+      return decodeBase64(TRANSPARENT_PIXEL_PNG_BASE64)
     },
   }
 }

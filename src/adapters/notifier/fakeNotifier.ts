@@ -4,9 +4,8 @@ export function createFakeNotifier(): Notifier & { calls: ReportNotification[] }
   const calls: ReportNotification[] = []
   return {
     calls,
-    notifyReport: (n: ReportNotification) => {
+    notifyReport: async (n: ReportNotification) => {
       calls.push(n)
-      return Promise.resolve()
     },
   }
 }

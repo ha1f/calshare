@@ -121,8 +121,8 @@ describe('requestLog ミドルウェア（§9.6）', () => {
 
   it('429（レート制限超過）のログに exceeded のバケット種別が出て、リクエストログにも 429 が出る', async () => {
     const deps = buildFakeDeps({ logger: consoleLogger })
-    vi.spyOn(deps.rateLimiter, 'consume').mockImplementation((rules: RateLimitRule[]) =>
-      Promise.resolve({
+    vi.spyOn(deps.rateLimiter, 'consume').mockImplementation(
+      async (rules: RateLimitRule[]): Promise<{ allowed: boolean; exceeded: RateLimitRule[] }> => ({
         allowed: false,
         exceeded: [
           rules.find((rule) => rule.bucketKey.startsWith('device:')) ??

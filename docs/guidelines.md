@@ -108,10 +108,12 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 
 - 設定は `eslint.config.js` の flat config 1 ファイル。`.eslintrc*` は置かない[^eslint10]。
 - ベースは `@eslint/js` の `recommended` と typescript-eslint の `recommendedTypeChecked`。型情報付き lint（floating promise・誤った `await` 漏れの検出）を有効にする[^tseslint-typed]。
-  - `languageOptions.parserOptions` は `project: ['./tsconfig.core.json', './tsconfig.server.json', './tsconfig.web.json']` と `tsconfigRootDir: import.meta.dirname`。`projectService: true` は採らない。projectService は各ファイルに最も近い `tsconfig.json` を使うため、本リポジトリでは `include` を持たない root の `tsconfig.json`（`lib: ES2022` のみ、DOM なし）が全ファイルに当たり、web の DOM 型が解決されない[^tseslint-parser]。実測（2026-09-27、`recommendedTypeChecked`）: projectService では `src/**/*.{ts,tsx}` に 362 件（web 3 ファイルだけで `no-unsafe-member-access` 24 件を含む 47 件）、`project` 配列では 28 件（`require-await` 22、`no-unused-vars` 2、`no-unsafe-*` 4）。
+  - `languageOptions.parserOptions` は `project: ['./tsconfig.core.json', './tsconfig.server.json', './tsconfig.web.json']` と `tsconfigRootDir: import.meta.dirname`。`projectService: true` は採らない。projectService は各ファイルに最も近い `tsconfig.json` を使うため、本リポジトリでは `include` を持たない root の `tsconfig.json`（`lib: ES2022` のみ、DOM なし）が全ファイルに当たり、web の DOM 型が解決されない[^tseslint-parser]。実測（2026-09-27、`recommendedTypeChecked`）: projectService では `src/**/*.{ts,tsx}` に 362 件（web 3 ファイルだけで `no-unsafe-member-access` 24 件を含む 47 件）、`project` 配列では `src` に 26 件（`require-await` 22、`no-unsafe-*` 4）。
   - `src/core` は 3 つの tsconfig に重複して含まれるが、typescript-eslint は最初に一致した project を使うので問題にならない。
   - どの tsconfig にも含まれないファイル（`*.config.ts`、`eslint.config.js`、`scripts/**/*.mjs`）には `tseslint.configs.disableTypeChecked` を当てる。
-  - lint の所要時間が伸びる。CI の `npm run lint` の時間を導入前後で比べ、記録する。
+  - `@typescript-eslint/require-await` だけは off にする。ポート（`src/ports/*`）は Promise を返す契約で、メモリ実装や Fake のように同期で済む実装も `async` で書く。`async` を外して `Promise.resolve()` で返す書き方にすると、関数内の `throw` が reject にならず同期の例外になり、本物のアダプタと挙動がずれる。await 漏れは `no-floating-promises` と `await-thenable` が検出する。
+  - `npm run lint` は先に `wrangler types` を実行する。`worker-configuration.d.ts`（生成物、gitignore 対象）が無いと `env` などの型が解決できず、`no-unsafe-*` が大量に出る。
+  - lint の所要時間は導入前の約 1.6 倍（手元で 6 秒台 → 10 秒台、2026-09-27）。
 - プロジェクト固有のルールは設計原則に直結するものだけ持つ（§2.4）。汎用のスタイルプラグイン（unicorn、perfectionist、import-x）は入れない（§9）。
 - `scripts/**/*.mjs` のグローバル定義は必要な名前だけを手書きで列挙する。`globals` パッケージ（`globals.node`）は許可範囲が数十個に広がるため入れない。
 

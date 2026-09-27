@@ -15,8 +15,8 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
 function rendererOptions() {
   return {
-    loadWasm: () => Promise.resolve({ yoga: yogaWasm, resvg: resvgWasm }),
-    loadFont: () => Promise.resolve(fontFixture),
+    loadWasm: async () => ({ yoga: yogaWasm, resvg: resvgWasm }),
+    loadFont: async () => fontFixture,
   }
 }
 

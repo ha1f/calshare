@@ -56,12 +56,11 @@ export function createMemoryPageRepository(): PageRepository {
   const eventIds = new Set<string>()
 
   return {
-    create(input: NewPageInput) {
-      if (pages.has(input.id)) return Promise.resolve('id_conflict' as const)
+    async create(input: NewPageInput) {
+      if (pages.has(input.id)) return 'id_conflict'
       if (eventIds.has(input.event.id)) {
-        // D1 は events.id の UNIQUE 制約違反でバッチ全体を失敗させ pages も残らない。同じ挙動にする。
-        // create は Promise を返す契約（PageRepository）なので、同期 throw ではなく reject で返す
-        return Promise.reject(new Error(`event id already exists: ${input.event.id}`))
+        // D1 は events.id の UNIQUE 制約違反でバッチ全体を失敗させ pages も残らない。同じ挙動にする
+        throw new Error(`event id already exists: ${input.event.id}`)
       }
 
       const event: EventRecord = {
@@ -98,17 +97,17 @@ export function createMemoryPageRepository(): PageRepository {
         event,
       })
       eventIds.add(input.event.id)
-      return Promise.resolve('ok' as const)
+      return 'ok'
     },
 
-    findById(id: string) {
+    async findById(id: string) {
       const page = pages.get(id)
-      return Promise.resolve(page ? clonePage(page) : null)
+      return page ? clonePage(page) : null
     },
 
-    update(id: string, patch: PagePatch) {
+    async update(id: string, patch: PagePatch) {
       const current = pages.get(id)
-      if (!current) return Promise.resolve('not_found' as const)
+      if (!current) return 'not_found'
 
       pages.set(id, {
         ...current,
@@ -132,48 +131,45 @@ export function createMemoryPageRepository(): PageRepository {
           updatedAt: new Date(patch.now),
         },
       })
-      return Promise.resolve('ok' as const)
+      return 'ok'
     },
 
-    incrementReportCount(id: string) {
+    async incrementReportCount(id: string) {
       const current = pages.get(id)
-      if (!current) return Promise.resolve(0)
+      if (!current) return 0
       current.reportCount += 1
-      return Promise.resolve(current.reportCount)
+      return current.reportCount
     },
 
-    countActiveByCreator(creatorIpHash: string, creatorDeviceId: string) {
+    async countActiveByCreator(creatorIpHash: string, creatorDeviceId: string) {
       let count = 0
       for (const page of pages.values()) {
         if (page.status !== 'active') continue
         if (page.creatorIpHash === creatorIpHash || page.creatorDeviceId === creatorDeviceId)
           count++
       }
-      return Promise.resolve(count)
+      return count
     },
 
-    listExpired(before: Date, limit: number) {
+    async listExpired(before: Date, limit: number) {
       // id の tie-break は UTF-16 コードユニット順。D1 の ORDER BY id は UTF-8 バイト順で、
       // 非 ASCII の id では順序が食い違いうるが、ページ id は Crockford base32（§4.2）で ASCII のみなので一致する
-      return Promise.resolve(
-        [...pages.values()]
-          .filter((page) => page.expiresAt < before)
-          .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime() || (a.id < b.id ? -1 : 1))
-          .slice(0, limit)
-          .map((page) => page.id),
-      )
+      return [...pages.values()]
+        .filter((page) => page.expiresAt < before)
+        .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime() || (a.id < b.id ? -1 : 1))
+        .slice(0, limit)
+        .map((page) => page.id)
     },
 
-    deleteByIds(ids: string[]) {
+    async deleteByIds(ids: string[]) {
       for (const id of ids) {
         const page = pages.get(id)
         if (page) eventIds.delete(page.event.id)
         pages.delete(id)
       }
-      return Promise.resolve()
     },
 
-    clearExpiredSnapshots(before: Date) {
+    async clearExpiredSnapshots(before: Date) {
       let count = 0
       for (const page of pages.values()) {
         if (page.changedAt !== null && page.changedAt < before) {
@@ -182,7 +178,7 @@ export function createMemoryPageRepository(): PageRepository {
           count++
         }
       }
-      return Promise.resolve(count)
+      return count
     },
   }
 }

@@ -79,9 +79,9 @@ function countingRenderer(): OgpRenderer & { calls: OgpInput[] } {
   const calls: OgpInput[] = []
   return {
     calls,
-    render: (input) => {
+    render: async (input) => {
       calls.push(input)
-      return Promise.resolve(new Uint8Array(PNG_SIGNATURE))
+      return new Uint8Array(PNG_SIGNATURE)
     },
   }
 }
@@ -89,9 +89,9 @@ function countingRenderer(): OgpRenderer & { calls: OgpInput[] } {
 function throwingRenderer(): OgpRenderer & { calls: number } {
   const renderer = {
     calls: 0,
-    render: (): Promise<Uint8Array> => {
+    render: async (): Promise<Uint8Array> => {
       renderer.calls++
-      return Promise.reject(new Error('render failed'))
+      throw new Error('render failed')
     },
   }
   return renderer
@@ -273,7 +273,9 @@ describe('GET /:id/ogp.png（OGP 画像、§2.5）', () => {
     const clock = fakeClock(NOW)
     const storage: Deps['storage'] = {
       ...createMemoryObjectStorage(clock),
-      getOgpImage: () => Promise.reject(new Error('r2 read failed')),
+      getOgpImage: async () => {
+        throw new Error('r2 read failed')
+      },
     }
     const renderer = countingRenderer()
     const repo = createD1PageRepository(env.DB)
@@ -297,7 +299,9 @@ describe('GET /:id/ogp.png（OGP 画像、§2.5）', () => {
     }
     const storage: Deps['storage'] = {
       ...createMemoryObjectStorage(clock),
-      putOgpImage: () => Promise.reject(new Error('r2 write failed')),
+      putOgpImage: async () => {
+        throw new Error('r2 write failed')
+      },
     }
     const renderer = countingRenderer()
     const repo = createD1PageRepository(env.DB)

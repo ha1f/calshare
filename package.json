@@ -10,7 +10,7 @@
     "dev": "npm run build && wrangler dev",
     "build": "node scripts/build-web.mjs",
     "typecheck": "wrangler types && tsc -p tsconfig.core.json && tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
-    "lint": "eslint . && prettier --check .",
+    "lint": "wrangler types && eslint . && prettier --check .",
     "format": "prettier --write .",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
