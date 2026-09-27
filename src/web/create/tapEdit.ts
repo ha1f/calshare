@@ -115,7 +115,7 @@ function buildTextItem(
   config: TextItemConfig,
   state: CreateState,
   onChange: () => void,
-): { element: HTMLElement; update(): void } {
+): { element: HTMLElement; update(): void; focusInput(): void } {
   const root = createElement('div', { className: 'preview-item' })
   root.dataset.field = config.key
 
@@ -184,6 +184,7 @@ function buildTextItem(
   return {
     element: root,
     update: () => updateTextItem(config, state, root, viewButton, valueText, input, resetLink),
+    focusInput: () => input.focus(),
   }
 }
 
@@ -391,6 +392,7 @@ function buildDatetimeItem(
 function buildLocationSwapLink(
   state: CreateState,
   onChange: () => void,
+  focusAfterSwap: () => void,
 ): { element: HTMLElement; update(): void } {
   const link = createElement('button', {
     className: 'location-swap-link',
@@ -406,6 +408,8 @@ function buildLocationSwapLink(
     state.location = { mode: 'manual', value: title }
     state.title = { mode: 'manual', value: dateLabel }
     onChange()
+    // 押したリンク自身が hidden になるので、フォーカスを移さないと body に落ちる
+    focusAfterSwap()
   })
 
   function update(): void {
@@ -431,7 +435,7 @@ export function createPreviewView(
   const locationItem = buildTextItem(locationConfig, state, onChange)
   const memoItem = buildTextItem(memoConfig, state, onChange)
   const datetimeItem = buildDatetimeItem(state, onChange)
-  const locationSwapLink = buildLocationSwapLink(state, onChange)
+  const locationSwapLink = buildLocationSwapLink(state, onChange, () => titleItem.focusInput())
 
   titleItem.element.appendChild(locationSwapLink.element)
 
