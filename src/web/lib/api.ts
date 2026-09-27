@@ -26,7 +26,7 @@ const API_ERROR_CODES = {
 } satisfies Record<ApiErrorCode, true>
 
 function isApiErrorCode(value: unknown): value is ApiErrorCode {
-  return typeof value === 'string' && Object.hasOwn(API_ERROR_CODES, value)
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(API_ERROR_CODES, value)
 }
 
 /** 作成・取得・更新 API が 2xx 以外を返したとき、または `fetchWithTimeout` がタイムアウト・中断したときに投げる。呼び出し側は code でエラー文言を出し分ける（§5.7） */

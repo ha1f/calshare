@@ -40,14 +40,10 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
   await page.goto('/history')
   await expect(page.getByTestId('history-item')).toHaveCount(2)
 
-  // 履歴 → 編集（2 件あるので id で編集リンクを特定する）
-  const editLinkForId = page
-    .getByTestId('history-item')
-    .filter({
-      has: page.getByTestId('history-edit-link').and(page.locator(`[href="/${id}/edit"]`)),
-    })
-    .getByTestId('history-edit-link')
-  await Promise.all([page.waitForURL(new RegExp(`/${id}/edit$`)), editLinkForId.click()])
+  // 履歴 → 編集（新しい順に並ぶため先頭が 2 件目。取り違えていないことを href で確かめてから押す）
+  const editLink = page.getByTestId('history-edit-link').first()
+  await expect(editLink).toHaveAttribute('href', `/${id}/edit`)
+  await Promise.all([page.waitForURL(new RegExp(`/${id}/edit$`)), editLink.click()])
   await expect(page.getByTestId('start-input')).toHaveValue('2026-09-20T19:00')
   await page.getByTestId('start-input').fill('2026-09-21T20:00')
   await page.getByTestId('end-input').fill('2026-09-21T21:00')

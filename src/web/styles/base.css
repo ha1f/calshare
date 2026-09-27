@@ -56,7 +56,7 @@ textarea {
   width: 100%;
 }
 
-/* スクリーンリーダー向けのラベルなど、見た目は変えずに読み上げだけに使う要素に付ける（§6.5） */
+/* hidden や display: none にすると読み上げからも消えるため、見た目だけを消すのにこの形を使う */
 .visually-hidden {
   position: absolute;
   width: 1px;

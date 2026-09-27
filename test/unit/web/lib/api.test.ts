@@ -99,6 +99,7 @@ describe('readApiError', () => {
   it.each([
     ['本文が空オブジェクト', jsonResponse(500, {})],
     ['code が文字列でない', jsonResponse(500, { code: 123 })],
+    ['code が未知の文字列', jsonResponse(500, { code: 'UNKNOWN_CODE' })],
     ['本文が null', jsonResponse(500, null)],
     [
       '本文が JSON でない（HTML の 502 など）',
