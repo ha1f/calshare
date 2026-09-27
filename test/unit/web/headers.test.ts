@@ -18,6 +18,9 @@ function headerValueFor(path: string, headerName: string): string | undefined {
 describe('src/web/_headers', () => {
   it('全パスに CSP・X-Content-Type-Options・Referrer-Policy が載っている', () => {
     expect(headerValueFor('/*', 'Content-Security-Policy')).toContain("default-src 'self'")
+    expect(headerValueFor('/*', 'Content-Security-Policy')).toContain(
+      "require-trusted-types-for 'script'",
+    )
     expect(headerValueFor('/*', 'X-Content-Type-Options')).toBe('nosniff')
     expect(headerValueFor('/*', 'Referrer-Policy')).toBe('no-referrer')
   })

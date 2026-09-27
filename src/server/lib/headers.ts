@@ -3,7 +3,7 @@
  * が同じ値を持ち、test/unit/server/lib/headers.test.ts で両者の一致を検査する。
  */
 export const CONTENT_SECURITY_POLICY =
-  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; require-trusted-types-for 'script'"
 export const X_CONTENT_TYPE_OPTIONS = 'nosniff'
 export const REFERRER_POLICY = 'no-referrer'
 
