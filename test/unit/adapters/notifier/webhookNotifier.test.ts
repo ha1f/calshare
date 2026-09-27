@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createWebhookNotifier } from '../../../../src/adapters/notifier/webhookNotifier'
+import { requireDefined } from '../../../../src/core/assert'
 import {
   MAX_WEBHOOK_COMMENT_LENGTH,
   REPORT_COUNT_WARNING_THRESHOLD,
@@ -47,7 +48,11 @@ describe('createWebhookNotifier', () => {
       await notifier.notifyReport(notification())
 
       expect(fetchMock).toHaveBeenCalledOnce()
-      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>
+      const init = requireDefined(
+        fetchMock.mock.calls[0],
+        'fetch is called at least once',
+      )[1] as RequestInit
+      const body = JSON.parse(init.body as string) as Record<string, unknown>
       expect(body).toHaveProperty(bodyKey)
       expect(logger.warn).not.toHaveBeenCalled()
     })
@@ -100,7 +105,11 @@ describe('createWebhookNotifier', () => {
     async function sentBody(url: string, n: ReportNotification): Promise<string> {
       const notifier = createWebhookNotifier(url, createLogger())
       await notifier.notifyReport(n)
-      return fetchMock.mock.calls[0][1].body as string
+      const init = requireDefined(
+        fetchMock.mock.calls[0],
+        'fetch is called at least once',
+      )[1] as RequestInit
+      return init.body as string
     }
 
     it('Discord: allowed_mentions で @everyone を無効化し、コメントをコードブロックで囲む', async () => {
@@ -222,7 +231,10 @@ describe('createWebhookNotifier', () => {
 
     await notifier.notifyReport(notification())
 
-    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const init = requireDefined(
+      fetchMock.mock.calls[0],
+      'fetch is called at least once',
+    )[1] as RequestInit
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 })

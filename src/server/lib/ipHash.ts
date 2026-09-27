@@ -1,3 +1,4 @@
+import { requireDefined } from '../../core/assert'
 import { IPV6_BUCKET_PREFIX_BITS } from '../../core/config/limits'
 
 const IP_HASH_HEX_LENGTH = 32
@@ -42,7 +43,10 @@ function normalizeIp(ip: string): string {
 
 /** IPv6 アドレスを 8 グループの 16 進文字列に展開する。IPv6 に見えなければ null */
 function expandIpv6(ip: string): string[] | null {
-  const withoutZoneId = ip.split('%')[0]
+  const withoutZoneId = requireDefined(
+    ip.split('%')[0],
+    'ip.split always returns at least one element',
+  )
   if (!withoutZoneId.includes(':')) return null
 
   const withHextetSuffix = embedTrailingIpv4(withoutZoneId)
@@ -81,8 +85,14 @@ function embedTrailingIpv4(ip: string): string | null {
   if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255))
     return null
 
-  const high = ((octets[0] << 8) | octets[1]).toString(16)
-  const low = ((octets[2] << 8) | octets[3]).toString(16)
+  const [o0, o1, o2, o3] = [
+    requireDefined(octets[0], 'octets has exactly 4 elements'),
+    requireDefined(octets[1], 'octets has exactly 4 elements'),
+    requireDefined(octets[2], 'octets has exactly 4 elements'),
+    requireDefined(octets[3], 'octets has exactly 4 elements'),
+  ]
+  const high = ((o0 << 8) | o1).toString(16)
+  const low = ((o2 << 8) | o3).toString(16)
   return `${ip.slice(0, lastColon)}:${high}:${low}`
 }
 
@@ -91,7 +101,8 @@ function toIpv4IfMapped(groups: string[]): string | null {
   const isMapped = groups.slice(0, 5).every((g) => g === '0') && groups[5] === 'ffff'
   if (!isMapped) return null
 
-  const high = parseInt(groups[6], 16)
-  const low = parseInt(groups[7], 16)
+  // groups は常に 8 要素（expandIpv6 が保証する）なので、6・7 番目も必ず存在する
+  const high = parseInt(requireDefined(groups[6], 'groups has exactly 8 elements'), 16)
+  const low = parseInt(requireDefined(groups[7], 'groups has exactly 8 elements'), 16)
   return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.')
 }

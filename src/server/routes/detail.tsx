@@ -11,7 +11,7 @@ import { NotFound } from '../views/NotFound'
 export function detailRoutes(deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
 
-  // catch-all（§2.2 の評価順序で最後）。ID 形式に合わないパスはこのルートに一致せず Hono の既定 404 になる
+  // catch-all（§2.2 の評価順序で最後）。ID 形式に合わないパスはこのルートに一致せず app.notFound になる
   app.get(`/:id{${PAGE_ID_PATTERN}}`, async (c) => {
     const id = c.req.param('id')
     // request.url をそのままキーにすると、Hono がデコードしてから照合する %XX 表記違いのぶんだけ

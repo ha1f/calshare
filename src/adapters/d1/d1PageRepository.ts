@@ -1,3 +1,4 @@
+import { requireDefined } from '../../core/assert'
 import { D1_MAX_BIND_PARAMS } from '../../core/config/limits'
 import type { ChangeSnapshot, CreateSource, Jsonified } from '../../core/types'
 import {
@@ -131,7 +132,7 @@ export function createD1PageRepository(db: D1Database): PageRepository {
     if (rows.length !== 1) {
       throw new InvariantViolation(`page ${pageId} does not have exactly 1 event`)
     }
-    return rows[0]
+    return requireDefined(rows[0], 'rows has exactly 1 element')
   }
 
   return {
@@ -235,7 +236,9 @@ export function createD1PageRepository(db: D1Database): PageRepository {
       // 事前の SELECT と db.batch の間に GC の deleteByIds が同じページを消すと、
       // UPDATE は 0 行のまま成功してしまう。実際に更新できた行数で not_found を判定する
       const [pagesResult] = await db.batch([pagesStmt, eventsStmt])
-      if (pagesResult.meta.changes === 0) return 'not_found'
+      if (requireDefined(pagesResult, 'batch returns a result per statement').meta.changes === 0) {
+        return 'not_found'
+      }
       return 'ok'
     },
 

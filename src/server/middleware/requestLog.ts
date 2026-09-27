@@ -8,12 +8,13 @@ export function requestLog(deps: Deps) {
   return createMiddleware(async (c, next) => {
     const start = Date.now()
     await next()
+    const pageId = resolveLoggablePageId(c.req.param('id'))
     logRequestCompleted(deps.logger, {
       route: routePath(c),
       method: c.req.method,
       status: c.res.status,
       durationMs: Date.now() - start,
-      pageId: resolveLoggablePageId(c.req.param('id')),
+      ...(pageId !== undefined && { pageId }),
     })
   })
 }

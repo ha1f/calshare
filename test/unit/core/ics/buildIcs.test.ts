@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { requireDefined } from '../../../../src/core/assert'
 import { buildIcs } from '../../../../src/core/ics/buildIcs'
 import type { IcsInput } from '../../../../src/core/ics/buildIcs'
 import { jstDate } from '../../../../src/core/time/jst'
@@ -29,9 +30,13 @@ function extractDescription(ics: string): string {
   const lines = ics.split('\r\n')
   const start = lines.findIndex((l) => l.startsWith('DESCRIPTION:'))
   if (start < 0) throw new Error('DESCRIPTION line not found')
-  let description = lines[start].slice('DESCRIPTION:'.length)
-  for (let i = start + 1; i < lines.length && lines[i].startsWith(' '); i++) {
-    description += lines[i].slice(1)
+  let description = requireDefined(lines[start], 'start is a valid index into lines').slice(
+    'DESCRIPTION:'.length,
+  )
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = requireDefined(lines[i], 'i is a valid index into lines')
+    if (!line.startsWith(' ')) break
+    description += line.slice(1)
   }
   return description
 }

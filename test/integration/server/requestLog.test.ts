@@ -181,7 +181,7 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     expect(errorSpy).not.toHaveBeenCalled()
   })
 
-  it('PAGE_ID_PATTERN の制約が無いルート（POST /api/pages/:id/reports）では、URL の任意文字列が pageId としてログに出ない', async () => {
+  it('POST /api/pages/:id/reports の :id が PAGE_ID_PATTERN に合わないと、どのルートにも一致せず URL の任意文字列が pageId としてログに出ない', async () => {
     const deps = buildFakeDeps({ logger: consoleLogger })
     const bogusId = 'x'.repeat(5000)
 
@@ -195,7 +195,8 @@ describe('requestLog ミドルウェア（§9.6）', () => {
 
     expect(res.status).toBe(404)
     const completed = loggedLines().find((line) => line.event === 'request_completed')
-    expect(completed).toMatchObject({ route: '/api/pages/:id/reports', status: 404 })
+    // どのルートにも一致しなかったリクエストなので、requestLog 自身の登録パス（'/*'）になる
+    expect(completed).toMatchObject({ route: '/*', status: 404 })
     expect(completed).not.toHaveProperty('pageId')
     for (const line of logSpy.mock.calls.map((call) => call[0] as string)) {
       expect(line).not.toContain(bogusId)

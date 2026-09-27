@@ -17,7 +17,7 @@ function node(
   style: Record<string, string | number>,
   children?: SatoriNode[] | string,
 ): SatoriNode {
-  return { type, props: { style, children } }
+  return { type, props: children === undefined ? { style } : { style, children } }
 }
 
 /** ユーザー入力はテキストノードの中身としてのみ渡す。文字列連結で SVG/HTML を組み立てない（§2.5） */
