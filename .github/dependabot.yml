@@ -12,8 +12,20 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
+    # 理由と外す条件はガイドライン §1.1。
+    ignore:
+      - dependency-name: 'satori'
+        versions: ['>=0.33.0']
+      - dependency-name: 'vitest'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
       interval: 'weekly'
+    groups:
+      github-actions:
+        patterns:
+          - '*'

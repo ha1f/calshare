@@ -13,22 +13,21 @@ calshare の本番デプロイと、それを「公開してよい」という�
 - `main` へマージされるたびに `deploy.yml` の `gate` ジョブが必ず走り、`DEPLOY_ENABLED` の状態を
   ジョブサマリ（Actions の実行結果画面）に出す。
 - `DEPLOY_ENABLED=true` のときだけ `deploy` ジョブが走り、次を順に実行する。
-  1. `actions/checkout@v4`
-  2. Node のバージョンを `.nvmrc`（無ければ 22）から決めて `actions/setup-node@v4`
-  3. `package-lock.json` が無ければ（足場 PR 未マージ）そこで打ち切り、理由をサマリに出して成功終了する
-  4. `PUBLIC_DOMAIN` が未設定ならここで失敗して止まる（下記「オーナーが行う最小の作業」参照。
+  1. `actions/checkout`（SHA 固定、`persist-credentials: false`）
+  2. `actions/setup-node`（`node-version-file: .nvmrc`、`cache: npm`）
+  3. `PUBLIC_DOMAIN` が未設定ならここで失敗して止まる（下記「オーナーが行う最小の作業」参照。
      `npm ci` やマイグレーション適用より前に確認するため、未設定のまま本番 D1 に
      マイグレーションだけ適用されることはない）
-  5. `npm ci`
-  6. `npm run build`
-  7. `npx wrangler@4 d1 migrations apply calshare --remote`
-  8. `npx wrangler@4 deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"`
-  9. `RATE_LIMIT_PEPPER` が未登録なら生成して登録する（`scripts/cf/ensure-secret.mjs`。
+  4. `npm ci`
+  5. `npm run build`
+  6. `npx wrangler d1 migrations apply calshare --remote`
+  7. `npx wrangler deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"`
+  8. `RATE_LIMIT_PEPPER` が未登録なら生成して登録する（`scripts/cf/ensure-secret.mjs`。
      H6 の作業を初回デプロイの中で完結させる。登録済みなら何もしない）
-  10. `REPORT_WEBHOOK_URL` の GitHub Secret が設定されていれば、同じ値で Worker のシークレットに
-      登録する（`--force`。H7。GitHub Secret が無ければ何もせず終了する。provision の
-      `secrets` ジョブは Worker 未デプロイの間はこの登録をスキップするため、初回デプロイでは
-      ここが唯一の登録経路になる）
+  9. `REPORT_WEBHOOK_URL` の GitHub Secret が設定されていれば、同じ値で Worker のシークレットに
+     登録する（`--force`。H7。GitHub Secret が無ければ何もせず終了する。provision の
+     `secrets` ジョブは Worker 未デプロイの間はこの登録をスキップするため、初回デプロイでは
+     ここが唯一の登録経路になる）
 - `concurrency: production` により、デプロイは常に直列実行される（実行中のデプロイを取り消して
   マイグレーションとデプロイの間で状態が壊れることを避けるため、進行中のジョブはキャンセルしない）。
 
@@ -69,7 +68,7 @@ GitHub の Actions タブ → `deploy` ワークフロー → `Run workflow` か
   `RATE_LIMIT_PEPPER`（H6）と、GitHub Secret `REPORT_WEBHOOK_URL` を設定済みなら
   `REPORT_WEBHOOK_URL`（H7、任意）の Worker シークレットへの登録は、どちらもデプロイの中で
   自動登録されるため事前の準備は不要。
-- デプロイ後、design.md §14.1 が挙げる「Workers の起動時間制限（400ms）」で失敗していないか
+- デプロイ後、design.md §14.1 が挙げる「Workers の起動時間制限（グローバルスコープの評価 1 秒）」で失敗していないか
   Actions のログを確認する（`wrangler deploy` 自体は成功しても、初回リクエストで isolate が
   落ちることがある。§2.5 の遅延初期化が効いているかは実機で見るしかない）。
 - `wrangler.jsonc` の `workers_dev` が `false` になっているか（H3 完了後の前提。`true` のままだと
@@ -91,8 +90,8 @@ GitHub の Actions タブ → `deploy` ワークフロー → `Run workflow` か
   可能性が高い。
 - `PUBLIC_DOMAIN が設定されていることを確認する` で失敗する場合、上記「オーナーが行う最小の
   作業」の `gh variable set PUBLIC_DOMAIN` を実行してから再実行する。
-- `wrangler deploy` で失敗する場合、スクリプトサイズ上限（Paid 10MB gzip）超過か、
-  起動時間制限（400ms）超過の可能性がある（design.md §14.1）。
+- `wrangler deploy` で失敗する場合、スクリプトサイズ上限（uncompressed 64 MiB）超過か、
+  起動時間制限（グローバルスコープの評価 1 秒）超過の可能性がある（design.md §14.1）。
 - `RATE_LIMIT_PEPPER を確認・登録する` で失敗する場合、`wrangler secret list` の出力を
   判定できていない（`scripts/cf/ensure-secret.mjs` は判定できないと既存の値を守るため
   登録せずに失敗する）。ログを確認し、`CLOUDFLARE_API_TOKEN` の権限か wrangler の出力形式の

@@ -35,24 +35,15 @@ concurrency:
   group: moderation
   cancel-in-progress: false
 
-env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   moderate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
 
-      - name: Node のバージョンを決める
-        id: node-version
-        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: .nvmrc, cache: npm }
 
       # wrangler.jsonc の d1_databases から DB 名を解決するため、無いと分かりにくい
       # wrangler のエラーで落ちる。理由を出して早期に止める。
@@ -63,15 +54,19 @@ jobs:
             exit 1
           fi
 
+      - run: npm ci
+
       - name: SQL を組み立てる
         id: build-sql
         env:
           ACTION: ${{ inputs.action }}
           PAGE_ID: ${{ inputs.page_id }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ "$ACTION" = "hide-by-creator" ]; then
             LOOKUP_SQL=$(node scripts/cf/moderation-sql.mjs --lookup --page-id "$PAGE_ID")
-            npx wrangler@4 d1 execute calshare --remote --json --command "$LOOKUP_SQL" > lookup.json
+            npx wrangler d1 execute calshare --remote --json --command "$LOOKUP_SQL" > lookup.json
             IP_HASH=$(node scripts/cf/moderation-sql.mjs --extract-field creator_ip_hash < lookup.json)
             DEVICE_ID=$(node scripts/cf/moderation-sql.mjs --extract-field creator_device_id < lookup.json)
             # design.md §9.5/§9.6 のとおり、これらの値は Actions のログに残さない。
@@ -84,9 +79,12 @@ jobs:
 
       - name: 対象件数を確認する
         id: count
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           COUNT_SQL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('sql.json','utf8')).countSql)")
-          npx wrangler@4 d1 execute calshare --remote --json --command "$COUNT_SQL" > count.json
+          npx wrangler d1 execute calshare --remote --json --command "$COUNT_SQL" > count.json
           COUNT=$(node scripts/cf/moderation-sql.mjs --extract-field count < count.json)
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
 
@@ -102,9 +100,12 @@ jobs:
       # まとめて更新するため、誤って巻き込んだページを後から特定して unhide で戻せるようにする。
       - name: 対象 id を記録する
         id: list
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           LIST_SQL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('sql.json','utf8')).listSql)")
-          npx wrangler@4 d1 execute calshare --remote --json --command "$LIST_SQL" > list.json
+          npx wrangler d1 execute calshare --remote --json --command "$LIST_SQL" > list.json
           node scripts/cf/moderation-sql.mjs --extract-ids < list.json > target-ids.json
           {
             echo "### 対象ページ id"
@@ -114,9 +115,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 更新を実行する
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           UPDATE_SQL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('sql.json','utf8')).sql)")
-          npx wrangler@4 d1 execute calshare --remote --yes --command "$UPDATE_SQL"
+          npx wrangler d1 execute calshare --remote --yes --command "$UPDATE_SQL"
 
       - name: サマリに記録する
         env:
@@ -138,6 +142,8 @@ jobs:
 
       - name: ログ Issue を用意する
         id: log-issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh label create "moderation-log" --color "5319E7" --description "通報対応の実行記録" 2>/dev/null || true
           TITLE="[運用] 通報対応ログ"
@@ -159,6 +165,7 @@ jobs:
           COUNT: ${{ steps.count.outputs.count }}
           ACTOR: ${{ github.actor }}
           ISSUE_NUMBER: ${{ steps.log-issue.outputs.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
             echo "### $ACTION - $(date -u +%Y-%m-%dT%H:%M:%SZ)"

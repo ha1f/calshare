@@ -1157,13 +1157,14 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
   gate ジョブ: リポジトリ変数 DEPLOY_ENABLED が true でなければここで終了する（H9 の公開承認そのもの）
   deploy ジョブ: 変数 PUBLIC_DOMAIN が未設定なら失敗させて止める（sameOrigin の検証が本番 Origin
     と一致しなくなるため。マイグレーション適用より前に確認する）
-    → npm ci → npm run build → `npx wrangler@4 d1 migrations apply calshare --remote`
-    → `npx wrangler@4 deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"`
+    → npm ci → npm run build → `npx wrangler d1 migrations apply calshare --remote`
+    → `npx wrangler deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"`
     → デプロイ直後に RATE_LIMIT_PEPPER が未登録なら生成して登録する（H6 をここで完結させる。§13）
     → GitHub Secret REPORT_WEBHOOK_URL があれば同じ値で Worker のシークレットに登録する
       （H7、任意。§13）
   サードパーティ action は使わない（GitHub 公式の actions/checkout・actions/setup-node のみ。バージョンは
-  Dependabot が追従するためここには書かない。wrangler は npx wrangler@4 で都度呼ぶ）。
+  Dependabot が追従するためここには書かない。wrangler は npm ci 済みの node_modules から
+  `npx wrangler` で都度呼ぶ）。
   CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID は GitHub Secrets。手順は docs/runbooks/deploy.md。
 ```
 
@@ -1653,7 +1654,7 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
 **パッケージ管理と Node**
 
 - パッケージマネージャは npm。`package-lock.json` をコミットする。依存は caret（`^`）指定で、実際のバージョンは lockfile で固定する。
-- Node は `>=22`（`package.json` の `engines`）。`.nvmrc` = `22`。ローカルは v22.19、CI は `node-version-file: .nvmrc` で同じ 22 系を使う。（実装時の実測: `wrangler@4.133.0` は `package.json` の `engines.node` が `>=22.0.0` で、Node 20 では起動時に明示的に拒否される。設計時点の想定（Node 20 系）と `wrangler` 4.133 系の実際の要件が食い違ったため、実物を優先して 22 系に変更した。T1 の完了条件）
+- Node は `>=22`（`package.json` の `engines`）。`.nvmrc` = `22`。ローカルは v22.19、CI は `node-version-file: .nvmrc` で同じ 22 系を使う。（実装時の実測: `wrangler` 4.133.0 は `package.json` の `engines.node` が `>=22.0.0` で、Node 20 では起動時に明示的に拒否される。設計時点の想定（Node 20 系）と `wrangler` 4.133 系の実際の要件が食い違ったため、実物を優先して 22 系に変更した。T1 の完了条件）
 
 **依存パッケージ**（T1 時点。satori / `@resvg/resvg-wasm` は T10 で追加する。yoga は `satori/standalone` に同梱の `yoga.wasm` を使うため別パッケージの追加は無い）
 

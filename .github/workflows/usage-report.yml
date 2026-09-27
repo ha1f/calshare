@@ -12,30 +12,24 @@ permissions:
   contents: read
   issues: write
 
-env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   report:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
 
-      - name: Node のバージョンを決める
-        id: node-version
-        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 22)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: .nvmrc, cache: npm }
 
       # H5（API トークン発行）より前に main へマージされると、schedule はこの時点で発火し始める。
       # provision / deploy は前提が無いときスキップして成功終了する設計なので、ここも合わせる
       # （失敗メールが毎週届く状態を「そういうもの」にしない）。
       - name: Secrets の登録状況を確認する
         id: secrets-check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
@@ -48,6 +42,9 @@ jobs:
       - name: 使用量レポートを取得する
         id: usage
         if: steps.secrets-check.outputs.present == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           node scripts/cf/usage-report.mjs --json > usage.json
           node scripts/cf/usage-report.mjs --markdown-from-json usage.json > usage.md
@@ -57,6 +54,8 @@ jobs:
 
       - name: しきい値超過の Issue を用意する
         if: steps.secrets-check.outputs.present == 'true' && steps.usage.outputs.exceeded_count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh label create "owner help wanted" --color "B60205" --description "オーナーの判断が必要な運用課題" 2>/dev/null || true
           TITLE="[運用] Cloudflare 使用量がしきい値を超えています"

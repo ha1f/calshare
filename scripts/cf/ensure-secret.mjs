@@ -96,14 +96,14 @@ export async function isWorkerDeployed({ api, scriptName }) {
 }
 
 function wranglerListSecrets() {
-  const out = execFileSync('npx', ['wrangler@4', 'secret', 'list', '--format', 'json'], {
+  const out = execFileSync('npx', ['wrangler', 'secret', 'list', '--format', 'json'], {
     encoding: 'utf8',
   })
   return JSON.parse(out)
 }
 
 function wranglerPutSecret(name, value) {
-  execFileSync('npx', ['wrangler@4', 'secret', 'put', name], { input: value, encoding: 'utf8' })
+  execFileSync('npx', ['wrangler', 'secret', 'put', name], { input: value, encoding: 'utf8' })
 }
 
 function formatText(result) {
