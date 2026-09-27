@@ -330,7 +330,7 @@ CLAUDE.md の規約に従う。加えて本リポジトリでは、設計書の�
   - `applyD1Migrations` `createExecutionContext` `waitOnExecutionContext` `reset` は `cloudflare:test` のまま使う（非推奨タグは無い）。
 - ストレージ分離はテストファイル単位。同一ファイルの `it()` 間でデータが残る。`test/integration/setup.ts` の `beforeEach` で `reset()`（全バインディングのデータを削除）を呼び、その直後に `applyD1Migrations` を再適用する。各ファイルに `DELETE FROM ...` を書かない[^pool-workers-isolation][^pool-workers-test-apis]。
   - `reset()` は D1 のテーブル定義も削除する（実測。`reset()` 直後の `sqlite_master` が空配列になることを確認した）。`applyD1Migrations` を必ず後ろに置く。
-  - 導入前後で `npm run test:integration` の所要時間を比べ、大きく伸びる（目安 1.5 倍超）なら `DELETE FROM` 方式に戻して理由を setup.ts に書く。実測では約 1.0〜1.1 倍で閾値を下回った。
+  - 導入前後で `npm run test:integration` の所要時間を比べ、大きく伸びる（目安 1.5 倍超）なら `DELETE FROM` 方式に戻して理由を setup.ts に書く。
 - `ctx.waitUntil` の完了を待つ経路（OGP の R2 put、Webhook）は `createExecutionContext()` で ctx を作って `app.fetch(req, env, ctx)` を直接呼び、`waitOnExecutionContext(ctx)` の後に検証する。
 - 状態変更 API のリクエストは `test/integration/helpers/jsonRequest.ts` で組む（Content-Type・Origin を付ける）。
 - 時刻・ID は `createApp(fakeDeps)` で Fake に差し替える。`.dev.vars` に依存しない（`vitest.config.ts` の `miniflare.bindings` が優先する）。
