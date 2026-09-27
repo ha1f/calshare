@@ -2,6 +2,8 @@ import { buildIcs, type IcsInput } from '../../core/ics/buildIcs'
 import type { PageRecord } from '../../ports/pageRepository'
 import type { Deps } from '../deps'
 
+export const ICS_EXTENSION = '.ics'
+
 /** 詳細ページの絶対 URL を組む（§9.9）。`request.url` / `Host` は使わず `config.publicOrigin` から組む */
 export function buildDetailUrl(publicOrigin: string, pageId: string): string {
   return new URL(`/${pageId}`, publicOrigin).toString()

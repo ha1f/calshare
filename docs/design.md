@@ -1042,7 +1042,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 | 大まかな UA 分類（LINE / iOS / Android / その他） | UA 文字列そのもの |
 | GC の処理件数・所要時間 | |
 
-ログは `console.log(JSON.stringify({...}))` の構造化ログにする。`Logger` ポートの実装は `adapters/logger/consoleLogger.ts`（T1）の 1 つで、`Deps.logger` にはこれを配線する。`consoleLogger` は `error` フィールドに `Error` インスタンスを受け取ったら `{ name, message }`（message は 200 文字で切り詰め）に正規化し、それ以外の値は捨てる。呼び出し側が例外を渡しても入力内容がログに混ざらないようにするため。`src/server/lib/logger.ts`（T18）はポートの実装ではなく、リクエスト単位の文脈（ルート名・メソッド・ステータス・所要時間・pageId）を `Logger` に載せる薄いヘルパで、`middleware/requestLog.ts` から使う。Cloudflare のエッジが取得するプラットフォームレベルのログは Cloudflare 側の基盤機能であり、ここでの方針は「アプリケーションが自ら生成するログ」に限る。ルートが catch していない例外は Hono の既定の errorHandler が `console.error(err)` で生の Error（スタックトレース込み）を出してしまうため、`app.ts` に `app.onError` を登録して `logUnhandledError`（`src/server/lib/logger.ts`）経由の構造化ログに一本化する（T18）。
+ログは `console.log(JSON.stringify({...}))` の構造化ログにする。`Logger` ポートの実装は `adapters/logger/consoleLogger.ts`（T1）の 1 つで、`Deps.logger` にはこれを配線する。`consoleLogger` は `error` フィールドに `Error` インスタンスを受け取ったら `{ name, message }`（message は 200 文字で切り詰め）に正規化し、それ以外の値は捨てる。呼び出し側が例外を渡しても入力内容がログに混ざらないようにするため。`src/server/lib/logger.ts`（T18）はポートの実装ではなく、リクエスト単位の文脈（ルート名・メソッド・ステータス・所要時間・pageId）を `Logger` に載せる薄いヘルパで、`middleware/requestLog.ts` から使う。Cloudflare のエッジが取得するプラットフォームレベルのログは Cloudflare 側の基盤機能であり、ここでの方針は「アプリケーションが自ら生成するログ」に限る。ルートが catch していない例外は Hono の既定の errorHandler が `console.error(err)` で生の Error（スタックトレース込み）を出してしまうため、`app.ts` に `app.onError` を登録して `logUnhandledError`（`src/server/lib/logger.ts`）経由の構造化ログに一本化する（T18）。`app.onError` は `/api/*` なら JSON、それ以外は `text/plain` の 500 を返す。どのルートにも一致しなかったリクエストは `app.notFound`（`src/server/lib/notFound.tsx`）が同じ基準でパスを 3 通りに分け、`/api/*` は JSON、`.ics` は `text/plain`、それ以外は `NotFound` ビューの HTML を返す。
 
 **転換率の集計**: concept §02 が KPI の最上位に置く「詳細ページ → 自分も作る」は、`pages.source` の集計（`SELECT source, COUNT(*) FROM pages GROUP BY source`。GC で消えるので日次で控える）と、リクエストログのルート名（Hono の `routePath()` がそのまま返す、ID の Crockford パターンを含んだ `` /:id{[0-9a-hjkmnp-tv-z]{12}} ``）の件数から「詳細 PV」「作成数」「CTA 経由作成数」の 3 つを出せる。個人情報は増えない。`creator_ip_hash` / `creator_device_id` はレート制限と同じ扱い（pepper 付き HMAC、ページと一緒に GC）でログには出さない。
 
@@ -1234,6 +1234,7 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 │   │   ├── lib/{edgeCache,headers,ipHash,deviceCookie,logger,errors,pageAccess,assets,ics}.ts
 │   │   │                          # pageAccess: isServable。assets: ASSETS から HTML / PNG を取り Response を包み直す（§2.2）
 │   │   │                          # ics: PageRecord から buildIcs を呼ぶ（作成・更新・自己修復で共用）。logger: リクエスト文脈のヘルパ（T18、§9.6）
+│   │   ├── lib/notFound.tsx       # app.notFound の実体。パスの形で /api/*・.ics・HTML の 3 通りに分ける
 │   │   ├── middleware/{securityHeaders,requestLog,rateLimit,sameOrigin,jsonBody}.ts
 │   │   │                          # sameOrigin: Sec-Fetch-Site / Origin 検査。jsonBody: Content-Type 検査と本文 byte 上限・JSON の形式検証
 │   │   ├── routes/

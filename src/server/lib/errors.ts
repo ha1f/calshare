@@ -35,8 +35,8 @@ export function validationApiError(code: ValidationErrorCode): ApiRequestError {
 }
 
 /**
- * ルートハンドラで catch した例外を { status, body } に変換する。`ApiRequestError` はそのまま、
- * `InvariantViolation` を含むそれ以外の例外は 500 `INTERNAL` にする
+ * 例外を { status, body } に変換する（app.onError から呼ぶ）。`ApiRequestError` はそのまま、
+ * それ以外の例外は 500 `INTERNAL` にする
  */
 export function toApiErrorResponse(error: unknown): { status: number; body: ApiError } {
   if (error instanceof ApiRequestError) {

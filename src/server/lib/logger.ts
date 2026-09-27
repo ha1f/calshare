@@ -1,5 +1,6 @@
 import { isValidPageId } from '../../core/id/crockford'
 import type { Logger } from '../../ports/logger'
+import { ICS_EXTENSION } from './ics'
 
 export interface RequestLogContext {
   route: string
@@ -7,10 +8,8 @@ export interface RequestLogContext {
   status: number
   durationMs: number
   /** 検証済みのページ ID のみを渡す。未知の文字列は resolveLoggablePageId で弾いてから渡す */
-  pageId?: string
+  pageId: string | undefined
 }
-
-const ICS_EXTENSION = '.ics'
 
 /**
  * ログに載せてよい pageId を返す。末尾の `.ics` を除いた値がページ ID の形式に一致するときだけ
@@ -42,7 +41,7 @@ export function logRequestCompleted(logger: Logger, context: RequestLogContext):
  */
 export function logUnhandledError(
   logger: Logger,
-  context: { route: string; pageId?: string },
+  context: { route: string; pageId: string | undefined },
   error: unknown,
 ): void {
   logger.error('unhandled_error', { route: context.route, pageId: context.pageId, error })

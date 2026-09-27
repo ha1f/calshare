@@ -39,6 +39,7 @@ describe('logRequestCompleted', () => {
       method: 'GET',
       status: 200,
       durationMs: 1,
+      pageId: undefined,
     })
 
     expect(logger.info).toHaveBeenCalledWith(

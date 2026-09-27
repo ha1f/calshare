@@ -25,8 +25,8 @@ export function createD1RateLimiter(db: D1Database): RateLimiter {
       if (rules.length === 0) return { allowed: true, exceeded: [] }
 
       const targets = rules.map((rule) => ({ rule, windowStart: windowStart(now, rule.window) }))
-      // prepare はループの外で 1 回だけ呼び、bind だけを繰り返す（DRY）。db は buildDeps 時点では
-      // 読まないので、他のアダプタと同じく呼び出しの中で prepare する（deps.test.ts が固定する不変条件）
+      // db は buildDeps 時点では読まないので、他のアダプタと同じく呼び出しの中で prepare する
+      // （deps.test.ts が固定する不変条件）
       const selectStmt = db.prepare(
         'SELECT count FROM rate_limit_counters WHERE scope = ? AND bucket_key = ? AND window_kind = ? AND window_start = ?',
       )

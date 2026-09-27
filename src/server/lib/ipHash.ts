@@ -101,7 +101,6 @@ function toIpv4IfMapped(groups: string[]): string | null {
   const isMapped = groups.slice(0, 5).every((g) => g === '0') && groups[5] === 'ffff'
   if (!isMapped) return null
 
-  // groups は常に 8 要素（expandIpv6 が保証する）なので、6・7 番目も必ず存在する
   const high = parseInt(requireDefined(groups[6], 'groups has exactly 8 elements'), 16)
   const low = parseInt(requireDefined(groups[7], 'groups has exactly 8 elements'), 16)
   return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.')

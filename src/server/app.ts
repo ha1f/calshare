@@ -26,29 +26,27 @@ export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
   app.use('*', securityHeaders())
 
   // ルートが投げた例外・意図的な ApiRequestError はここで応答に変換する。各ルートに
-  // try / catch と c.json(body, status) を繰り返し書かない（§5.4）
+  // try / catch と c.json(body, status) を繰り返し書かない（docs/guidelines.md §5.4）
   app.onError((err, c) => {
     // HTTPException は Hono 自身が投げることがあるので、自前のステータス・レスポンスをそのまま返す
     if (err instanceof HTTPException) return err.getResponse()
 
-    // ApiRequestError の 4xx は意図した応答なのでログに残さない。5xx とそれ以外の例外だけ記録する
-    if (!(err instanceof ApiRequestError) || err.status >= 500) {
+    const isApi = c.req.path.startsWith('/api/')
+    // ApiRequestError の 4xx は /api/* では意図した応答なのでログに残さない。HTML ルートは
+    // 常に 500 を返すので、応答が 5xx になるときは必ず記録する
+    if (!isApi || !(err instanceof ApiRequestError) || err.status >= 500) {
       const pageId = resolveLoggablePageId(c.req.param('id'))
-      logUnhandledError(
-        deps.logger,
-        { route: routePath(c), ...(pageId !== undefined && { pageId }) },
-        err,
-      )
+      logUnhandledError(deps.logger, { route: routePath(c), pageId }, err)
     }
 
-    if (c.req.path.startsWith('/api/')) {
+    if (isApi) {
       const { status, body } = toApiErrorResponse(err)
       return c.json(body, status as ContentfulStatusCode)
     }
     return c.text('Internal Server Error', 500)
   })
 
-  // どのルートにも一致しないリクエストへの応答（§5.4）。top-level app にしか効かないので、
+  // どのルートにも一致しないリクエストへの応答（docs/guidelines.md §5.4）。top-level app にしか効かないので、
   // routes/*.ts の各サブアプリには登録しない
   app.notFound((c) => handleNotFound(c, deps.config.serviceName))
 
