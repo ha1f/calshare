@@ -5,14 +5,14 @@ export function createMemoryReportRepository(): ReportRepository {
   const lastReportedAt = new Map<string, Date>()
 
   return {
-    insertIfNotDuplicate: async (report: NewReportInput, dedupeSince: Date) => {
+    insertIfNotDuplicate: (report: NewReportInput, dedupeSince: Date) => {
       const key = `${report.pageId}:${report.ipHash}`
       const previous = lastReportedAt.get(key)
       if (previous && previous >= dedupeSince) {
-        return 'duplicate'
+        return Promise.resolve('duplicate' as const)
       }
       lastReportedAt.set(key, report.now)
-      return 'inserted'
+      return Promise.resolve('inserted' as const)
     },
   }
 }

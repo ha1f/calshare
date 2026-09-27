@@ -33,7 +33,7 @@ async function readHistoryEntry(
 ): Promise<HistoryEntry | undefined> {
   return page.evaluate((pageId) => {
     const raw = localStorage.getItem('calshare.history')
-    const entries: HistoryEntry[] = raw === null ? [] : JSON.parse(raw)
+    const entries: HistoryEntry[] = raw === null ? [] : (JSON.parse(raw) as HistoryEntry[])
     return entries.find((entry) => entry.id === pageId)
   }, id)
 }

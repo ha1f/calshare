@@ -16,7 +16,7 @@ export function createMemoryRateLimiter(): RateLimiter {
   const counters = new Map<string, CounterEntry>()
 
   return {
-    consume: async (rules, now) => {
+    consume: (rules, now) => {
       const targets = rules.map((rule) => {
         const ws = windowStart(now, rule.window)
         return { rule, key: counterKey(rule, ws), windowStart: ws }
@@ -25,19 +25,20 @@ export function createMemoryRateLimiter(): RateLimiter {
       const exceeded = targets
         .filter(({ rule, key }) => (counters.get(key)?.count ?? 0) >= rule.limit)
         .map(({ rule }) => rule)
-      if (exceeded.length > 0) return { allowed: false, exceeded }
+      if (exceeded.length > 0) return Promise.resolve({ allowed: false, exceeded })
 
       for (const { key, windowStart: ws } of targets) {
         const current = counters.get(key)
         counters.set(key, { windowStart: ws, count: (current?.count ?? 0) + 1 })
       }
-      return { allowed: true, exceeded: [] }
+      return Promise.resolve({ allowed: true, exceeded: [] })
     },
-    deleteExpired: async (before) => {
+    deleteExpired: (before) => {
       const cutoff = before.toISOString()
       for (const [key, entry] of counters) {
         if (entry.windowStart < cutoff) counters.delete(key)
       }
+      return Promise.resolve()
     },
   }
 }

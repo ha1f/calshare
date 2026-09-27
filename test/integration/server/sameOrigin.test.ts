@@ -84,6 +84,6 @@ describe('POST /api/pages の同一オリジン検証・JSON 必須（§9.8）',
     const res = await app.fetch(jsonRequest('/api/pages', { method: 'POST', body: validBody() }))
 
     expect(res.status).toBe(200)
-    expect(((await res.json()) as { url: string }).url).toContain(TEST_ORIGIN)
+    expect((await res.json<{ url: string }>()).url).toContain(TEST_ORIGIN)
   })
 })

@@ -1,4 +1,11 @@
-import { createPage, DONE_URL_PATTERN, expect, test, waitForCreateRequest } from './fixtures'
+import {
+  createPage,
+  createRequestBody,
+  DONE_URL_PATTERN,
+  expect,
+  test,
+  waitForCreateRequest,
+} from './fixtures'
 
 test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 → 詳細の変更バナー → ics までの一連の流れ', async ({
   page,
@@ -23,7 +30,7 @@ test('作成 → 完成 → 詳細 → 作ってみる → 履歴 → 編集 →
     waitForCreateRequest(page),
     page.getByRole('button', { name: 'URLを作る' }).click(),
   ])
-  expect(createRequest.postDataJSON().source).toBe('detail_cta')
+  expect(createRequestBody(createRequest).source).toBe('detail_cta')
   await page.waitForURL(DONE_URL_PATTERN)
   const secondMatch = DONE_URL_PATTERN.exec(page.url())
   if (secondMatch === null) throw new Error('failed to extract page id from /done URL')

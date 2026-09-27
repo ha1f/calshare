@@ -54,7 +54,7 @@ describe('POST /api/pages', () => {
     const res = await app.fetch(postPages(createBody({ source: 'prefill' })))
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as CreatePageResponse
+    const json = await res.json<CreatePageResponse>()
     expect(Object.keys(json).sort()).toEqual(
       ['createdAt', 'editToken', 'expiresAt', 'fields', 'id', 'updatedAt', 'url', 'version'].sort(),
     )
@@ -91,7 +91,7 @@ describe('POST /api/pages', () => {
     )
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as CreatePageResponse
+    const json = await res.json<CreatePageResponse>()
     expect(json.expiresAt).toBe('2026-09-23T01:00:00.000Z') // NOW + 7 日
     expect(await deps.storage.getIcs(json.id)).toBeNull()
   })
@@ -107,7 +107,7 @@ describe('POST /api/pages', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers.get('Set-Cookie')).toBeNull()
-    const json = (await res.json()) as CreatePageResponse
+    const json = await res.json<CreatePageResponse>()
     const page = await deps.pages.findById(json.id)
     expect(page?.creatorDeviceId).toBe(existingDeviceId)
   })
@@ -128,7 +128,7 @@ describe('POST /api/pages', () => {
       expect(setCookie).toMatch(/^cs_device=[0-9a-f-]{36}/)
       const newDeviceId = setCookie?.split(';')[0]?.split('=')[1]
       expect(newDeviceId).not.toBe(cookieValue)
-      const json = (await res.json()) as CreatePageResponse
+      const json = await res.json<CreatePageResponse>()
       const page = await deps.pages.findById(json.id)
       expect(page?.creatorDeviceId).toBe(newDeviceId)
     },
@@ -143,7 +143,7 @@ describe('POST /api/pages', () => {
     const res = await app.fetch(postPages(createBody()))
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as CreatePageResponse
+    const json = await res.json<CreatePageResponse>()
     expect(await deps.pages.findById(json.id)).not.toBeNull()
     expect(errorSpy).toHaveBeenCalledOnce()
     expect(errorSpy).toHaveBeenCalledWith('create_page_put_ics_failed', expect.anything())
@@ -394,7 +394,7 @@ describe('POST /api/pages', () => {
       const res = await app.fetch(postPages(createBody()))
 
       expect(res.status).toBe(200)
-      const json = (await res.json()) as CreatePageResponse
+      const json = await res.json<CreatePageResponse>()
       expect(json.id).toBe('page00000002')
     })
 
@@ -441,9 +441,7 @@ describe('POST /api/pages', () => {
     const errorSpy = vi.spyOn(deps.logger, 'error')
     const brokenPages: PageRepository = {
       ...deps.pages,
-      findById: async () => {
-        throw new InvariantViolation('page does not have exactly 1 event')
-      },
+      findById: () => Promise.reject(new InvariantViolation('page does not have exactly 1 event')),
     }
     const app = createApp({ ...deps, pages: brokenPages })
 
@@ -486,7 +484,7 @@ describe('POST /api/pages', () => {
         'rate_limited',
         expect.objectContaining({
           scope: 'create',
-          exceeded: expect.arrayContaining([{ bucket: 'ip', window: 'hour' }]),
+          exceeded: expect.arrayContaining([{ bucket: 'ip', window: 'hour' }]) as unknown[],
         }),
       )
     })
@@ -513,7 +511,7 @@ describe('POST /api/pages', () => {
         'rate_limited',
         expect.objectContaining({
           scope: 'create',
-          exceeded: expect.arrayContaining([{ bucket: 'device', window: 'day' }]),
+          exceeded: expect.arrayContaining([{ bucket: 'device', window: 'day' }]) as unknown[],
         }),
       )
     })
@@ -533,7 +531,7 @@ describe('POST /api/pages', () => {
     })
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as CreatePageResponse
+    const json = await res.json<CreatePageResponse>()
     expect(isValidPageId(json.id)).toBe(true)
 
     const pageRow = await env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(json.id).first()

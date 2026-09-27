@@ -22,31 +22,34 @@ export function createMemoryObjectStorage(
     seedFont: (key, data) => {
       fonts.set(key, data.slice(0))
     },
-    putIcs: async (pageId, body) => {
+    putIcs: (pageId, body) => {
       texts.set(icsKey(pageId), body)
+      return Promise.resolve()
     },
-    getIcs: async (pageId) => texts.get(icsKey(pageId)) ?? null,
-    putOgpImage: async (pageId, version, png) => {
+    getIcs: (pageId) => Promise.resolve(texts.get(icsKey(pageId)) ?? null),
+    putOgpImage: (pageId, version, png) => {
       images.set(ogpImageKey(pageId, version), png.slice())
+      return Promise.resolve()
     },
-    getOgpImage: async (pageId, version) =>
-      images.get(ogpImageKey(pageId, version))?.slice() ?? null,
-    putOgpFailureMarker: async (pageId, version, ttlSeconds) => {
+    getOgpImage: (pageId, version) =>
+      Promise.resolve(images.get(ogpImageKey(pageId, version))?.slice() ?? null),
+    putOgpFailureMarker: (pageId, version, ttlSeconds) => {
       failures.set(ogpFailureKey(pageId, version), {
         expiresAt: clock.now().getTime() + ttlSeconds * 1000,
       })
+      return Promise.resolve()
     },
-    getOgpFailureMarker: async (pageId, version) => {
+    getOgpFailureMarker: (pageId, version) => {
       const marker = failures.get(ogpFailureKey(pageId, version))
-      if (!marker) return false
-      return clock.now().getTime() < marker.expiresAt
+      return Promise.resolve(marker !== undefined && clock.now().getTime() < marker.expiresAt)
     },
-    getFont: async (key) => fonts.get(key)?.slice(0) ?? null,
-    deleteAllForPage: async (pageId) => {
+    getFont: (key) => Promise.resolve(fonts.get(key)?.slice(0) ?? null),
+    deleteAllForPage: (pageId) => {
       texts.delete(icsKey(pageId))
       const prefix = ogpPrefix(pageId)
       for (const key of images.keys()) if (key.startsWith(prefix)) images.delete(key)
       for (const key of failures.keys()) if (key.startsWith(prefix)) failures.delete(key)
+      return Promise.resolve()
     },
   }
 }

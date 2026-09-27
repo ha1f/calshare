@@ -263,7 +263,7 @@ function runGcContractTests(buildDeps: (overrides?: Partial<Deps>) => Deps) {
         deletedPageCount: 1,
         batchCount: 1,
         clearedSnapshotCount: 0,
-        durationMs: expect.any(Number),
+        durationMs: expect.any(Number) as number,
       }),
     )
   })
@@ -326,14 +326,14 @@ describe('scheduled ハンドラ（src/server/index.ts）', () => {
 
     const controller = createScheduledController()
     const ctx = createExecutionContext()
-    await worker.scheduled(controller, env, ctx)
+    worker.scheduled(controller, env, ctx)
     await waitOnExecutionContext(ctx)
 
     expect(
       await env.DB.prepare('SELECT id FROM pages WHERE id = ?').bind(expiredId).first(),
     ).toBeNull()
     expect(await env.BUCKET.get(icsKey(expiredId))).toBeNull()
-    const logged = logSpy.mock.calls.map(([line]) => JSON.parse(line as string))
+    const logged = logSpy.mock.calls.map(([line]) => JSON.parse(line as string) as unknown)
     expect(logged).toContainEqual(expect.objectContaining({ level: 'info', event: 'gc_completed' }))
   })
 })

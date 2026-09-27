@@ -1217,7 +1217,8 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
 │   │   ├── ics/buildIcs.ts
 │   │   ├── google/buildGoogleCalendarUrl.ts
 │   │   ├── id/{types,crockford}.ts  # crockford.ts に isValidPageId（サーバ・クライアント共用）。types.ts は足場 PR（T1）が置く（§12 T1、後述）
-│   │   └── token/{hashEditToken,verifyEditToken}.ts
+│   │   ├── token/{hashEditToken,verifyEditToken}.ts
+│   │   └── assert.ts                # requireDefined。添字アクセスや正規表現マッチ結果が undefined でないことを不変条件のもとで確定させる型ガード
 │   ├── ports/                     # サーバ側の境界（インターフェースのみ。足場 PR が所有）
 │   │   ├── clock.ts  idGenerator.ts  pageRepository.ts（InvariantViolation もここ）  reportRepository.ts
 │   │   ├── objectStorage.ts  rateLimiter.ts  ogpRenderer.ts  notifier.ts  logger.ts
@@ -1837,7 +1838,9 @@ export default defineConfig(async () => {
   "compilerOptions": {
     "strict": true, "module": "ESNext", "moduleResolution": "bundler", "target": "ES2022", "lib": ["ES2022"],
     "noEmit": true, "isolatedModules": true, "skipLibCheck": true, "forceConsistentCasingInFileNames": true,
-    "jsx": "react-jsx", "jsxImportSource": "hono/jsx"
+    "jsx": "react-jsx", "jsxImportSource": "hono/jsx",
+    "verbatimModuleSyntax": true, "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true, "noImplicitOverride": true
   }
 }
 // tsconfig.core.json — core が DOM にも Workers にも依存しないことを型で保証する
@@ -1862,10 +1865,11 @@ export default defineConfig(async () => {
 - `tsconfig.core.json` の `lib` に `WebWorker` を足すのは、core が使う `URL` `URLSearchParams` `TextEncoder` `crypto.subtle`（`core/google`・`core/token`）が `ES2022` の lib に無いため。`WebWorker` は `document` `window` を含まず、Workers 固有の型（`D1Database` 等）も含まないので「DOM にも Workers にも依存しない」保証は保たれる。確認済み（T1）: `tsc -p tsconfig.core.json` は通り、`src/core` に `document` や `process` `Buffer`（`@types/node` を入れた後も `types: []` のため）の参照を足すとエラーになる。`hono` の import は `tsc` ではなく ESLint の `no-restricted-imports` が検出する。
 - `test/unit` は `web` 以下だけ `tsconfig.web.json`（DOM）側に入れる。`src/web/lib/*` の unit テストは DOM の型が要り、それ以外の unit テストは Workers の型で足りるため。
 - `worker-configuration.d.ts` が無いと `tsconfig.server.json` が通らないので、`typecheck` は必ず `wrangler types` を先に走らせる。
+- `verbatimModuleSyntax` `noUncheckedIndexedAccess` `exactOptionalPropertyTypes` `noImplicitOverride` の 4 フラグは `tsconfig.core/server/web.json` へ層ごとに導入したのち、3 つに同じ内容で入った時点で base（`tsconfig.json`）へ集約した（docs/guidelines.md §2.1）。添字アクセスの結果が `undefined` でないことを呼び出し側の不変条件のもとで確定させる `requireDefined`（`src/core/assert.ts`）は、この導入で `noUncheckedIndexedAccess` に対応するために追加した。
 
 **ESLint / Prettier**
 
-- `eslint.config.js` は flat config。`@eslint/js` の `recommended` と `typescript-eslint` の `recommended`（`recommendedTypeChecked` は使わない。速度優先）。`ignores`: `dist/` `dist-worker/` `.wrangler/` `worker-configuration.d.ts` `.claude/`（作業用の一時ファイル置き場。`.claude/skills/` 以外は gitignore 済みだが、lint の対象探索からは `.claude/` ごと外す）。
+- `eslint.config.js` は flat config。`@eslint/js` の `recommended` と typescript-eslint の `recommendedTypeChecked`（型情報付き lint。docs/guidelines.md §3.1）。`languageOptions.parserOptions` に `project: ['./tsconfig.core.json', './tsconfig.server.json', './tsconfig.web.json']` と `tsconfigRootDir: import.meta.dirname` を指定する。`projectService: true` は使わない（`include` を持たない root の `tsconfig.json` が全ファイルに当たり、web の DOM 型が解決されない）。3 つの tsconfig のどれにも含まれないファイル（`*.config.ts`・`eslint.config.js`・`scripts/**/*.mjs`）には `disableTypeChecked` を当てる。`ignores`: `dist/` `dist-worker/` `.wrangler/` `worker-configuration.d.ts` `.claude/`（作業用の一時ファイル置き場。`.claude/skills/` 以外は gitignore 済みだが、lint の対象探索からは `.claude/` ごと外す）。
 - 全ファイルに `no-restricted-syntax` で次を禁止する（§9.1）: `MemberExpression[property.name='innerHTML']`、`MemberExpression[property.name='outerHTML']`、`CallExpression[callee.property.name='insertAdjacentHTML']`、`JSXAttribute[name.name='dangerouslySetInnerHTML']`、`Property[key.name='dangerouslySetInnerHTML']`。
 - `@typescript-eslint/no-unused-vars` は `argsIgnorePattern: '^_'` にする。`routes/*.ts` は `Deps` を型で揃えるため使わない引数も受け取る規約（§11.5）があり、先頭 `_` の引数を未使用エラーの対象外にする。
 - `src/core/**` に対して `no-restricted-imports` で相対パス以外の import を禁止する。確認済み（T1）: `group`（`ignore` パッケージ = gitignore 相当のグロブ）を使う `patterns: [{ group: ['**', '!./**', '!../**'] }]` は実装できなかった: `ignore` パッケージは `./x` のような相対パス文字列の否定パターン（`!./**`）を意図通りに除外せず、`./x` `../x/y` も一律に「制限対象」と判定してしまう（ESLint 10.10.0 + eslint 内蔵 `ignore` で実機確認）。代わりに `regex: '^(?!\\.\\.?/)'`（`./` `../` で始まらない import 指定子にだけマッチする正規表現）を使う `patterns: [{ regex: '^(?!\\.\\.?/)', message: 'core は相対 import のみ' }]` に変更した。`hono` の import はエラーになり、`./x` `../x/y` は通ることを確認済み。
@@ -1928,23 +1932,39 @@ export default defineConfig({
 - `test/e2e/fixtures.ts`: `@playwright/test` の `test.extend` で `page` を包み、`await page.clock.setFixedTime(E2E_FIXED_NOW)` を各テストの前に呼ぶ（`E2E_FIXED_NOW = new Date('2026-09-16T01:00:00Z')` を export）。`setFixedTime` は `Date` だけを固定しタイマーは動かすので、プレビューの 150ms デバウンス（§6.1）はそのまま動く。全 spec はこのファイルの `test` / `expect` を import する。
 - `wrangler dev` は `.dev.vars` を読む。CI では e2e の前に `cp .dev.vars.example .dev.vars` する（下記）。
 
-**`.github/workflows/ci.yml`**（`pull_request` と `push: main` で起動）
+**`.github/workflows/ci.yml`**（`pull_request` と `push: main` で起動。以下は現在の構成。`uses:` は実際にはタグ名ではなくフルコミット SHA + `# vX.Y.Z` コメントで固定する、docs/guidelines.md §8.1）
 
 ```yaml
-- uses: actions/checkout@v4
-- uses: actions/setup-node@v4
-  with: { node-version-file: .nvmrc, cache: npm }
-- run: npm ci
-- run: npm run lint
-- run: npm run typecheck
-- run: npm run test:unit
-- run: npm run build
-- run: npm run test:integration
-- run: npx wrangler deploy --dry-run --outdir dist-worker   # 未ログインで通る（T1 で確認済み）
-- run: npx playwright install --with-deps chromium
-- run: cp .dev.vars.example .dev.vars
-- run: npm run test:e2e
-  timeout-minutes: 15
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ci:
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@<SHA> # v7.x.y
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@<SHA> # v7.x.y
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:scripts
+      - run: npm run build
+      - run: npm run test:integration   # env.ASSETS.fetch() が dist/ を見るため build の後に置く
+      - run: npx wrangler deploy --dry-run --outdir dist-worker   # 未ログインで通る（T1 で確認済み）
+      - run: npx playwright install --with-deps chromium
+      - run: cp .dev.vars.example .dev.vars
+      - run: npx wrangler d1 migrations apply calshare --local   # wrangler dev は自動適用しない（§10.5）
+      - id: e2e
+        run: npm run test:e2e
+        timeout-minutes: 15
+      - if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@<SHA> # v7.x.y
+        with: { name: playwright-report, path: playwright-report/, retention-days: 7 }
 ```
 
 確認済み（T1。設計時点の順序と食い違ったため入れ替えた）: `test:integration` は `env.ASSETS.fetch()` で Static Assets（`wrangler.jsonc` の `assets.directory: ./dist`）を検証するため、`dist/` がビルド済みであることに依存する。クリーンチェックアウト直後（`npm run build` 未実行）に `test:integration` を先に走らせると `dist/` が空で 404 になることを実機確認したため、`npm run build` を `test:integration` より前に実行する順序に変更した。

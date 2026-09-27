@@ -51,7 +51,7 @@ describe('buildDeps / buildClock', () => {
         logSpy.mock.calls[0],
         'toHaveBeenCalledOnce ensures a call exists',
       )[0] as string,
-    )
+    ) as Record<string, unknown>
     expect(payload).toMatchObject({ level: 'warn', event: 'e2e_fixed_now_ignored' })
   })
 
@@ -72,7 +72,7 @@ describe('buildDeps / buildClock', () => {
         logSpy.mock.calls[0],
         'toHaveBeenCalledOnce ensures a call exists',
       )[0] as string,
-    )
+    ) as Record<string, unknown>
     expect(payload).toMatchObject({ level: 'warn', event: 'e2e_fixed_now_invalid' })
   })
 

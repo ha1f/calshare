@@ -32,7 +32,15 @@ const noRawHtml = {
 export default tseslint.config(
   { ignores: ['dist/', 'dist-worker/', '.wrangler/', 'worker-configuration.d.ts', '.claude/'] },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.core.json', './tsconfig.server.json', './tsconfig.web.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
   {
     files: ['**/*.{ts,tsx,js,mjs}'],
     rules: {
@@ -62,6 +70,11 @@ export default tseslint.config(
         ].map((name) => [name, 'readonly']),
       ),
     },
+  },
+  {
+    // 3 つの tsconfig のどれにも含まれないファイル（型情報付き lint の対象外）
+    files: ['*.config.ts', 'eslint.config.js', 'scripts/**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
   },
   {
     // core は外部依存ゼロを保証するため相対 import のみ許可する（§11.1）。

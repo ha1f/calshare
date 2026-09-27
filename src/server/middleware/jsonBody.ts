@@ -9,7 +9,8 @@ import { apiRequestError } from '../lib/errors'
 async function readBodyWithLimit(request: Request): Promise<Uint8Array> {
   if (request.body === null) return new Uint8Array(0)
 
-  const reader = request.body.getReader()
+  // Workers の型定義では Request.body が ReadableStream<any> になっており、getReader() の戻り値も any 化する
+  const reader = request.body.getReader() as ReadableStreamDefaultReader<Uint8Array>
   const chunks: Uint8Array[] = []
   let total = 0
   for (;;) {

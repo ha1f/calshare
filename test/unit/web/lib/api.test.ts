@@ -30,7 +30,7 @@ describe('getPage', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/pages/abc', {
       headers: { Authorization: 'Bearer token-123' },
-      signal: expect.any(AbortSignal),
+      signal: expect.any(AbortSignal) as AbortSignal,
     })
     expect(response).toEqual({ id: 'abc', rawText: '飲み会' })
   })
@@ -84,7 +84,7 @@ describe('getPage', () => {
     )
 
     await expect(getPage('abc', 'wrong-token')).rejects.toMatchObject({
-      message: expect.stringContaining('get page'),
+      message: expect.stringContaining('get page') as string,
     })
   })
 })
@@ -109,7 +109,7 @@ describe('createPage', () => {
         },
         source: 'direct',
       }),
-    ).rejects.toMatchObject({ message: expect.stringContaining('create page') })
+    ).rejects.toMatchObject({ message: expect.stringContaining('create page') as string })
   })
 })
 
@@ -138,7 +138,7 @@ describe('updatePage', () => {
         Authorization: 'Bearer token-123',
       },
       body: JSON.stringify(request),
-      signal: expect.any(AbortSignal),
+      signal: expect.any(AbortSignal) as AbortSignal,
     })
   })
 })

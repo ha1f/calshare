@@ -1,5 +1,6 @@
-import type { Page } from '@playwright/test'
+import type { Page, Request } from '@playwright/test'
 import { test as base, expect } from '@playwright/test'
+import type { CreatePageRequest } from '../../src/core/api/types'
 
 // §10.3 の基準時刻。全 spec はこのファイルの test / expect を import する
 export const E2E_FIXED_NOW = new Date('2026-09-16T01:00:00Z')
@@ -61,4 +62,9 @@ export async function createPage(page: Page, text: string): Promise<string> {
 
 export function waitForCreateRequest(page: Page) {
   return page.waitForRequest((r) => r.url().endsWith('/api/pages') && r.method() === 'POST')
+}
+
+/** POST /api/pages のリクエストボディ。Request#postDataJSON() の戻り値が any 型のため */
+export function createRequestBody(request: Request): CreatePageRequest {
+  return request.postDataJSON() as CreatePageRequest
 }

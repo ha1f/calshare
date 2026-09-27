@@ -65,7 +65,7 @@ function expandIpv6(ip: string): string[] | null {
   const missing = IPV6_GROUP_COUNT - headGroups.length - tailGroups.length
   if (missing < 0) return null
 
-  return [...headGroups, ...Array(missing).fill('0'), ...tailGroups].map(normalizeHextet)
+  return [...headGroups, ...Array<string>(missing).fill('0'), ...tailGroups].map(normalizeHextet)
 }
 
 function normalizeHextet(group: string): string {

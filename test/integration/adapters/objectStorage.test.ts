@@ -30,7 +30,7 @@ function createMemoryFixture(): Fixture {
   return {
     storage,
     clock,
-    seedFont: async (key, data) => storage.seedFont(key, data),
+    seedFont: (key, data) => Promise.resolve(storage.seedFont(key, data)),
   }
 }
 
