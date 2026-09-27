@@ -274,16 +274,6 @@ export function createD1PageRepository(db: D1Database): PageRepository {
       return 'ok'
     },
 
-    async incrementReportCount(id: string) {
-      const row = await db
-        .prepare(
-          'UPDATE pages SET report_count = report_count + 1 WHERE id = ? RETURNING report_count',
-        )
-        .bind(id)
-        .first<{ report_count: number }>()
-      return row?.report_count ?? 0
-    },
-
     async countActiveByCreator(creatorIpHash: string, creatorDeviceId: string) {
       const row = await db
         .prepare(

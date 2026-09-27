@@ -70,6 +70,7 @@ describe('POST /api/pages/:id/reports', () => {
     const res = await fetchAndDrain(app, postReport('page00000001', validBody()))
 
     expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
     const rows = await env.DB.prepare('SELECT * FROM reports WHERE page_id = ?')
       .bind('page00000001')
       .all()
@@ -214,6 +215,8 @@ describe('POST /api/pages/:id/reports', () => {
 
     expect(first.status).toBe(200)
     expect(second.status).toBe(200)
+    // 重複でも受理と同じ本文を返し、通報者に重複だったかを知らせない（§9.4）
+    expect(await second.json()).toEqual({ ok: true })
     const page = await deps.pages.findById('page00000001')
     expect(page?.reportCount).toBe(1)
     expect(notifier.calls).toHaveLength(1)

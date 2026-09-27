@@ -5,7 +5,7 @@ import {
   REPORT_DEDUPE_HOURS,
 } from '../../core/config/limits'
 import { PAGE_ID_PATTERN } from '../../core/id/crockford'
-import type { CreateReportRequest } from '../../core/api/types'
+import type { CreateReportRequest, CreateReportResponse } from '../../core/api/types'
 import type { ReportReason } from '../../core/types'
 import type { NewReportInput } from '../../ports/reportRepository'
 import type { RateLimitRule } from '../../ports/rateLimiter'
@@ -115,8 +115,7 @@ export function apiReportsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
     const result = await deps.reports.insertIfNotDuplicate(reportInput, dedupeSince)
 
     // 重複でも受理と同じ 200 を返し、通報者に重複だったかを知らせない（§9.4）
-    if (result === 'inserted') {
-      const reportCount = await deps.pages.incrementReportCount(page.id)
+    if (result.kind === 'inserted') {
       const activePagesFromSameCreator = await deps.pages.countActiveByCreator(
         page.creatorIpHash,
         page.creatorDeviceId,
@@ -128,7 +127,7 @@ export function apiReportsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
             url: buildDetailUrl(deps.config.publicOrigin, page.id),
             reason: request.reason,
             comment: request.comment,
-            reportCount,
+            reportCount: result.reportCount,
             activePagesFromSameCreator,
           })
           .catch((error: unknown) => {
@@ -137,7 +136,8 @@ export function apiReportsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
       )
     }
 
-    return c.json({ ok: true })
+    const response: CreateReportResponse = { ok: true }
+    return c.json(response)
   })
 
   return app

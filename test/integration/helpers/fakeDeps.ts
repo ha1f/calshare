@@ -1,7 +1,10 @@
 import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createFakeIdGenerator } from '../../../src/adapters/id/fakeIdGenerator'
 import { createMemoryObjectStorage } from '../../../src/adapters/memory/memoryObjectStorage'
-import { createMemoryPageRepository } from '../../../src/adapters/memory/memoryPageRepository'
+import {
+  createMemoryPageRepository,
+  createMemoryPageStore,
+} from '../../../src/adapters/memory/memoryPageRepository'
 import { createMemoryRateLimiter } from '../../../src/adapters/memory/memoryRateLimiter'
 import { createMemoryReportRepository } from '../../../src/adapters/memory/memoryReportRepository'
 import { createFakeNotifier } from '../../../src/adapters/notifier/fakeNotifier'
@@ -18,11 +21,13 @@ import { TEST_ORIGIN } from './jsonRequest'
 export function buildFakeDeps(overrides: Partial<Deps> = {}): Deps {
   const clock = fakeClock(new Date('2026-09-16T01:00:00.000Z'))
   const logger: Logger = { info() {}, warn() {}, error() {} }
+  // report_count の加算は reports 側が行うので、pages と reports で同じ store を共有する（本物の D1 が 1 つの db を指すのと同じ）
+  const pageStore = createMemoryPageStore()
   return {
     clock,
     ids: createFakeIdGenerator(),
-    pages: createMemoryPageRepository(),
-    reports: createMemoryReportRepository(),
+    pages: createMemoryPageRepository(pageStore),
+    reports: createMemoryReportRepository(pageStore),
     storage: createMemoryObjectStorage(clock),
     rateLimiter: createMemoryRateLimiter(),
     ogpRenderer: createFakeOgpRenderer(),

@@ -3,9 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { D1_MAX_BIND_PARAMS } from '../../../src/core/config/limits'
 import type { ChangeSnapshot, EventFields } from '../../../src/core/types'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
-import { createMemoryPageRepository } from '../../../src/adapters/memory/memoryPageRepository'
+import { createD1ReportRepository } from '../../../src/adapters/d1/d1ReportRepository'
+import {
+  createMemoryPageRepository,
+  createMemoryPageStore,
+} from '../../../src/adapters/memory/memoryPageRepository'
+import { createMemoryReportRepository } from '../../../src/adapters/memory/memoryReportRepository'
 import { InvariantViolation } from '../../../src/ports/pageRepository'
 import type { NewPageInput, PageRepository } from '../../../src/ports/pageRepository'
+import type { ReportRepository } from '../../../src/ports/reportRepository'
 import { insertPageRow } from '../helpers/insertPageRow'
 
 const NOW = new Date('2026-09-16T01:00:00.000Z')
@@ -39,7 +45,10 @@ function buildInput(overrides: Partial<NewPageInput> = {}): NewPageInput {
 }
 
 /** D1PageRepository と memoryPageRepository の両方に流す契約テスト */
-function runPageRepositoryTests(createRepo: () => PageRepository) {
+function runPageRepositoryTests(
+  createRepos: () => { pages: PageRepository; reports: ReportRepository },
+) {
+  const createRepo = (): PageRepository => createRepos().pages
   it('create: source・creatorIpHash・creatorDeviceId が入り、findById で読める', async () => {
     const repo = createRepo()
     const input = buildInput({
@@ -161,9 +170,19 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
   })
 
   it('update: version が +1 され、status・report_count は変わらない', async () => {
-    const repo = createRepo()
+    const { pages: repo, reports } = createRepos()
     await repo.create(buildInput({ id: 'page-update' }))
-    await repo.incrementReportCount('page-update')
+    await reports.insertIfNotDuplicate(
+      {
+        id: 'report-page-update',
+        pageId: 'page-update',
+        reason: 'spam',
+        comment: null,
+        ipHash: 'ip-x',
+        now: NOW,
+      },
+      new Date('2026-09-15T00:00:00.000Z'),
+    )
 
     const result = await repo.update('page-update', {
       rawText: '9/21 20時 新宿で飲み会',
@@ -305,22 +324,6 @@ function runPageRepositoryTests(createRepo: () => PageRepository) {
     expect(afterSecondUpdate?.previousSnapshot).toEqual(snapshot)
     expect(afterSecondUpdate?.changedAt).toEqual(changedAt)
     expect(afterSecondUpdate?.version).toBe(3)
-  })
-
-  it('incrementReportCount: 呼ぶたびに増え、更新後の件数を返す', async () => {
-    const repo = createRepo()
-    await repo.create(buildInput({ id: 'page-report' }))
-
-    expect(await repo.incrementReportCount('page-report')).toBe(1)
-    expect(await repo.incrementReportCount('page-report')).toBe(2)
-
-    const page = await repo.findById('page-report')
-    expect(page?.reportCount).toBe(2)
-  })
-
-  it('incrementReportCount: 存在しない id は 0 を返す', async () => {
-    const repo = createRepo()
-    expect(await repo.incrementReportCount('no-such-page')).toBe(0)
   })
 
   it('countActiveByCreator: 同じ ip_hash または device_id を持つ active なページ数', async () => {
@@ -509,7 +512,10 @@ function withPageDeletedAfterEventsCheck(db: D1Database, pageId: string): D1Data
 }
 
 describe('D1PageRepository', () => {
-  runPageRepositoryTests(() => createD1PageRepository(env.DB))
+  runPageRepositoryTests(() => ({
+    pages: createD1PageRepository(env.DB),
+    reports: createD1ReportRepository(env.DB),
+  }))
 
   it('update: 存在確認と UPDATE の間にページが削除されても not_found を返す', async () => {
     await createD1PageRepository(env.DB).create(buildInput({ id: 'page-race' }))
@@ -619,5 +625,11 @@ describe('D1PageRepository', () => {
 })
 
 describe('memoryPageRepository', () => {
-  runPageRepositoryTests(() => createMemoryPageRepository())
+  runPageRepositoryTests(() => {
+    const store = createMemoryPageStore()
+    return {
+      pages: createMemoryPageRepository(store),
+      reports: createMemoryReportRepository(store),
+    }
+  })
 })
