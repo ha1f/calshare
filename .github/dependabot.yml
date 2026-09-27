@@ -12,7 +12,7 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
-    # 理由と外す条件はガイドライン §1.1。
+    # 理由は docs/guidelines.md §1.1、外す条件は §1.2 の四半期確認。
     ignore:
       - dependency-name: 'satori'
         versions: ['>=0.33.0']

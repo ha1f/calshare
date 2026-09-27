@@ -90,8 +90,8 @@ GitHub の Actions タブ → `deploy` ワークフロー → `Run workflow` か
   可能性が高い。
 - `PUBLIC_DOMAIN が設定されていることを確認する` で失敗する場合、上記「オーナーが行う最小の
   作業」の `gh variable set PUBLIC_DOMAIN` を実行してから再実行する。
-- `wrangler deploy` で失敗する場合、スクリプトサイズ上限（uncompressed 64 MiB）超過か、
-  起動時間制限（グローバルスコープの評価 1 秒）超過の可能性がある（design.md §14.1）。
+- `wrangler deploy` で失敗する場合、スクリプトサイズ上限（uncompressed 64 MiB、design.md §1.2）超過か、
+  起動時間制限（グローバルスコープの評価 1 秒、design.md §14.1）超過の可能性がある。
 - `RATE_LIMIT_PEPPER を確認・登録する` で失敗する場合、`wrangler secret list` の出力を
   判定できていない（`scripts/cf/ensure-secret.mjs` は判定できないと既存の値を守るため
   登録せずに失敗する）。ログを確認し、`CLOUDFLARE_API_TOKEN` の権限か wrangler の出力形式の
