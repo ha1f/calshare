@@ -3,7 +3,9 @@ import { HTTPException } from 'hono/http-exception'
 import { routePath } from 'hono/route'
 import type { Deps } from './deps'
 import type { Env } from './env'
+import { ApiRequestError, toApiErrorResponse } from './lib/errors'
 import { logUnhandledError, resolveLoggablePageId } from './lib/logger'
+import { handleNotFound } from './lib/notFound'
 import { securityHeaders } from './middleware/securityHeaders'
 import { requestLog } from './middleware/requestLog'
 import { apiPagesRoutes } from './routes/apiPages'
@@ -22,18 +24,30 @@ export function createApp(deps: Deps): Hono<{ Bindings: Env }> {
   // 全ルートより先に登録する。後から足すルートはヘッダ付与の対象から漏れる（§9.1）
   app.use('*', securityHeaders())
 
-  // ルートが catch していない例外はここで 500 に変換する。Hono の既定ハンドラの
-  // console.error(err) を避け、構造化ログ（§9.6）に一本化するため。HTTPException は
-  // ステータス・レスポンスを自分で持っているので、そのまま返す（Hono 既定ハンドラと同じ扱い）
+  // ルートが投げた例外・意図的な ApiRequestError はここで応答に変換する。各ルートに
+  // try / catch と c.json(body, status) を繰り返し書かない（docs/guidelines.md §5.4）
   app.onError((err, c) => {
+    // HTTPException は Hono 自身が投げることがあるので、自前のステータス・レスポンスをそのまま返す
     if (err instanceof HTTPException) return err.getResponse()
-    logUnhandledError(
-      deps.logger,
-      { route: routePath(c), pageId: resolveLoggablePageId(c.req.param('id')) },
-      err,
-    )
+
+    const isApi = c.req.path.startsWith('/api/')
+    // ApiRequestError の 4xx は /api/* では意図した応答なのでログに残さない。HTML ルートは
+    // 常に 500 を返すので、応答が 5xx になるときは必ず記録する
+    if (!isApi || !(err instanceof ApiRequestError) || err.status >= 500) {
+      const pageId = resolveLoggablePageId(c.req.param('id'))
+      logUnhandledError(deps.logger, { route: routePath(c), pageId }, err)
+    }
+
+    if (isApi) {
+      const { status, body } = toApiErrorResponse(err)
+      return c.json(body, status)
+    }
     return c.text('Internal Server Error', 500)
   })
+
+  // どのルートにも一致しないリクエストへの応答（docs/guidelines.md §5.4）。top-level app にしか効かないので、
+  // routes/*.ts の各サブアプリには登録しない
+  app.notFound((c) => handleNotFound(c, deps.config.serviceName))
 
   // リクエスト完了ログ用ミドルウェア（requestLog.ts）。onError が応答に変換した後のステータスも
   // 記録できるよう各ルートの外側に置く

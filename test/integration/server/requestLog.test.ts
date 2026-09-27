@@ -5,6 +5,7 @@ import type { MockInstance } from 'vitest'
 import { consoleLogger } from '../../../src/adapters/logger/consoleLogger'
 import { PAGE_ID_PATTERN } from '../../../src/core/id/crockford'
 import { createApp } from '../../../src/server/app'
+import { apiRequestError } from '../../../src/server/lib/errors'
 import type { RateLimitRule } from '../../../src/ports/rateLimiter'
 import type { Deps } from '../../../src/server/deps'
 import { buildFakeDeps } from '../helpers/fakeDeps'
@@ -181,7 +182,7 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     expect(errorSpy).not.toHaveBeenCalled()
   })
 
-  it('PAGE_ID_PATTERN の制約が無いルート（POST /api/pages/:id/reports）では、URL の任意文字列が pageId としてログに出ない', async () => {
+  it('POST /api/pages/:id/reports の :id が PAGE_ID_PATTERN に合わないと、どのルートにも一致せず URL の任意文字列が pageId としてログに出ない', async () => {
     const deps = buildFakeDeps({ logger: consoleLogger })
     const bogusId = 'x'.repeat(5000)
 
@@ -195,7 +196,8 @@ describe('requestLog ミドルウェア（§9.6）', () => {
 
     expect(res.status).toBe(404)
     const completed = loggedLines().find((line) => line.event === 'request_completed')
-    expect(completed).toMatchObject({ route: '/api/pages/:id/reports', status: 404 })
+    // どのルートにも一致しなかったリクエストなので、requestLog 自身の登録パス（'/*'）になる
+    expect(completed).toMatchObject({ route: '/*', status: 404 })
     expect(completed).not.toHaveProperty('pageId')
     for (const line of logSpy.mock.calls.map((call) => call[0] as string)) {
       expect(line).not.toContain(bogusId)
@@ -220,6 +222,20 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     for (const line of logSpy.mock.calls.map((call) => call[0] as string)) {
       expect(line).not.toContain('EDIT_TOKEN_LEAK')
     }
+  })
+
+  it('HTML ルートで ApiRequestError（4xx）が投げられても 500 はログに残る', async () => {
+    const deps = buildFakeDeps({ logger: consoleLogger })
+    deps.pages.findById = () => {
+      throw apiRequestError(404, 'NOT_FOUND', 'page not found')
+    }
+
+    const res = await fetchApp(deps, new Request(new URL('/zzzzzzzzzzzz/report', TEST_ORIGIN)))
+
+    expect(res.status).toBe(500)
+    const failed = loggedLines().find((line) => line.event === 'unhandled_error')
+    expect(failed).toMatchObject({ level: 'error' })
+    expect(errorSpy).not.toHaveBeenCalled()
   })
 
   it('HTTPException は Hono 既定の応答（getResponse）で返り、unhandled_error にならない', async () => {

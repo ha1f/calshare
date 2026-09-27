@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { requireDefined } from '../../../../src/core/assert'
 import {
   CROCKFORD_ALPHABET,
   encodeCrockford,
@@ -11,11 +12,10 @@ import { RESERVED_PATHS } from '../../../../src/core/config/reservedPaths'
 describe('encodeCrockford', () => {
   it('各バイトを Crockford Base32 の 1 文字に写像する', () => {
     // 32 の倍数と余りの境界（0, 31, 32, 255）を確認する
+    const alphabetChar = (index: number): string =>
+      requireDefined(CROCKFORD_ALPHABET[index], 'index is within CROCKFORD_ALPHABET')
     expect(encodeCrockford(new Uint8Array([0, 31, 32, 255]))).toBe(
-      CROCKFORD_ALPHABET[0] +
-        CROCKFORD_ALPHABET[31] +
-        CROCKFORD_ALPHABET[0] +
-        CROCKFORD_ALPHABET[255 % 32],
+      alphabetChar(0) + alphabetChar(31) + alphabetChar(0) + alphabetChar(255 % 32),
     )
   })
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ogpTemplate } from '../../../../src/adapters/ogp/ogpTemplate'
+import { requireDefined } from '../../../../src/core/assert'
 import type { OgpInput } from '../../../../src/ports/ogpRenderer'
 
 /** ogpTemplate が返す素のオブジェクトツリーからテキストノードの中身だけを集める */
@@ -60,9 +61,11 @@ describe('ogpTemplate', () => {
     const locationRow = root.props.children.find(
       (child) => child.type === 'div' && Array.isArray(child.props.children),
     )
-    const [label, value] = locationRow?.props.children as Array<{
+    const children = locationRow?.props.children as Array<{
       props: { style?: Record<string, unknown> }
     }>
+    const label = requireDefined(children[0], 'locationRow has label and value children')
+    const value = requireDefined(children[1], 'locationRow has label and value children')
 
     expect(label.props.style).toMatchObject({ flexShrink: 0 })
     expect(value.props.style).toMatchObject({

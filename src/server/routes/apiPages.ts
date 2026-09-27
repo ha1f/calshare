@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { MAX_INPUT_LENGTH } from '../../core/config/limits'
 import { calculateExpiresAt } from '../../core/retention/calculateExpiresAt'
 import { hashEditToken } from '../../core/token/hashEditToken'
@@ -11,7 +10,7 @@ import type { NewPageInput, PageRecord } from '../../ports/pageRepository'
 import type { Deps } from '../deps'
 import type { Env } from '../env'
 import { buildDeviceCookie } from '../lib/deviceCookie'
-import { ApiRequestError, validationApiError, toApiErrorResponse } from '../lib/errors'
+import { validationApiError } from '../lib/errors'
 import { buildDetailUrl, buildIcsForPage } from '../lib/ics'
 import { readJsonBody } from '../middleware/jsonBody'
 import {
@@ -90,62 +89,54 @@ export function apiPagesRoutes(deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
 
   app.post('/api/pages', async (c) => {
-    try {
-      // (1) Content-Type と Origin（§5.7・§9.8）
-      assertSameOriginJsonRequest(c.req.raw, deps.config.publicOrigin)
+    // (1) Content-Type と Origin（§5.7・§9.8）
+    assertSameOriginJsonRequest(c.req.raw, deps.config.publicOrigin)
 
-      // (2) 本文の byte 上限・JSON の形・fields の形・rawText の長さ（§5.7）
-      const request = await readJsonBody(c.req.raw, parseCreatePageRequest)
-      if (request.rawText.length > MAX_INPUT_LENGTH) {
-        throw validationApiError('INPUT_TOO_LONG')
-      }
-
-      // (3) レート制限（§9.3）。Cookie が無ければここで device_id を発行する
-      const identity = await resolveRequestIdentity(c.req.raw, deps)
-      if (identity.isNewDevice) {
-        c.header('Set-Cookie', buildDeviceCookie(identity.deviceId))
-      }
-      const now = deps.clock.now()
-      await consumeCreateRateLimit(deps, identity, now)
-
-      // (4) 項目検証（§5.7）
-      const validation = validateEventFields(request.rawText, request.fields, now, {
-        mode: 'create',
-      })
-      if (!validation.ok) throw validationApiError(validation.code)
-
-      const { page, editToken } = await createPageWithRetry(deps, request, identity, now)
-      // 転換率の集計に使う（§9.6）。rawText 等の入力内容はここでも出さない
-      deps.logger.info('page_created', { pageId: page.id, source: page.source })
-
-      // R2 の PUT 失敗はロールバックしない。GET /:id.ics の自己修復に任せる（§2.3）
-      const ics = buildIcsForPage(page, deps.config, now)
-      if (ics !== null) {
-        try {
-          await deps.storage.putIcs(page.id, ics)
-        } catch (error) {
-          deps.logger.error('create_page_put_ics_failed', { error, pageId: page.id })
-        }
-      }
-
-      const response: CreatePageResponse = {
-        id: page.id,
-        url: buildDetailUrl(deps.config.publicOrigin, page.id),
-        fields: toEventFieldsJson(page.event),
-        expiresAt: page.expiresAt.toISOString(),
-        createdAt: page.createdAt.toISOString(),
-        updatedAt: page.updatedAt.toISOString(),
-        version: page.version,
-        editToken,
-      }
-      return c.json(response)
-    } catch (error) {
-      if (!(error instanceof ApiRequestError) || error.status >= 500) {
-        deps.logger.error('create_page_failed', { error })
-      }
-      const { status, body } = toApiErrorResponse(error)
-      return c.json(body, status as ContentfulStatusCode)
+    // (2) 本文の byte 上限・JSON の形・fields の形・rawText の長さ（§5.7）
+    const request = await readJsonBody(c.req.raw, parseCreatePageRequest)
+    if (request.rawText.length > MAX_INPUT_LENGTH) {
+      throw validationApiError('INPUT_TOO_LONG')
     }
+
+    // (3) レート制限（§9.3）。Cookie が無ければここで device_id を発行する
+    const identity = await resolveRequestIdentity(c.req.raw, deps)
+    if (identity.isNewDevice) {
+      c.header('Set-Cookie', buildDeviceCookie(identity.deviceId))
+    }
+    const now = deps.clock.now()
+    await consumeCreateRateLimit(deps, identity, now)
+
+    // (4) 項目検証（§5.7）
+    const validation = validateEventFields(request.rawText, request.fields, now, {
+      mode: 'create',
+    })
+    if (!validation.ok) throw validationApiError(validation.code)
+
+    const { page, editToken } = await createPageWithRetry(deps, request, identity, now)
+    // 転換率の集計に使う（§9.6）。rawText 等の入力内容はここでも出さない
+    deps.logger.info('page_created', { pageId: page.id, source: page.source })
+
+    // R2 の PUT 失敗はロールバックしない。GET /:id.ics の自己修復に任せる（§2.3）
+    const ics = buildIcsForPage(page, deps.config, now)
+    if (ics !== null) {
+      try {
+        await deps.storage.putIcs(page.id, ics)
+      } catch (error) {
+        deps.logger.error('create_page_put_ics_failed', { error, pageId: page.id })
+      }
+    }
+
+    const response: CreatePageResponse = {
+      id: page.id,
+      url: buildDetailUrl(deps.config.publicOrigin, page.id),
+      fields: toEventFieldsJson(page.event),
+      expiresAt: page.expiresAt.toISOString(),
+      createdAt: page.createdAt.toISOString(),
+      updatedAt: page.updatedAt.toISOString(),
+      version: page.version,
+      editToken,
+    }
+    return c.json(response)
   })
 
   return app

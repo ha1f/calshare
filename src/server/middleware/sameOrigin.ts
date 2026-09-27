@@ -1,3 +1,4 @@
+import { requireDefined } from '../../core/assert'
 import { apiRequestError } from '../lib/errors'
 
 /**
@@ -8,7 +9,12 @@ import { apiRequestError } from '../lib/errors'
  */
 export function assertSameOriginJsonRequest(request: Request, publicOrigin: string): void {
   const contentType = request.headers.get('Content-Type') ?? ''
-  const mediaType = contentType.split(';')[0].trim().toLowerCase()
+  const mediaType = requireDefined(
+    contentType.split(';')[0],
+    'split always returns at least one element',
+  )
+    .trim()
+    .toLowerCase()
   if (mediaType !== 'application/json') {
     throw apiRequestError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json')
   }

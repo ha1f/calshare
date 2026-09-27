@@ -4,10 +4,8 @@ import { PAGE_ID_PATTERN } from '../../core/id/crockford'
 import type { Deps } from '../deps'
 import type { Env } from '../env'
 import { withEdgeCache } from '../lib/edgeCache'
-import { buildIcsForPage } from '../lib/ics'
+import { buildIcsForPage, ICS_EXTENSION } from '../lib/ics'
 import { isServable } from '../lib/pageAccess'
-
-const ICS_EXTENSION = '.ics'
 
 export function icsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()

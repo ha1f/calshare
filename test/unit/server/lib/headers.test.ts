@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { describe, expect, it } from 'vitest'
 import headersText from '../../../../src/web/_headers?raw'
+import { requireDefined } from '../../../../src/core/assert'
 import {
   CONTENT_SECURITY_POLICY,
   REFERRER_POLICY,
@@ -14,7 +15,7 @@ function headerValueFor(path: string, headerName: string): string | undefined {
   const pathIndex = lines.findIndex((line) => line.trim() === path)
   if (pathIndex === -1) return undefined
   for (let i = pathIndex + 1; i < lines.length; i++) {
-    const line = lines[i]
+    const line = requireDefined(lines[i], 'i is a valid index into lines')
     if (!line.startsWith('  ') && !line.startsWith('\t')) break // 次のパスブロックに入った
     const [name, ...rest] = line.trim().split(':')
     if (name === headerName) return rest.join(':').trim()

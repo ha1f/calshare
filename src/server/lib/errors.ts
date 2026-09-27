@@ -1,10 +1,11 @@
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { ApiError, ApiErrorCode } from '../../core/api/types'
 import type { ValidationErrorCode } from '../../core/types'
 
 /** ルートが意図的に返す API エラー。HTTP ステータスと ApiErrorCode を持つ（§5.7） */
 export class ApiRequestError extends Error {
   constructor(
-    public readonly status: number,
+    public readonly status: ContentfulStatusCode,
     public readonly code: ApiErrorCode,
     message: string,
   ) {
@@ -13,7 +14,7 @@ export class ApiRequestError extends Error {
 }
 
 export function apiRequestError(
-  status: number,
+  status: ContentfulStatusCode,
   code: ApiErrorCode,
   message: string,
 ): ApiRequestError {
@@ -35,10 +36,13 @@ export function validationApiError(code: ValidationErrorCode): ApiRequestError {
 }
 
 /**
- * ルートハンドラで catch した例外を { status, body } に変換する。`ApiRequestError` はそのまま、
- * `InvariantViolation` を含むそれ以外の例外は 500 `INTERNAL` にする
+ * 例外を { status, body } に変換する（app.onError から呼ぶ）。`ApiRequestError` はそのまま、
+ * それ以外の例外は 500 `INTERNAL` にする
  */
-export function toApiErrorResponse(error: unknown): { status: number; body: ApiError } {
+export function toApiErrorResponse(error: unknown): {
+  status: ContentfulStatusCode
+  body: ApiError
+} {
   if (error instanceof ApiRequestError) {
     return { status: error.status, body: { code: error.code, message: error.message } }
   }

@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { MAX_INPUT_LENGTH } from '../../core/config/limits'
 import { buildChangeSnapshot } from '../../core/change/buildChangeSnapshot'
 import { PAGE_ID_PATTERN } from '../../core/id/crockford'
@@ -14,12 +13,7 @@ import type { PageSummaryJson } from '../../core/types'
 import type { PageRecord } from '../../ports/pageRepository'
 import type { Deps } from '../deps'
 import type { Env } from '../env'
-import {
-  apiRequestError,
-  ApiRequestError,
-  toApiErrorResponse,
-  validationApiError,
-} from '../lib/errors'
+import { apiRequestError, validationApiError } from '../lib/errors'
 import { buildDetailUrl, buildIcsForPage } from '../lib/ics'
 import { isServable } from '../lib/pageAccess'
 import { readJsonBody } from '../middleware/jsonBody'
@@ -30,7 +24,7 @@ function extractBearerToken(request: Request): string | null {
   const header = request.headers.get('Authorization')
   if (header === null) return null
   const match = /^Bearer (.+)$/.exec(header)
-  return match ? match[1] : null
+  return match?.[1] ?? null
 }
 
 /** 編集トークンがページの edit_token_hash と一致するか定数時間で比較する（§3.3） */
@@ -75,99 +69,83 @@ export function apiPagesEditRoutes(deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
 
   app.get(`/api/pages/:id{${PAGE_ID_PATTERN}}`, async (c) => {
-    try {
-      const page = await deps.pages.findById(c.req.param('id'))
-      const now = deps.clock.now()
-      if (page === null || !isServable(page, now)) {
-        throw apiRequestError(404, 'NOT_FOUND', 'page not found')
-      }
-
-      const token = extractBearerToken(c.req.raw)
-      if (!(await isAuthorized(page, token))) {
-        throw apiRequestError(401, 'UNAUTHORIZED', 'edit token is missing or invalid')
-      }
-
-      const response: GetPageResponse = {
-        ...toSummaryJson(page, deps.config.publicOrigin),
-        rawText: page.rawText,
-      }
-      return c.json(response)
-    } catch (error) {
-      if (!(error instanceof ApiRequestError) || error.status >= 500) {
-        deps.logger.error('get_page_failed', { error })
-      }
-      const { status, body } = toApiErrorResponse(error)
-      return c.json(body, status as ContentfulStatusCode)
+    const page = await deps.pages.findById(c.req.param('id'))
+    const now = deps.clock.now()
+    if (page === null || !isServable(page, now)) {
+      throw apiRequestError(404, 'NOT_FOUND', 'page not found')
     }
+
+    const token = extractBearerToken(c.req.raw)
+    if (!(await isAuthorized(page, token))) {
+      throw apiRequestError(401, 'UNAUTHORIZED', 'edit token is missing or invalid')
+    }
+
+    const response: GetPageResponse = {
+      ...toSummaryJson(page, deps.config.publicOrigin),
+      rawText: page.rawText,
+    }
+    return c.json(response)
   })
 
   app.patch(`/api/pages/:id{${PAGE_ID_PATTERN}}`, async (c) => {
-    try {
-      // (1) Content-Type と Origin（§5.7・§9.8）
-      assertSameOriginJsonRequest(c.req.raw, deps.config.publicOrigin)
+    // (1) Content-Type と Origin（§5.7・§9.8）
+    assertSameOriginJsonRequest(c.req.raw, deps.config.publicOrigin)
 
-      // (2) 本文の byte 上限・JSON の形・fields の形・rawText の長さ（§5.7）
-      const request = await readJsonBody(c.req.raw, parseUpdatePageRequest)
-      if (request.rawText.length > MAX_INPUT_LENGTH) {
-        throw validationApiError('INPUT_TOO_LONG')
-      }
-
-      // 更新 API に対応するレート制限 scope は無い（RateLimitScope・RATE_LIMITS に 'update' が無い。§9.3）ので消費しない
-      const page = await deps.pages.findById(c.req.param('id'))
-      const now = deps.clock.now()
-      if (page === null || !isServable(page, now)) {
-        throw apiRequestError(404, 'NOT_FOUND', 'page not found')
-      }
-
-      const token = extractBearerToken(c.req.raw)
-      if (!(await isAuthorized(page, token))) {
-        throw apiRequestError(401, 'UNAUTHORIZED', 'edit token is missing or invalid')
-      }
-
-      // (4) 項目検証（§5.7）。日時が previous と不変なら PAST_EVENT は検証しない
-      const validation = validateEventFields(request.rawText, request.fields, now, {
-        mode: 'update',
-        previous: page.event,
-      })
-      if (!validation.ok) throw validationApiError(validation.code)
-
-      const previousSnapshot = buildChangeSnapshot(page.event, request.fields)
-      // baseDate は更新時は now（§3.2）。作成から日が経ったページで日時を消しても即座に期限切れにしないため
-      const expiresAt = calculateExpiresAt([{ endAt: request.fields.end }], now)
-
-      const result = await deps.pages.update(page.id, {
-        rawText: request.rawText,
-        event: request.fields,
-        expiresAt,
-        previousSnapshot,
-        now,
-      })
-      if (result === 'not_found') {
-        throw apiRequestError(404, 'NOT_FOUND', 'page not found')
-      }
-
-      const updated = await deps.pages.findById(page.id)
-      if (updated === null) throw new Error(`page ${page.id} not found right after update`)
-
-      // R2 の PUT 失敗はロールバックしない（作成 API と同じ方針。§2.3）
-      const ics = buildIcsForPage(updated, deps.config, now)
-      if (ics !== null) {
-        try {
-          await deps.storage.putIcs(updated.id, ics)
-        } catch (error) {
-          deps.logger.error('update_page_put_ics_failed', { error, pageId: updated.id })
-        }
-      }
-
-      const response: UpdatePageResponse = toSummaryJson(updated, deps.config.publicOrigin)
-      return c.json(response)
-    } catch (error) {
-      if (!(error instanceof ApiRequestError) || error.status >= 500) {
-        deps.logger.error('update_page_failed', { error })
-      }
-      const { status, body } = toApiErrorResponse(error)
-      return c.json(body, status as ContentfulStatusCode)
+    // (2) 本文の byte 上限・JSON の形・fields の形・rawText の長さ（§5.7）
+    const request = await readJsonBody(c.req.raw, parseUpdatePageRequest)
+    if (request.rawText.length > MAX_INPUT_LENGTH) {
+      throw validationApiError('INPUT_TOO_LONG')
     }
+
+    // 更新 API に対応するレート制限 scope は無い（RateLimitScope・RATE_LIMITS に 'update' が無い。§9.3）ので消費しない
+    const page = await deps.pages.findById(c.req.param('id'))
+    const now = deps.clock.now()
+    if (page === null || !isServable(page, now)) {
+      throw apiRequestError(404, 'NOT_FOUND', 'page not found')
+    }
+
+    const token = extractBearerToken(c.req.raw)
+    if (!(await isAuthorized(page, token))) {
+      throw apiRequestError(401, 'UNAUTHORIZED', 'edit token is missing or invalid')
+    }
+
+    // (4) 項目検証（§5.7）。日時が previous と不変なら PAST_EVENT は検証しない
+    const validation = validateEventFields(request.rawText, request.fields, now, {
+      mode: 'update',
+      previous: page.event,
+    })
+    if (!validation.ok) throw validationApiError(validation.code)
+
+    const previousSnapshot = buildChangeSnapshot(page.event, request.fields)
+    // baseDate は更新時は now（§3.2）。作成から日が経ったページで日時を消しても即座に期限切れにしないため
+    const expiresAt = calculateExpiresAt([{ endAt: request.fields.end }], now)
+
+    const result = await deps.pages.update(page.id, {
+      rawText: request.rawText,
+      event: request.fields,
+      expiresAt,
+      previousSnapshot,
+      now,
+    })
+    if (result === 'not_found') {
+      throw apiRequestError(404, 'NOT_FOUND', 'page not found')
+    }
+
+    const updated = await deps.pages.findById(page.id)
+    if (updated === null) throw new Error(`page ${page.id} not found right after update`)
+
+    // R2 の PUT 失敗はロールバックしない（作成 API と同じ方針。§2.3）
+    const ics = buildIcsForPage(updated, deps.config, now)
+    if (ics !== null) {
+      try {
+        await deps.storage.putIcs(updated.id, ics)
+      } catch (error) {
+        deps.logger.error('update_page_put_ics_failed', { error, pageId: updated.id })
+      }
+    }
+
+    const response: UpdatePageResponse = toSummaryJson(updated, deps.config.publicOrigin)
+    return c.json(response)
   })
 
   return app

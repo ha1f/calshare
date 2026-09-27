@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { requireDefined } from '../../../src/core/assert'
 import { buildDeps } from '../../../src/server/deps'
 import type { Env } from '../../../src/server/env'
 
@@ -45,7 +46,12 @@ describe('buildDeps / buildClock', () => {
 
     expect(deps.clock.now().toISOString()).not.toBe('2026-09-16T01:00:00.000Z')
     expect(logSpy).toHaveBeenCalledOnce()
-    const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
+    const payload = JSON.parse(
+      requireDefined(
+        logSpy.mock.calls[0],
+        'toHaveBeenCalledOnce ensures a call exists',
+      )[0] as string,
+    )
     expect(payload).toMatchObject({ level: 'warn', event: 'e2e_fixed_now_ignored' })
   })
 
@@ -61,7 +67,12 @@ describe('buildDeps / buildClock', () => {
     expect(now).toBeGreaterThanOrEqual(before)
     expect(now).toBeLessThanOrEqual(Date.now())
     expect(logSpy).toHaveBeenCalledOnce()
-    const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
+    const payload = JSON.parse(
+      requireDefined(
+        logSpy.mock.calls[0],
+        'toHaveBeenCalledOnce ensures a call exists',
+      )[0] as string,
+    )
     expect(payload).toMatchObject({ level: 'warn', event: 'e2e_fixed_now_invalid' })
   })
 

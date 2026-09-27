@@ -1,22 +1,17 @@
 import { Hono } from 'hono'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import {
   MAX_REPORT_COMMENT_LENGTH,
   RATE_LIMITS,
   REPORT_DEDUPE_HOURS,
 } from '../../core/config/limits'
+import { PAGE_ID_PATTERN } from '../../core/id/crockford'
 import type { CreateReportRequest } from '../../core/api/types'
 import type { ReportReason } from '../../core/types'
 import type { NewReportInput } from '../../ports/reportRepository'
 import type { RateLimitRule } from '../../ports/rateLimiter'
 import type { Deps } from '../deps'
 import type { Env } from '../env'
-import {
-  apiRequestError,
-  ApiRequestError,
-  toApiErrorResponse,
-  validationApiError,
-} from '../lib/errors'
+import { apiRequestError, validationApiError } from '../lib/errors'
 import { buildDetailUrl } from '../lib/ics'
 import { ipHash } from '../lib/ipHash'
 import { isServable } from '../lib/pageAccess'
@@ -80,76 +75,69 @@ async function consumeReportRateLimit(deps: Deps, ipHashValue: string, now: Date
 export function apiReportsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
 
-  app.post('/api/pages/:id/reports', async (c) => {
-    try {
-      // (1) Content-Type と Origin（§5.7・§9.8）
-      assertSameOriginJsonRequest(c.req.raw, deps.config.publicOrigin)
+  app.post(`/api/pages/:id{${PAGE_ID_PATTERN}}/reports`, async (c) => {
+    // (1) Content-Type と Origin（§5.7・§9.8）
+    assertSameOriginJsonRequest(c.req.raw, deps.config.publicOrigin)
 
-      // (2) 本文の byte 上限・JSON の形・comment の長さ（§5.7）
-      const request = await readJsonBody(c.req.raw, parseCreateReportRequest)
-      if ((request.comment?.length ?? 0) > MAX_REPORT_COMMENT_LENGTH) {
-        throw validationApiError('INPUT_TOO_LONG')
-      }
-
-      // (3) レート制限（§9.3）。本番で IP が取れなければ warn（middleware/rateLimit.ts の
-      // resolveRequestIdentity と同じ判定）
-      const rawIp = c.req.raw.headers.get('CF-Connecting-IP')
-      if (!rawIp && new URL(deps.config.publicOrigin).hostname !== 'localhost') {
-        deps.logger.warn('ip_unknown', {})
-      }
-      const reporterIpHash = await ipHash(rawIp, deps.config.ratePepper)
-      const now = deps.clock.now()
-      await consumeReportRateLimit(deps, reporterIpHash, now)
-
-      // (4) hidden／期限切れ／不正 ID は 404（存在しないページと区別させない、§4.1）
-      const pageId = c.req.param('id')
-      const page = await deps.pages.findById(pageId)
-      if (page === null || !isServable(page, now)) {
-        throw apiRequestError(404, 'NOT_FOUND', 'page not found')
-      }
-
-      const reportInput: NewReportInput = {
-        id: deps.ids.generateUuid(),
-        pageId: page.id,
-        reason: request.reason,
-        comment: request.comment,
-        ipHash: reporterIpHash,
-        now,
-      }
-      const dedupeSince = new Date(now.getTime() - REPORT_DEDUPE_HOURS * 60 * 60 * 1000)
-      const result = await deps.reports.insertIfNotDuplicate(reportInput, dedupeSince)
-
-      // 重複でも受理と同じ 200 を返し、通報者に重複だったかを知らせない（§9.4）
-      if (result === 'inserted') {
-        const reportCount = await deps.pages.incrementReportCount(page.id)
-        const activePagesFromSameCreator = await deps.pages.countActiveByCreator(
-          page.creatorIpHash,
-          page.creatorDeviceId,
-        )
-        c.executionCtx.waitUntil(
-          deps.notifier
-            .notifyReport({
-              pageId: page.id,
-              url: buildDetailUrl(deps.config.publicOrigin, page.id),
-              reason: request.reason,
-              comment: request.comment,
-              reportCount,
-              activePagesFromSameCreator,
-            })
-            .catch((error: unknown) => {
-              deps.logger.error('report_notify_failed', { error, pageId: page.id })
-            }),
-        )
-      }
-
-      return c.json({ ok: true })
-    } catch (error) {
-      if (!(error instanceof ApiRequestError) || error.status >= 500) {
-        deps.logger.error('create_report_failed', { error })
-      }
-      const { status, body } = toApiErrorResponse(error)
-      return c.json(body, status as ContentfulStatusCode)
+    // (2) 本文の byte 上限・JSON の形・comment の長さ（§5.7）
+    const request = await readJsonBody(c.req.raw, parseCreateReportRequest)
+    if ((request.comment?.length ?? 0) > MAX_REPORT_COMMENT_LENGTH) {
+      throw validationApiError('INPUT_TOO_LONG')
     }
+
+    // (3) レート制限（§9.3）。本番で IP が取れなければ warn（middleware/rateLimit.ts の
+    // resolveRequestIdentity と同じ判定）
+    const rawIp = c.req.raw.headers.get('CF-Connecting-IP')
+    if (!rawIp && new URL(deps.config.publicOrigin).hostname !== 'localhost') {
+      deps.logger.warn('ip_unknown', {})
+    }
+    const reporterIpHash = await ipHash(rawIp, deps.config.ratePepper)
+    const now = deps.clock.now()
+    await consumeReportRateLimit(deps, reporterIpHash, now)
+
+    // (4) hidden／期限切れ／存在しない ID は 404（区別させない、§4.1）。形式が不正な ID は
+    // PAGE_ID_PATTERN 制約でこのルートに一致せず、ここには来ない
+    const pageId = c.req.param('id')
+    const page = await deps.pages.findById(pageId)
+    if (page === null || !isServable(page, now)) {
+      throw apiRequestError(404, 'NOT_FOUND', 'page not found')
+    }
+
+    const reportInput: NewReportInput = {
+      id: deps.ids.generateUuid(),
+      pageId: page.id,
+      reason: request.reason,
+      comment: request.comment,
+      ipHash: reporterIpHash,
+      now,
+    }
+    const dedupeSince = new Date(now.getTime() - REPORT_DEDUPE_HOURS * 60 * 60 * 1000)
+    const result = await deps.reports.insertIfNotDuplicate(reportInput, dedupeSince)
+
+    // 重複でも受理と同じ 200 を返し、通報者に重複だったかを知らせない（§9.4）
+    if (result === 'inserted') {
+      const reportCount = await deps.pages.incrementReportCount(page.id)
+      const activePagesFromSameCreator = await deps.pages.countActiveByCreator(
+        page.creatorIpHash,
+        page.creatorDeviceId,
+      )
+      c.executionCtx.waitUntil(
+        deps.notifier
+          .notifyReport({
+            pageId: page.id,
+            url: buildDetailUrl(deps.config.publicOrigin, page.id),
+            reason: request.reason,
+            comment: request.comment,
+            reportCount,
+            activePagesFromSameCreator,
+          })
+          .catch((error: unknown) => {
+            deps.logger.error('report_notify_failed', { error, pageId: page.id })
+          }),
+      )
+    }
+
+    return c.json({ ok: true })
   })
 
   return app

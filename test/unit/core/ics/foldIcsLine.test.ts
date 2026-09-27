@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { requireDefined } from '../../../../src/core/assert'
 import { foldIcsLine } from '../../../../src/core/ics/buildIcs'
 
 function octetLength(text: string): number {
@@ -21,7 +22,9 @@ describe('foldIcsLine', () => {
   it('76 オクテットなら 75 オクテット目の直後で折り返す', () => {
     const line = `SUMMARY:${'a'.repeat(68)}` // 76 octets
     const folded = foldIcsLine(line)
-    const [first, second] = folded.split('\r\n')
+    const segments = folded.split('\r\n')
+    const first = requireDefined(segments[0], 'folded line has 2 segments')
+    const second = requireDefined(segments[1], 'folded line has 2 segments')
     expect(octetLength(first)).toBe(75)
     expect(second).toBe(' a') // 継続行はスペース 1 個 + 残り 1 文字
     expect(octetLength(second)).toBe(2)
