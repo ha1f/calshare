@@ -151,7 +151,7 @@ describe('GET /:id.ics（ics 配信、§7.2）', () => {
         body: { rawText: '9/20 19時 渋谷で飲み会', fields: eventFieldsJson(), source: 'direct' },
       }),
     )
-    const created = (await createRes.json()) as CreatePageResponse
+    const created = await createRes.json<CreatePageResponse>()
 
     const updateRes = await app.fetch(
       jsonRequest(`/api/pages/${created.id}`, {
@@ -336,7 +336,8 @@ describe('GET /:id.ics（ics 配信、§7.2）', () => {
         throw putError
       },
     }
-    const logger: Logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const errorSpy = vi.fn()
+    const logger: Logger = { info: vi.fn(), warn: vi.fn(), error: errorSpy }
     const deps = { ...baseDeps, storage, logger }
     const id = pageId(9)
     await createPage(repo, id)
@@ -346,8 +347,8 @@ describe('GET /:id.ics（ics 配信、§7.2）', () => {
 
     expect(res.status).toBe(200)
     expect(text).toContain('SUMMARY:飲み会')
-    expect(logger.error).toHaveBeenCalledTimes(1)
-    expect(logger.error).toHaveBeenCalledWith('ics_self_heal_put_failed', {
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(errorSpy).toHaveBeenCalledWith('ics_self_heal_put_failed', {
       error: putError,
       pageId: id,
     })

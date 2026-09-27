@@ -22,7 +22,7 @@ export function jsonRequest(path: string, options: JsonRequestOptions): Request 
   })
 }
 
-/** ApiError の code だけを取り出す。Response#json() の戻り値が unknown 型のため */
+/** ApiError の code だけを取り出す */
 export async function errorCode(res: Response): Promise<string> {
-  return ((await res.json()) as { code: string }).code
+  return (await res.json<{ code: string }>()).code
 }

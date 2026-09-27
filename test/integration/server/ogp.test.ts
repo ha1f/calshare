@@ -313,7 +313,10 @@ describe('GET /:id/ogp.png（OGP 画像、§2.5）', () => {
     const res = await get(deps, `/${id}/ogp.png`)
     await expectPngBody(res)
     expect(warnings).toEqual([
-      { event: 'ogp_store_failed', data: expect.objectContaining({ pageId: id }) },
+      {
+        event: 'ogp_store_failed',
+        data: expect.objectContaining({ pageId: id }) as Record<string, unknown>,
+      },
     ])
   })
 })

@@ -32,7 +32,15 @@ const noRawHtml = {
 export default tseslint.config(
   { ignores: ['dist/', 'dist-worker/', '.wrangler/', 'worker-configuration.d.ts', '.claude/'] },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.core.json', './tsconfig.server.json', './tsconfig.web.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
   {
     files: ['**/*.{ts,tsx,js,mjs}'],
     rules: {
@@ -40,6 +48,9 @@ export default tseslint.config(
       // Deps を型で揃えるため使わない引数も受け取る routes/*.ts の規約（§11.5）に合わせ、
       // 先頭 _ の引数は未使用でも許可する
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // ポートは Promise を返す契約なので、同期で済む実装も async で書く。async を外すと
+      // 関数内の throw が reject にならず、呼び出し側の .catch や rejects に届かない
+      '@typescript-eslint/require-await': 'off',
     },
   },
   {
@@ -62,6 +73,11 @@ export default tseslint.config(
         ].map((name) => [name, 'readonly']),
       ),
     },
+  },
+  {
+    // 3 つの tsconfig のどれにも含まれないファイル（型情報付き lint の対象外）
+    files: ['*.config.ts', 'eslint.config.js', 'scripts/**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
   },
   {
     // core は外部依存ゼロを保証するため相対 import のみ許可する（§11.1）。

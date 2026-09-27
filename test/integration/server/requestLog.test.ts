@@ -93,7 +93,7 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     )
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as { id: string }
+    const json = await res.json<{ id: string }>()
 
     const created = loggedLines().find((line) => line.event === 'page_created')
     expect(created).toMatchObject({ level: 'info', pageId: json.id, source: 'detail_cta' })

@@ -69,7 +69,8 @@ test('URL・コピー・カレンダーリンク・詳細ページへの遷移�
   await expect(page.locator('#resend-notice')).toBeHidden()
   await page.evaluate((pageId) => {
     const raw = localStorage.getItem('calshare.history')
-    const entries: Array<Record<string, unknown>> = raw === null ? [] : JSON.parse(raw)
+    const entries: Array<Record<string, unknown>> =
+      raw === null ? [] : (JSON.parse(raw) as Array<Record<string, unknown>>)
     const updated = entries.map((entry) => (entry.id === pageId ? { ...entry, version: 2 } : entry))
     localStorage.setItem('calshare.history', JSON.stringify(updated))
   }, id)
@@ -107,7 +108,8 @@ test('version を持たない履歴項目は updatedAt が createdAt と違っ�
 
   await page.evaluate((pageId) => {
     const raw = localStorage.getItem('calshare.history')
-    const entries: Array<Record<string, unknown>> = raw === null ? [] : JSON.parse(raw)
+    const entries: Array<Record<string, unknown>> =
+      raw === null ? [] : (JSON.parse(raw) as Array<Record<string, unknown>>)
     const updated = entries.map((entry) => {
       if (entry.id !== pageId) return entry
       const rest: Record<string, unknown> = { ...entry, updatedAt: '2026-09-20T00:00:00.000Z' }
@@ -137,12 +139,12 @@ test('日時未定の下書きではカレンダー欄の代わりに案内が�
 
 test('navigator.share 対応の環境では共有ボタンが出てtitleとurlを渡す', async ({ page }) => {
   await page.addInitScript(() => {
-    // @ts-expect-error テスト用に window へ直接生やす
-    window.__shareCalls = []
+    // テスト用に window へ直接生やす。型を持たないグローバルなので unknown 経由でキャストする
+    const withShareCalls = window as unknown as { __shareCalls: unknown[] }
+    withShareCalls.__shareCalls = []
     Object.defineProperty(window.navigator, 'share', {
       value: (data: unknown) => {
-        // @ts-expect-error 上と同じ
-        window.__shareCalls.push(data)
+        withShareCalls.__shareCalls.push(data)
         return Promise.resolve()
       },
       configurable: true,

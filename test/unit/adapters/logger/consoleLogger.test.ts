@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
+import { requireDefined } from '../../../../src/core/assert'
 import { consoleLogger } from '../../../../src/adapters/logger/consoleLogger'
 
 describe('consoleLogger', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>
+  let logSpy: Mock<typeof console.log>
 
   beforeEach(() => {
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -14,7 +16,8 @@ describe('consoleLogger', () => {
 
   function loggedPayload(): Record<string, unknown> {
     expect(logSpy).toHaveBeenCalledOnce()
-    return JSON.parse(logSpy.mock.calls[0][0] as string)
+    const call = requireDefined(logSpy.mock.calls[0], 'toHaveBeenCalledOnce ensures a call exists')
+    return JSON.parse(call[0] as string) as Record<string, unknown>
   }
 
   it('Error を { name, message } に正規化する', () => {

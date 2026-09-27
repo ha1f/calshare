@@ -86,7 +86,7 @@ describe('GET /api/pages/:id', () => {
     const res = await app.fetch(getPage(PAGE_ID, TOKEN))
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as GetPageResponse
+    const json = await res.json<GetPageResponse>()
     expect(Object.keys(json).sort()).toEqual(
       ['createdAt', 'expiresAt', 'fields', 'id', 'rawText', 'updatedAt', 'url', 'version'].sort(),
     )
@@ -206,7 +206,7 @@ describe('PATCH /api/pages/:id', () => {
     )
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as UpdatePageResponse
+    const json = await res.json<UpdatePageResponse>()
     expect(json.version).toBe(2)
     expect(json.fields.title).toBe('新宿飲み会')
     expect(json.expiresAt).toBe('2026-09-28T12:00:00.000Z') // 新しい end 2026-09-21T12:00:00.000Z + 7 日
@@ -334,7 +334,7 @@ describe('PATCH /api/pages/:id', () => {
     )
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as UpdatePageResponse
+    const json = await res.json<UpdatePageResponse>()
     expect(json.expiresAt).toBe('2026-09-23T01:00:00.000Z') // NOW + 7 日
   })
 
@@ -629,7 +629,7 @@ describe('PATCH /api/pages/:id', () => {
       body: JSON.stringify(createBody),
     })
     expect(createRes.status).toBe(200)
-    const created = (await createRes.json()) as CreatePageResponse
+    const created = await createRes.json<CreatePageResponse>()
 
     const newStart = new Date(start.getTime() + 60 * 60 * 1000)
     const newEnd = new Date(newStart.getTime() + 60 * 60 * 1000)
