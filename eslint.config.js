@@ -1,5 +1,5 @@
 // ESLint flat config。§9.1 の XSS 対策（innerHTML 等の禁止）、
-// core が外部依存を持たないこと（相対 import のみ）、§2.2 の import の書き方を機械的に検査する。
+// core が外部依存を持たないこと（相対 import のみ）、docs/guidelines.md §2.2 の import の書き方を機械的に検査する。
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 
@@ -28,7 +28,8 @@ const noRestrictedSyntax = {
     },
     {
       selector: "ImportSpecifier[importKind='type']",
-      message: '値と型を同じモジュールから取るときは import type の行に分ける（§2.2）',
+      message:
+        '値と型を同じモジュールから取るときは import type の行に分ける（docs/guidelines.md §2.2）',
     },
   ],
 }

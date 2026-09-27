@@ -117,7 +117,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
   - `@typescript-eslint/require-await` だけは off にする。ポート（`src/ports/*`）は Promise を返す契約で、メモリ実装や Fake のように同期で済む実装も `async` で書く。`async` を外して `Promise.resolve()` で返す書き方にすると、関数内の `throw` が reject にならず同期の例外になり、本物のアダプタと挙動がずれる。await 漏れは `no-floating-promises` と `await-thenable` が検出する。
   - `npm run lint` は先に `wrangler types` を実行する。`worker-configuration.d.ts`（生成物、gitignore 対象）が無いと `env` などの型が解決できず、`no-unsafe-*` が大量に出る。
   - lint の所要時間は導入前の約 1.6 倍（手元で 6 秒台 → 10 秒台、2026-09-27）。
-- プロジェクト固有のルールは、設計原則に直結するもの（§2.4）と、tsc では検出できない書き方の統一（§2.2 の import の分割）だけを持つ。汎用のスタイルプラグイン（unicorn、perfectionist、import-x）は入れない（§9）。
+- プロジェクト固有のルールは §2.4 に挙げたもの（設計原則に直結するものと、tsc では検出できない書き方の統一）だけを持つ。汎用のスタイルプラグイン（unicorn、perfectionist、import-x）は入れない（§9）。
 - `scripts/**/*.mjs` のグローバル定義は必要な名前だけを手書きで列挙する。`globals` パッケージ（`globals.node`）は許可範囲が数十個に広がるため入れない。
 
 ### 3.2 Prettier

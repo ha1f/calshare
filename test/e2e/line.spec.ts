@@ -35,13 +35,19 @@ async function expectCalendarUaHandling(
 ): Promise<void> {
   const googleLink = page.locator(`${scope} [data-calendar="google"]`)
   const icsLink = page.locator(`${scope} [data-calendar="ics"]`)
-  // href への openExternalBrowser 付与は applyCalendarUaHandling が JS で行うため、
-  // 反映されるまでポーリングする（SSR 直後の href にはまだ付いていない）
+  // href への openExternalBrowser 付与は applyCalendarUaHandling が JS で行うため、反映されるまでポーリングする。
+  // new URL('') は throw し、expect.poll は throw をリトライしないため、href が付くまでは null を返す（true にも false にも一致しない）
   await expect
-    .poll(async () => new URL(await readHref(googleLink)).searchParams.has('openExternalBrowser'))
+    .poll(async () => {
+      const href = await readHref(googleLink)
+      return href === '' ? null : new URL(href).searchParams.has('openExternalBrowser')
+    })
     .toBe(expected.openExternalBrowser)
   await expect
-    .poll(async () => new URL(await readHref(icsLink)).searchParams.has('openExternalBrowser'))
+    .poll(async () => {
+      const href = await readHref(icsLink)
+      return href === '' ? null : new URL(href).searchParams.has('openExternalBrowser')
+    })
     .toBe(expected.openExternalBrowser)
   const googleUrl = new URL(await readHref(googleLink))
   expect(googleUrl.searchParams.get('action')).toBe('TEMPLATE')

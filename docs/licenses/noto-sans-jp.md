@@ -48,7 +48,7 @@
 4. フォント単体は販売・再配布しない（変更なし）
 5. design.md の §2.5・§11.1・§12 T10 行を「JIS 第 1 水準のみ」（第 2 水準は含めない）に修正した。理由: `scripts/fonts/subset.sh`（provisioning 自動化が既に使っている運用スクリプト）が第 1 水準のみを対象にしており、T10 で新たに第 2 水準の文字表を作ると `docs/runbooks/fonts.md` の運用実績（`generate-jis-level1.mjs`）と二重管理になるため、既存パイプラインへの統合を選んだ。第 2 水準の字（例:「髙」「﨑」）は OGP 画像上で豆腐になる既知の制限として残る（design.md §14.1 と同じ扱い）
 
-**残る条件**: 条件2は「著作権表示付きの `OFL.txt` を配布物と同じ場所に同梱する」ことを求めている。テスト用フィクスチャ（`test/fixtures/fonts/`）には満たしている。本番配信の実体である R2 の `fonts/` プレフィックス配下への配置は `.github/workflows/provision.yml` の `font` ジョブが自動で行う（docs/runbooks/fonts.md）ため、オーナーの手作業は不要。このジョブを実行し、配置が完了したことを確認してから、この記録を確定として再承認すること。
+**残る条件**: 条件2は「著作権表示付きの `OFL.txt` を配布物と同じ場所に同梱する」ことを求めている。テスト用フィクスチャ（`test/fixtures/fonts/`）には満たしている。本番配信の実体である R2 の `fonts/` プレフィックス配下への配置は `.github/workflows/provision.yml` の `font` ジョブが自動で行う（docs/runbooks/fonts.md）ため、手動でのアップロードは不要。このジョブを実行し、配置が完了したことを確認してから、この記録を確定として再承認すること。
 
 次のアクション: オーナーが `provision.yml` を実行し、`font` ジョブの Step Summary で R2 に `fonts/OFL.txt` が配置されたことを確認して、本記録を承認する。第 2 水準を含める設計変更が必要になった場合は、`generate-jis-level1.mjs` と対になる第 2 水準版の生成スクリプトを新設し、本記録と `docs/runbooks/fonts.md` を合わせて更新すること。
 
