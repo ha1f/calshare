@@ -13,7 +13,9 @@
   ハッシュ値は許可文字のみを検証してから埋め込むため、SQL インジェクションにならない）。
 - `action = hide-by-creator` を選ぶと、まず `page_id` から送信元（`creator_ip_hash` /
   `creator_device_id`）を `SELECT` で特定し（design.md §9.4 の一括非表示と同じ条件）、
-  その送信元の `active` なページをまとめて `hidden` にする。
+  その送信元の `active` なページをまとめて `hidden` にする。`creator_ip_hash` が `unknown`
+  （作成時に IP が取れなかった。design.md §9.3）のときは、別の送信元のページを含めないよう
+  `creator_device_id` の一致だけで対象を決める。
 - 更新の前に必ず対象件数を `SELECT COUNT(*)` で確認し、対象ページ id の一覧も取得して
   Actions のサマリと Issue コメントに残す（件数・id の一覧・実際の更新対象は同じ `WHERE` 句を
   共有しているのでずれない。誤って巻き込んだページがあれば、その id を控えて `unhide` で

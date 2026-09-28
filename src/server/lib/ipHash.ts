@@ -1,5 +1,5 @@
 import { requireDefined } from '../../core/assert'
-import { IPV6_BUCKET_PREFIX_BITS } from '../../core/config/limits'
+import { IPV6_BUCKET_PREFIX_BITS, UNKNOWN_IP_HASH } from '../../core/config/limits'
 
 const IP_HASH_HEX_LENGTH = 32
 const IPV6_GROUP_COUNT = 8
@@ -8,11 +8,11 @@ const IPV6_GROUP_BITS = 16
 /**
  * CF-Connecting-IP の値から HMAC-SHA256（hex 先頭 32 文字）の決定的なハッシュを作る（§9.3）。
  * 生 IP は保存もログもしないため、この戻り値だけが creator_ip_hash やレート制限のバケットキーに使われる。
- * IP が取れないとき（ヘッダを付けずに Worker を直接呼ぶ結合テストなど）や空白のみのときは 'unknown' を返す。
+ * IP が取れないとき（ヘッダを付けずに Worker を直接呼ぶ結合テストなど）や空白のみのときは UNKNOWN_IP_HASH を返す。
  */
 export async function ipHash(rawIp: string | null, pepper: string): Promise<string> {
   const ip = rawIp?.trim()
-  if (!ip) return 'unknown'
+  if (!ip) return UNKNOWN_IP_HASH
 
   const normalized = normalizeIp(ip)
   const key = await crypto.subtle.importKey(

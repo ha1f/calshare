@@ -43,6 +43,20 @@ test('hide-by-creator は同一送信元の active なページを一括で hidd
   assert.match(listSql, new RegExp(`creator_ip_hash = '${VALID_HASH}'`))
 })
 
+test('hide-by-creator は creator_ip_hash が unknown のとき device_id だけで絞る', () => {
+  const statements = buildModerationSql({
+    action: 'hide-by-creator',
+    creatorIpHash: 'unknown',
+    creatorDeviceId: VALID_DEVICE_ID,
+  })
+  assert.match(statements.sql, /^UPDATE pages SET status = 'hidden' WHERE /)
+  for (const statement of [statements.sql, statements.countSql, statements.listSql]) {
+    assert.doesNotMatch(statement, /creator_ip_hash/)
+    assert.match(statement, /status = 'active'/)
+    assert.match(statement, new RegExp(`creator_device_id = '${VALID_DEVICE_ID}'`))
+  }
+})
+
 test('不明な action は分かりやすいメッセージで失敗する', () => {
   assert.throws(
     () => buildModerationSql({ action: 'delete', pageId: VALID_PAGE_ID }),

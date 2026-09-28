@@ -42,6 +42,11 @@ export const RATE_LIMITS = {
 } as const
 /** IPv6 はこのプレフィックス長に丸めてから ip_hash を計算する（§9.3） */
 export const IPV6_BUCKET_PREFIX_BITS = 64
+/**
+ * CF-Connecting-IP が無いリクエストの ip_hash（§9.3）。送信元を区別しない値なので、同一送信元の判定（§9.4）では
+ * IP の一致に使わない。scripts/cf/moderation-sql.mjs は TypeScript を import できないため同じ値を別に持つ
+ */
+export const UNKNOWN_IP_HASH = 'unknown'
 export const REPORT_DEDUPE_HOURS = 24
 /** D1 は 1 クエリのバインドパラメータが 100 個まで。GC のバッチと deleteByIds の分割単位に使う */
 export const D1_MAX_BIND_PARAMS = 100

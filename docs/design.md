@@ -988,7 +988,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 - **閾値の根拠**: 日本の携帯回線（docomo・au・SoftBank）は CGNAT で多数のユーザーが同一 IPv4 を共有する。主要導線が LINE（モバイル）なので、IP 側を厳しくするとイベント当日の集団利用で正規ユーザーが 429 を踏む。**device バケットを主、IP バケットは緩めの二次防御**にする。リリース後に 429 のログ（`exceeded` のバケット種別、§9.6）で IP 側に弾かれた比率を見て調整する（§14.2）。
 - `ip_hash` の算出（`server/lib/ipHash.ts`）: `HMAC-SHA256(RATE_LIMIT_PEPPER, 正規化した IP)` の hex 先頭 32 文字。**IPv6 は /64 プレフィックスに丸めてから**ハッシュする（`IPV6_BUCKET_PREFIX_BITS = 64`、`limits.ts`）。IPv4 はそのまま。IPv4-mapped IPv6（`::ffff:1.2.3.4`）は IPv4 として扱う。丸める理由: 家庭回線でも /64 が割り当てられ、プライバシー拡張やVPS で下位 64 bit を 1 リクエストごとに変えられるため、アドレス単位では IP バケットが無限に新規になる。生 IP は保存もログもしない。
-- `CF-Connecting-IP` が無いとき（ヘッダを付けずに Worker を直接呼ぶ結合テストなど）は `ip:unknown` の単一バケットにフォールバックし、本番（`PUBLIC_ORIGIN` が `localhost` でない）で無い場合は warn ログを出す。
+- `CF-Connecting-IP` が無いとき（ヘッダを付けずに Worker を直接呼ぶ結合テストなど）は `ip_hash` を `'unknown'`（`UNKNOWN_IP_HASH`、`limits.ts`）にして `ip:unknown` の単一バケットにフォールバックし、本番（`PUBLIC_ORIGIN` が `localhost` でない）で無い場合は warn ログを出す。`'unknown'` は送信元を区別しない値なので、同一送信元の判定（§9.4）では IP の一致に使わない。
 - `device_id` は `cs_device` Cookie（`HttpOnly; Secure; SameSite=Lax; Max-Age=34560000`（400 日）; Path=/）。値は **`crypto.randomUUID()` が返す UUID 文字列**（`server/lib/deviceCookie.ts` の `readDeviceId` はこの形式以外を null にして再発行させる）。①は静的アセットなので Cookie はサーバから発行できない。**`POST /api/pages` が Cookie 無しで来たら発行し、その ID をそのリクエストのバケットに使う**。Cookie 削除で device バケットは新しくなるが、IP バケットは独立して効くので回避にならない。
 - 実装は D1 `rate_limit_counters` への固定窓カウンタ。窓の開始は時間窓なら時、日窓なら日（UTC）で切り捨てる。**`consume` はまず SELECT で各ルールの現在値を読み、1 つでも上限以上なら書かずに `allowed = false` を返す。全て未満のときだけ `INSERT ... ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count` を `db.batch()` で行う。** 超過後もリクエストごとに 3 行書くと、429 の連打が D1 の書き込み枠を消費する増幅攻撃になる（§4.3 と同じ構図）ため。読み取りは 250 億行/月の枠で余裕がある。SELECT と書き込みの間は非アトミックなので、同時に来た複数リクエストが全員 SELECT を通過してから書くことがありうる。**書き込みは `RETURNING` で更新後の値を受け取り、上限を超えていれば `allowed = false` にする**（書き込み自体は取り消さない）。これにより超過幅は同時実行数で頭打ちになる。
 - レート制限は Content-Type / Origin 検査と JSON の形式検証の後に置く（§5.7 の順序）。
@@ -1009,14 +1009,15 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
   - 本文に載せる URL は `config.publicOrigin` から組んだ詳細ページ URL の 1 本だけ。コメント内の URL は「[リンク]」に置換（`URL_PATTERN`）した上で `MAX_WEBHOOK_COMMENT_LENGTH = 200` 文字で切り詰める（全文は D1 の `reports` で見る）。
   - Discord: `allowed_mentions: { parse: [] }` を必ず付け、コメントはコードブロック（```）で囲んで自動リンクと Markdown を無効化する。
   - Slack: `&` `<` `>` をエスケープしてから `mrkdwn: false` の text に入れる。
-  - 本文に含める情報: ページ URL・理由・累計件数・**同一送信元（`creator_ip_hash` または `creator_device_id` が同じ）の有効ページ数**（`PageRepository.countActiveByCreator`）。`report_count >= 3` を強調する。
+  - 本文に含める情報: ページ URL・理由・累計件数・**同一送信元（`creator_ip_hash` または `creator_device_id` が同じ）の有効ページ数**（`PageRepository.countActiveByCreator`）。`report_count >= 3` を強調する。通報対象の `creator_ip_hash` が `'unknown'`（§9.3）なら `creator_device_id` の一致だけで数える。
 - **自動非表示のしきい値は設けない**（結託した虚偽通報で正当ページを落とせるため）。運用者が通知を見て、Cloudflare ダッシュボードの D1 コンソールから非表示にする。スパム波に対しては通報ページと同じ送信元を一括で非表示にする。
 
   ```sql
-  -- 通報されたページ :id と同じ送信元の有効ページを一括で非表示にする（H11 の運用手順）
+  -- 通報されたページ :id と同じ送信元の有効ページを一括で非表示にする（H11 の運用手順）。
+  -- creator_ip_hash が 'unknown' のページどうしは別の送信元でありうるので、そのときは device_id だけで一致させる
   UPDATE pages SET status = 'hidden'
   WHERE status = 'active'
-    AND (creator_ip_hash = (SELECT creator_ip_hash FROM pages WHERE id = :id)
+    AND ((creator_ip_hash = (SELECT creator_ip_hash FROM pages WHERE id = :id) AND creator_ip_hash != 'unknown')
       OR creator_device_id = (SELECT creator_device_id FROM pages WHERE id = :id));
   ```
 
@@ -1477,7 +1478,7 @@ export interface PageRepository {
   findById(id: string): Promise<PageRecord | null>
   /** version+1 で更新する。楽観ロックは持たず最後の保存が勝つ（§6.5）。status / report_count は触らない */
   update(id: string, patch: PagePatch): Promise<'ok' | 'not_found'>
-  /** 同一送信元（ip_hash または device_id が一致）の active なページ数。通報通知に載せる（§9.4） */
+  /** 同一送信元（ip_hash または device_id が一致）の active なページ数。通報通知に載せる（§9.4）。ip_hash が UNKNOWN_IP_HASH なら device_id だけで数える */
   countActiveByCreator(creatorIpHash: string, creatorDeviceId: string): Promise<number>
   listExpired(before: Date, limit: number): Promise<string[]>
   /** D1_MAX_BIND_PARAMS 件ずつに分割して db.batch() に載せる。101 件以上でも動く */

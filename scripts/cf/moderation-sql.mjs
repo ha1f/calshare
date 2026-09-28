@@ -15,6 +15,9 @@ import { pathToFileURL } from 'node:url'
 export const PAGE_ID_PATTERN = /^[0-9a-hjkmnp-tv-z]{12}$/
 // design.md §9.3: ip_hash は HMAC-SHA256 の hex 先頭32文字
 export const IP_HASH_PATTERN = /^[0-9a-f]{32}$/
+// CF-Connecting-IP が無いリクエストの ip_hash。定義は src/core/config/limits.ts の UNKNOWN_IP_HASH。
+// 送信元を区別しない値なので、hide-by-creator は IP の一致を条件にしない（design.md §9.4）
+export const UNKNOWN_IP_HASH = 'unknown'
 // device_id の正確な生成方式は設計書に明記が無い（cs_device Cookie の値。§9.3）。
 // ここでは「SQL 文字列リテラルを抜けられない」ことだけを機械的に保証する許可文字集合にする。
 export const DEVICE_ID_PATTERN = /^[0-9A-Za-z_-]{1,64}$/
@@ -32,7 +35,7 @@ function assertPageId(pageId) {
 function assertIpHash(hash) {
   if (typeof hash !== 'string' || !IP_HASH_PATTERN.test(hash)) {
     throw new Error(
-      `creator_ip_hash が不正です: ${JSON.stringify(hash)}。32桁の16進文字列で指定してください（design.md §9.3）`,
+      `creator_ip_hash が不正です: ${JSON.stringify(hash)}。32桁の16進文字列か ${UNKNOWN_IP_HASH} で指定してください（design.md §9.3）`,
     )
   }
   return hash
@@ -51,7 +54,8 @@ function assertDeviceId(deviceId) {
  * 通報対応の SQL を組み立てる。
  * - hide / unhide: page_id 1件を対象に status を切り替える
  * - hide-by-creator: 同一送信元（creator_ip_hash または creator_device_id が一致）の
- *   active なページをまとめて hidden にする（design.md §9.4 のスパム波対応）
+ *   active なページをまとめて hidden にする（design.md §9.4 のスパム波対応）。
+ *   creatorIpHash が UNKNOWN_IP_HASH のときは creator_device_id の一致だけで絞る
  *
  * 戻り値の countSql・listSql は sql と同じ WHERE 句を共有する。countSql は実行前の対象件数
  * 確認に、listSql は更新前に対象 id を記録する（hide-by-creator は複数件を巻き込みうるため、
@@ -71,9 +75,12 @@ export function buildModerationSql({ action, pageId, creatorIpHash, creatorDevic
     }
   }
   if (action === 'hide-by-creator') {
-    const ipHash = assertIpHash(creatorIpHash)
     const deviceId = assertDeviceId(creatorDeviceId)
-    const where = `status = 'active' AND (creator_ip_hash = '${ipHash}' OR creator_device_id = '${deviceId}')`
+    const creatorCondition =
+      creatorIpHash === UNKNOWN_IP_HASH
+        ? `creator_device_id = '${deviceId}'`
+        : `(creator_ip_hash = '${assertIpHash(creatorIpHash)}' OR creator_device_id = '${deviceId}')`
+    const where = `status = 'active' AND ${creatorCondition}`
     return {
       countSql: `SELECT COUNT(*) AS count FROM pages WHERE ${where};`,
       listSql: `SELECT id FROM pages WHERE ${where};`,

@@ -1,3 +1,4 @@
+import { UNKNOWN_IP_HASH } from '../../core/config/limits'
 import type { ChangeSnapshot } from '../../core/types'
 import type {
   EventRecord,
@@ -143,10 +144,14 @@ export function createMemoryPageRepository(
     },
 
     async countActiveByCreator(creatorIpHash: string, creatorDeviceId: string) {
+      const ipIdentifiesCreator = creatorIpHash !== UNKNOWN_IP_HASH
       let count = 0
       for (const page of pages.values()) {
         if (page.status !== 'active') continue
-        if (page.creatorIpHash === creatorIpHash || page.creatorDeviceId === creatorDeviceId)
+        if (
+          (ipIdentifiesCreator && page.creatorIpHash === creatorIpHash) ||
+          page.creatorDeviceId === creatorDeviceId
+        )
           count++
       }
       return count
