@@ -8,6 +8,7 @@ import { consoleLogger } from '../../../src/adapters/logger/consoleLogger'
 import { PAGE_ID_PATTERN } from '../../../src/core/id/crockford'
 import { createApp } from '../../../src/server/app'
 import { apiRequestError } from '../../../src/server/lib/errors'
+import { ipHash } from '../../../src/server/lib/ipHash'
 import type { RateLimitRule } from '../../../src/ports/rateLimiter'
 import type { Deps } from '../../../src/server/deps'
 import { buildFakeDeps } from '../helpers/fakeDeps'
@@ -61,12 +62,13 @@ describe('requestLog ミドルウェア（§9.6）', () => {
     expect(completed?.durationMs as number).toBeGreaterThanOrEqual(0)
   })
 
-  it('作成ログ（page_created）に pageId と source が出る。rawText・title・location・memo 等の入力はどのログにも出ない', async () => {
+  it('作成ログ（page_created）に pageId と source が出る。入力内容・IP アドレスとそのハッシュ値・device_id・UA・編集トークンはどのログにも出ない', async () => {
     const deps = buildFakeDeps({ logger: consoleLogger })
     const secretRawText = '__do_not_leak_rawtext__9/20 19時 渋谷で飲み会'
     const secretTitle = '__do_not_leak_title__'
     const secretLocation = '__do_not_leak_location__'
     const secretMemo = '__do_not_leak_memo__'
+    const secretUserAgent = '__do_not_leak_ua__'
 
     const res = await fetchApp(
       deps,
@@ -88,6 +90,7 @@ describe('requestLog ミドルウェア（§9.6）', () => {
           'CF-Connecting-IP': '203.0.113.7',
           Authorization: 'Bearer super-secret-token',
           Cookie: 'cs_device=11111111-1111-4111-8111-111111111111',
+          'User-Agent': `Mozilla/5.0 (iPhone) Line/13.0.0 ${secretUserAgent}`,
         },
       }),
     )
@@ -104,8 +107,10 @@ describe('requestLog ミドルウェア（§9.6）', () => {
       secretTitle,
       secretLocation,
       secretMemo,
+      secretUserAgent,
       'super-secret-token',
       '203.0.113.7',
+      await ipHash('203.0.113.7', deps.config.ratePepper),
       '11111111-1111-4111-8111-111111111111',
       'secret=xyz',
     ]
@@ -157,6 +162,66 @@ describe('requestLog ミドルウェア（§9.6）', () => {
 
     const completed = loggedLines().find((line) => line.event === 'request_completed')
     expect(completed).toMatchObject({ route: '/api/pages', method: 'POST', status: 429 })
+  })
+
+  it('通報のログには、受理したときも 429 のときも通報者の IP アドレス・そのハッシュ値・UA が出ない', async () => {
+    const deps = buildFakeDeps({ logger: consoleLogger })
+    const reporterIp = '198.51.100.23'
+    const secretUserAgent = '__do_not_leak_reporter_ua__'
+    const created = await fetchApp(
+      deps,
+      jsonRequest('/api/pages', {
+        method: 'POST',
+        body: {
+          rawText: '9/20 19時 渋谷で飲み会',
+          fields: {
+            title: '飲み会',
+            location: '渋谷',
+            memo: null,
+            start: '2026-09-20T10:00:00.000Z',
+            end: '2026-09-20T11:00:00.000Z',
+            isAllDay: false,
+          },
+          source: 'direct',
+        },
+      }),
+    )
+    const { id } = await created.json<{ id: string }>()
+    const reportRequest = () =>
+      jsonRequest(`/api/pages/${id}/reports`, {
+        method: 'POST',
+        body: { reason: 'spam', comment: null },
+        headers: { 'CF-Connecting-IP': reporterIp, 'User-Agent': `Mozilla/5.0 ${secretUserAgent}` },
+      })
+
+    const accepted = await fetchApp(deps, reportRequest())
+    expect(accepted.status).toBe(200)
+
+    vi.spyOn(deps.rateLimiter, 'consume').mockImplementation(
+      async (rules: RateLimitRule[]): Promise<{ allowed: boolean; exceeded: RateLimitRule[] }> => ({
+        allowed: false,
+        exceeded: rules,
+      }),
+    )
+    const limited = await fetchApp(deps, reportRequest())
+    expect(limited.status).toBe(429)
+    const rateLimited = loggedLines().find((line) => line.event === 'rate_limited')
+    expect(rateLimited).toMatchObject({ scope: 'report' })
+    expect(rateLimited?.exceeded).toEqual([
+      { bucket: 'ip', window: 'hour' },
+      { bucket: 'ip', window: 'day' },
+    ])
+
+    const forbidden = [
+      reporterIp,
+      await ipHash(reporterIp, deps.config.ratePepper),
+      secretUserAgent,
+    ]
+    for (const line of logSpy.mock.calls.map((call) => call[0] as string)) {
+      for (const value of forbidden) {
+        expect(line).not.toContain(value)
+      }
+    }
   })
 
   it('想定外の例外（catch していないルート）は unhandled_error として構造化ログに残り、name・message 以外は出ない', async () => {

@@ -1033,14 +1033,16 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 | 残す | 残さない |
 |---|---|
-| ルート名（パスパターン）・メソッド・ステータス・所要時間 | 生の IP アドレス（`ip_hash` のみ。日次で pepper を回す必要はない：HMAC の鍵はシークレット） |
+| ルート名（パスパターン）・メソッド・ステータス・所要時間 | IP アドレス（生の値も `ip_hash` も出さない。`ip_hash` は D1 の `pages`・`reports`・`rate_limit_counters` にだけ保存する） |
 | ページ ID（公開済みの推測不能文字列） | 編集トークン（生・ハッシュとも一切出さない） |
-| パース結果の分類（`issues`）と入力文字数 | `raw_text` `title` `memo` `location` の内容 |
-| 作成の流入元 `source`（`direct` / `detail_cta` / `prefill`。`pages.source` にも保存） | クエリ文字列全体（パスのみ記録。`ref` は `source` に変換してから残す） |
-| 429 のときの `exceeded` のバケット種別（`ip` / `device`）と窓 | |
+| 作成の流入元 `source`（`direct` / `detail_cta` / `prefill`。`pages.source` にも保存） | `device_id`（`ip_hash` と同じく D1 にだけ保存する） |
+| 429 のときの `exceeded` のバケット種別（`ip` / `device`）と窓 | `raw_text` `title` `memo` `location` の内容 |
 | エラーの `name` と `message`（200 文字で切り詰め） | 例外オブジェクトそのもの（satori 等の例外メッセージにはレイアウト対象の文字列が混ざる）。スタックトレースも同様に残さない：`consoleLogger` は level によらず `{ name, message }` にしか正規化しない（T1、下記） |
-| 大まかな UA 分類（LINE / iOS / Android / その他） | UA 文字列そのもの |
-| GC の処理件数・所要時間 | |
+| GC の処理件数・所要時間 | クエリ文字列全体（パスのみ記録。`ref` は `source` に変換してから残す） |
+| | UA 文字列と、UA から求めた分類（LINE / iOS / Android 等） |
+| | パース結果の分類（`issues`）と入力文字数 |
+
+UA の分類とパース結果の分類は Phase 1 では残さない。UA の判定はクライアント側の表示の切り替え（§6.6）にしか使わず、パースはブラウザで行うので API は結果の `fields` しか受け取らない。どちらかを残すようにするときは、docs/legal/privacy.md の「取得する情報」のアクセスログの項も同じ PR で直す。
 
 ログは `console.log(JSON.stringify({...}))` の構造化ログにする。`Logger` ポートの実装は `adapters/logger/consoleLogger.ts`（T1）の 1 つで、`Deps.logger` にはこれを配線する。`consoleLogger` は `error` フィールドに `Error` インスタンスを受け取ったら `{ name, message }`（message は 200 文字で切り詰め）に正規化し、それ以外の値は捨てる。呼び出し側が例外を渡しても入力内容がログに混ざらないようにするため。`src/server/lib/logger.ts`（T18）はポートの実装ではなく、リクエスト単位の文脈（ルート名・メソッド・ステータス・所要時間・pageId）を `Logger` に載せる薄いヘルパで、`middleware/requestLog.ts` から使う。Cloudflare のエッジが取得するプラットフォームレベルのログは Cloudflare 側の基盤機能であり、ここでの方針は「アプリケーションが自ら生成するログ」に限る。ルートが catch していない例外は Hono の既定の errorHandler が `console.error(err)` で生の Error（スタックトレース込み）を出してしまうため、`app.ts` に `app.onError` を登録して `logUnhandledError`（`src/server/lib/logger.ts`）経由の構造化ログに一本化する（T18）。`app.onError` は `/api/*` なら JSON、それ以外は `text/plain` の 500 を返す。どのルートにも一致しなかったリクエストは `app.notFound`（`src/server/lib/notFound.tsx`）が同じ基準でパスを 3 通りに分け、`/api/*` は JSON、`.ics` は `text/plain`、それ以外は `NotFound` ビューの HTML を返す。
 
