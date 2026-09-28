@@ -26,7 +26,7 @@ async function createPage(page: Page, text: string): Promise<string> {
   return id
 }
 
-// e2e は create API を叩くたびに ip:unknown のレート制限バケットを共有で消費する（§9.3・§10.4）ため、
+// e2e は create API を叩くたびに、送信元ごとのレート制限の回数を消費する（§9.3・§10.4）ため、
 // 1 テストにつき作成を 1 回に抑え、複数のシナリオをまとめて検証する
 test('URL・コピー・カレンダーリンク・詳細ページへの遷移・送り直し案内（シナリオ1・2・3）', async ({
   page,

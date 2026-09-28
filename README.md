@@ -7,7 +7,7 @@
 
 ## 手元で動かす
 
-Node 22 系が必要（`.nvmrc`）。
+Node 22 系（22.13 以上）が必要（`.nvmrc`）。
 
 ```sh
 npm ci
@@ -20,19 +20,17 @@ npm run dev
 
 ```sh
 npm run test          # unit + 結合 + scripts
-npm run test:e2e      # e2e（初回は npx playwright install chromium が要る）
+npm run test:e2e      # e2e（上の手順の後で。初回は npx playwright install chromium が要る）
 ```
 
 ## ドキュメント
 
-初めての人は [docs/onboarding.md](docs/onboarding.md) から読む。
+初めての人は [docs/onboarding.md](docs/onboarding.md) から読む。手元で動かす手順、テスト、どこに何があるかをまとめてある。
 
-- [docs/onboarding.md](docs/onboarding.md) — 手元で動かす手順、テスト、どこに何があるか
 - [docs/architecture.md](docs/architecture.md) — 全体のしくみ。リクエストの流れ、データの置き場所、コードの層
 - [docs/concept.md](docs/concept.md) — なぜ作るのか。原則、画面の流れ、スコープ
-- [docs/guidelines.md](docs/guidelines.md) — どう書くか。TypeScript・lint・テスト・依存の決まり
-- [docs/design.md](docs/design.md) — 何を作るかの詳細設計。触る領域の節を読む
-- [docs/runbooks/README.md](docs/runbooks/README.md) — 運用の手順（公開までの作業、通報対応、使用量の監視など）
+
+ほかの文書（書き方の決まり、詳細設計、運用の手順など）の一覧は docs/onboarding.md の末尾にある。
 
 ## ライセンス
 
