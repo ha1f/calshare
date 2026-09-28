@@ -73,6 +73,11 @@ GitHub の Actions タブ → `deploy` ワークフロー → `Run workflow` か
   落ちることがある。§2.5 の遅延初期化が効いているかは実機で見るしかない）。
 - `wrangler.jsonc` の `workers_dev` が `false` になっているか（H3 完了後の前提。`true` のままだと
   `*.workers.dev` でも同じ内容が見えてしまう）。
+- Cloudflare ダッシュボードの Workers Logs で、アプリのログ（`request_completed` など）と
+  invocation logs を 1 件ずつ開き、IP アドレス・User-Agent・Cookie などのヘッダや、クエリ文字列を
+  含む URL が記録されていないかを見る。記録されていれば、docs/legal/privacy.md のアクセスログの項
+  （記録しないと書いた項目）と食い違うので、`wrangler.jsonc` の `observability` の設定で止めるか、
+  privacy.md を直す。
 
 ## 判断が必要な事項
 
