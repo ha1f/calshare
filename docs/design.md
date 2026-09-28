@@ -1327,6 +1327,11 @@ export const RATE_LIMITS = {
 } as const
 /** IPv6 はこのプレフィックス長に丸めてから ip_hash を計算する（§9.3） */
 export const IPV6_BUCKET_PREFIX_BITS = 64
+/**
+ * CF-Connecting-IP が無いリクエストの ip_hash（§9.3）。送信元を区別しない値なので、同一送信元の判定（§9.4）では
+ * IP の一致に使わない。pages.creator_ip_hash に保存され、scripts/cf/moderation-sql.mjs も同じ値を持つので変えない
+ */
+export const UNKNOWN_IP_HASH = 'unknown'
 export const REPORT_DEDUPE_HOURS = 24
 /** D1 は 1 クエリのバインドパラメータが 100 個まで。GC のバッチと deleteByIds の分割単位に使う */
 export const D1_MAX_BIND_PARAMS = 100
@@ -1478,7 +1483,10 @@ export interface PageRepository {
   findById(id: string): Promise<PageRecord | null>
   /** version+1 で更新する。楽観ロックは持たず最後の保存が勝つ（§6.5）。status / report_count は触らない */
   update(id: string, patch: PagePatch): Promise<'ok' | 'not_found'>
-  /** 同一送信元（ip_hash または device_id が一致）の active なページ数。通報通知に載せる（§9.4）。ip_hash が UNKNOWN_IP_HASH なら device_id だけで数える */
+  /**
+   * 同一送信元（ip_hash または device_id が一致）の active なページ数。通報通知に載せる（§9.4）。
+   * creatorIpHash が UNKNOWN_IP_HASH のときは device_id の一致だけで数える
+   */
   countActiveByCreator(creatorIpHash: string, creatorDeviceId: string): Promise<number>
   listExpired(before: Date, limit: number): Promise<string[]>
   /** D1_MAX_BIND_PARAMS 件ずつに分割して db.batch() に載せる。101 件以上でも動く */

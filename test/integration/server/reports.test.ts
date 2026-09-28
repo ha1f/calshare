@@ -164,6 +164,7 @@ describe('POST /api/pages/:id/reports', () => {
         app,
         jsonRequest('/api/pages', { method: 'POST', body: createBody }),
       )
+      expect(res.status).toBe(200)
       return (await res.json<CreatePageResponse>()).id
     }
     const reportedPageId = await createPage()

@@ -57,6 +57,29 @@ test('hide-by-creator は creator_ip_hash が unknown のとき device_id だけ
   }
 })
 
+test('hide-by-creator の unknown の分岐でも device_id を検証し、unknown に完全一致しない値は ip_hash として検証する', () => {
+  assert.throws(
+    () =>
+      buildModerationSql({
+        action: 'hide-by-creator',
+        creatorIpHash: 'unknown',
+        creatorDeviceId: "x'; DROP TABLE pages; --",
+      }),
+    /creator_device_id が不正/,
+  )
+  for (const creatorIpHash of ['UNKNOWN', 'unknown ', "unknown'"]) {
+    assert.throws(
+      () =>
+        buildModerationSql({
+          action: 'hide-by-creator',
+          creatorIpHash,
+          creatorDeviceId: VALID_DEVICE_ID,
+        }),
+      /creator_ip_hash が不正/,
+    )
+  }
+})
+
 test('不明な action は分かりやすいメッセージで失敗する', () => {
   assert.throws(
     () => buildModerationSql({ action: 'delete', pageId: VALID_PAGE_ID }),

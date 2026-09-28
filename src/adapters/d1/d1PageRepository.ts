@@ -279,7 +279,7 @@ export function createD1PageRepository(db: D1Database): PageRepository {
         .prepare(
           `SELECT COUNT(*) as count FROM pages WHERE status = 'active' AND (creator_ip_hash = ? OR creator_device_id = ?)`,
         )
-        // NULL との = は常に偽なので、UNKNOWN_IP_HASH のときは device_id の一致だけが残る
+        // NULL との = は真にならない（NULL になる）ので、UNKNOWN_IP_HASH のときは device_id の一致だけが残る
         .bind(creatorIpHash === UNKNOWN_IP_HASH ? null : creatorIpHash, creatorDeviceId)
         .first<{ count: number }>()
       return row?.count ?? 0

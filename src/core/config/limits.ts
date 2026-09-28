@@ -44,7 +44,7 @@ export const RATE_LIMITS = {
 export const IPV6_BUCKET_PREFIX_BITS = 64
 /**
  * CF-Connecting-IP が無いリクエストの ip_hash（§9.3）。送信元を区別しない値なので、同一送信元の判定（§9.4）では
- * IP の一致に使わない。scripts/cf/moderation-sql.mjs は TypeScript を import できないため同じ値を別に持つ
+ * IP の一致に使わない。pages.creator_ip_hash に保存され、scripts/cf/moderation-sql.mjs も同じ値を持つので変えない
  */
 export const UNKNOWN_IP_HASH = 'unknown'
 export const REPORT_DEDUPE_HOURS = 24
