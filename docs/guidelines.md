@@ -199,7 +199,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 - ログは `Logger` ポート経由の構造化ログ（イベント名 + フィールド）。`console.log` を直接呼ばない。生 IP・編集トークン・入力本文はログに出さない（docs/design.md §9.6）。
 - `error` フィールドは `consoleLogger` が `{ name, message }` に正規化し、message は `MAX_LOG_ERROR_MESSAGE_LENGTH` で切る。
 - secrets（`RATE_LIMIT_PEPPER` `REPORT_WEBHOOK_URL`）は Worker 単位の secret として `scripts/cf/ensure-secret.mjs` で登録する。`vars` や `wrangler.jsonc` に書かない。ローカルは `.dev.vars`（gitignore）[^workers-secrets]。
-  - deploy.yml は値を JSON に書き出し、`wrangler deploy --secrets-file` で新しいバージョンと同時に登録する。デプロイと別に `wrangler secret put` すると、その間は secret の無いバージョンが動く（`RATE_LIMIT_PEPPER` が無いと作成と通報が 500 になる）。`--secrets-file` に含めなかった登録済みの secret は引き継がれる[^workers-secrets]。
+  - deploy.yml は値を JSON に書き出し、`wrangler deploy --secrets-file` で新しいバージョンと同時に登録する。デプロイと別に `wrangler secret put` すると、その間は secret の無いバージョンが動く（`RATE_LIMIT_PEPPER` が無いと作成と通報が失敗する）。`--secrets-file` に含めなかった登録済みの secret は引き継がれる[^workers-secrets]。
   - provision.yml は Worker がデプロイ済みのときだけ `wrangler secret put` で登録する。まだ無い Worker に対して実行すると、wrangler が中身の無い Worker を作る。
   - `wrangler.jsonc` の `secrets.required` は使わない。定義すると `wrangler dev` が `.dev.vars` から `secrets.required` に挙げたキーしか読まなくなり、任意の `REPORT_WEBHOOK_URL` をローカルで試せなくなる[^workers-secrets]。
 - Secrets Store（アカウント横断）は使わない。Worker が 1 つしか無い。

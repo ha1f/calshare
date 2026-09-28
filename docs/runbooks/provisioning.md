@@ -98,7 +98,7 @@ CPU 時間を要し、Workers Free の上限（1 リクエスト 10ms）を超�
 未デプロイの間は登録せず、理由を step summary に出して正常終了する。Worker が無い状態で
 `wrangler secret put` を実行すると、wrangler が中身の無い Worker を作ってしまうため。
 
-`RATE_LIMIT_PEPPER` が無いまま公開されると、HMAC 鍵が無いため作成と通報の API が 500 になる。
+`RATE_LIMIT_PEPPER` が無いまま公開されると、HMAC 鍵が無いため作成と通報の API が失敗する。
 そのため初回デプロイでは、`deploy.yml` が `RATE_LIMIT_PEPPER` を生成し、
 `wrangler deploy --secrets-file` でコードと同時に登録する（`docs/runbooks/deploy.md`）。
 provision の再実行を待たずに初回デプロイの中で登録が終わり、pepper の無いバージョンが

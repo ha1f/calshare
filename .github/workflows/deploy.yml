@@ -80,7 +80,7 @@ jobs:
           echo "Worker 名: $name" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # secrets は wrangler deploy --secrets-file で新しいバージョンと同時に登録する。wrangler secret put を
-      # デプロイの後に行うとその間は RATE_LIMIT_PEPPER 無しで動いて作成と通報が 500 になり、Worker がまだ無い
+      # デプロイの後に行うとその間は RATE_LIMIT_PEPPER 無しで動いて作成と通報が失敗し、Worker がまだ無い
       # 初回にデプロイの前に行うと中身の無い Worker が先に作られる。ファイルは Static Assets として
       # アップロードされる dist/ の外に置く（RUNNER_TEMP はジョブの終わりに空になる）。
       - name: デプロイと同時に登録する secrets を決める

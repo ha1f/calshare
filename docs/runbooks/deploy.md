@@ -35,8 +35,8 @@ calshare の本番デプロイと、それを「公開してよい」という�
   9. `npx wrangler deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"`。手順 7 で書き出したものが
      あれば `--secrets-file` を付け、新しいバージョンと secrets を同時に有効にする（含めなかった
      登録済みの secrets はそのまま引き継がれる）。`wrangler secret put` を使わない理由:
-     デプロイの後に行うと、その間の Worker は `RATE_LIMIT_PEPPER` 無しで動き、作成と通報が 500 に
-     なる。Worker がまだ無い初回にデプロイの前に行うと、wrangler が中身の無い Worker を先に作る
+     デプロイの後に行うと、その間の Worker は `RATE_LIMIT_PEPPER` 無しで動き、作成と通報が失敗
+     する。Worker がまだ無い初回にデプロイの前に行うと、wrangler が中身の無い Worker を先に作る
 - `concurrency: production` により、デプロイは常に直列実行される（実行中のデプロイを取り消して
   マイグレーションとデプロイの間で状態が壊れることを避けるため、進行中のジョブはキャンセルしない）。
 
