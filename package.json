@@ -7,13 +7,13 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "npm run build && wrangler dev",
+    "dev": "node scripts/seed-local-r2.mjs && npm run build && wrangler dev",
     "build": "node scripts/build-web.mjs",
     "typecheck": "wrangler types && tsc -p tsconfig.core.json && tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
     "lint": "wrangler types && eslint . && prettier --check .",
     "format": "prettier --write .",
     "test:unit": "vitest run --project unit",
-    "test:integration": "vitest run --project integration",
+    "test:integration": "npm run build && vitest run --project integration",
     "test:scripts": "node --test \"scripts/**/*.test.mjs\" \".claude/skills/**/*.test.mjs\"",
     "test": "npm run test:unit && npm run test:integration && npm run test:scripts",
     "test:e2e": "playwright test"

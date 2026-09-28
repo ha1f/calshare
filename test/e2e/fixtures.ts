@@ -1,9 +1,9 @@
 import type { Page, Request } from '@playwright/test'
 import { test as base, expect } from '@playwright/test'
 import type { CreatePageRequest } from '../../src/core/api/types'
+import { E2E_FIXED_NOW } from './fixedNow'
 
-// §10.3 の基準時刻。全 spec はこのファイルの test / expect を import する
-export const E2E_FIXED_NOW = new Date('2026-09-16T01:00:00Z')
+// 全 spec はこのファイルの test / expect を import する
 
 // プロセスごとに変わる salt。これが無いと testId だけで IP が決まり、.wrangler/state を使い回す
 // 限り実行のたびに同じ IP のレート制限カウンタが積み上がる（tsconfig.web.json は types: [] なので node:crypto は使えない）

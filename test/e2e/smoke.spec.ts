@@ -1,4 +1,5 @@
-import { E2E_FIXED_NOW, expect, test } from './fixtures'
+import { expect, test } from './fixtures'
+import { E2E_FIXED_NOW } from './fixedNow'
 
 test('/ が 200 で textarea を表示する', async ({ page }) => {
   const response = await page.goto('/')

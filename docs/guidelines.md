@@ -364,7 +364,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 - ロケータは `getByRole` `getByTestId` `getByLabel` を優先し、CSS セレクタは `#input` のような安定した id に限る。実装が構造や JS のフックとして使っている `data-section` `data-calendar` 属性は、CSS セレクタで引いてよい。アサーションは `toHaveText` `toBeVisible` など自動リトライ付きのものだけ。`isVisible()` の戻り値を `expect` に渡さない。`waitForTimeout` は使わない[^playwright-best-practices]。
 - `retries` は CI で 1。再試行は trace とスクリーンショットを残すためで、`failOnFlakyTests: true` により再試行で通っても job は落ちる。flaky を隠さない[^playwright-testconfig]。
 - reporter は CI では `github` + `html`、ローカルでは `list` + `html`。GitHub の PR 上に失敗行の注釈を出す[^playwright-reporters]。
-- `webServer` は `seed-local-r2.mjs → build → wrangler dev` を起動し、`/api/health` で待つ。`E2E_PORT` で作業ツリーごとにポートを分ける。`.wrangler/state` を作り直すときは `wrangler d1 migrations apply calshare --local` を再実行する（docs/design.md §10.4）。
+- `webServer` は `seed-local-r2.mjs → build → wrangler dev` を起動し、`/api/health` で待つ。Worker の時計は `--var E2E_FIXED_NOW` で固定し、`.dev.vars` には置かない（置くと `npm run dev` の時計まで止まる）。既定のポートは `npm run dev` の 8787 と分けて 8788 にし、`E2E_PORT` で作業ツリーごとにさらに分ける。`.wrangler/state` を作り直すときは `wrangler d1 migrations apply calshare --local` を再実行する（docs/design.md §10.4）。
 - シナリオは docs/design.md §10.3 の番号と spec の対応を保つ。新しいシナリオを足すときは §10.3 も更新する。
 
 ### 7.4 scripts（`node --test`）
