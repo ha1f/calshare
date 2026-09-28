@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import {
   parseArgs,
   applyServiceName,
+  formatResults,
   transformReadme,
   transformDesignDoc,
   transformWranglerJsonc,
@@ -82,6 +83,80 @@ test('transformWranglerJsonc は name と SERVICE_NAME とドメインを書き�
   assert.match(result.content, /"name": "yoteitte"/)
   assert.match(result.content, /"SERVICE_NAME": "yoteitte"/)
   assert.match(result.content, /yoteitte\.com\/\*/)
+})
+
+test('parseArgs は --keep-worker-name を読み取る', () => {
+  const args = parseArgs(['--name', 'yoteitte', '--domain', 'yoteitte.com', '--keep-worker-name'])
+  assert.equal(args.keepWorkerName, true)
+  assert.equal(parseArgs(['--name', 'yoteitte']).keepWorkerName, false)
+})
+
+test('transformWranglerJsonc は keepWorkerName なら name（Worker 名）を残し、SERVICE_NAME とドメインだけ書き換える', () => {
+  const before =
+    '{\n  "name": "calshare",\n  "vars": { "SERVICE_NAME": "calshare" },\n  "routes": [{ "pattern": "calshare.example/*" }]\n}\n'
+  const result = transformWranglerJsonc(before, {
+    oldName: 'calshare',
+    name: 'yoteitte',
+    oldDomain: 'calshare.example',
+    domain: 'yoteitte.com',
+    keepWorkerName: true,
+  })
+  assert.match(result.content, /"name": "calshare"/)
+  assert.match(result.content, /"SERVICE_NAME": "yoteitte"/)
+  assert.match(result.content, /yoteitte\.com\/\*/)
+  assert.equal(result.workerNameChanged, false)
+})
+
+test('transformWranglerJsonc は name を書き換えたとき workerNameChanged を返す', () => {
+  const result = transformWranglerJsonc('{ "name": "calshare" }', {
+    oldName: 'calshare',
+    name: 'yoteitte',
+    oldDomain: 'calshare.example',
+    domain: 'yoteitte.com',
+  })
+  assert.equal(result.workerNameChanged, true)
+})
+
+test('formatResults は Worker 名が変わるときだけ --keep-worker-name の案内を出す', () => {
+  const lines = [{ line: 2, before: '"name": "calshare",', after: '"name": "yoteitte",' }]
+  const changed = formatResults(
+    [{ file: 'wrangler.jsonc', status: 'planned', lines, workerNameChanged: true }],
+    { dryRun: true },
+  )
+  assert.match(changed, /--keep-worker-name/)
+  assert.match(changed, /RATE_LIMIT_PEPPER/)
+  const kept = formatResults(
+    [{ file: 'wrangler.jsonc', status: 'planned', lines, workerNameChanged: false }],
+    { dryRun: true },
+  )
+  assert.doesNotMatch(kept, /--keep-worker-name/)
+})
+
+test('applyServiceName は keepWorkerName を wrangler.jsonc の書き換えに渡す', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'apply-service-name-'))
+  try {
+    await writeFile(
+      path.join(dir, 'wrangler.jsonc'),
+      '{\n  "name": "calshare",\n  "vars": { "SERVICE_NAME": "calshare" }\n}\n',
+    )
+    const results = await applyServiceName({
+      root: dir,
+      name: 'yoteitte',
+      domain: 'yoteitte.com',
+      oldName: 'calshare',
+      oldDomain: 'calshare.example',
+      dryRun: false,
+      keepWorkerName: true,
+    })
+    const wrangler = results.find((r) => r.file === 'wrangler.jsonc')
+    assert.equal(wrangler.status, 'written')
+    assert.equal(wrangler.workerNameChanged, false)
+    const content = await readFile(path.join(dir, 'wrangler.jsonc'), 'utf8')
+    assert.match(content, /"name": "calshare"/)
+    assert.match(content, /"SERVICE_NAME": "yoteitte"/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 test('applyServiceName は存在するファイルだけ書き換える', async () => {

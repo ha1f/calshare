@@ -12,7 +12,7 @@
 // 依存ゼロ（Node 標準ライブラリのみ）。node:test で検証。
 //
 // 使い方:
-//   node scripts/apply-service-name.mjs --name <slug> --domain <domain> [--dry-run] [--json]
+//   node scripts/apply-service-name.mjs --name <slug> --domain <domain> [--keep-worker-name] [--dry-run] [--json]
 //
 // 例:
 //   node scripts/apply-service-name.mjs --name yoteitte --domain yoteitte.com --dry-run
@@ -25,9 +25,10 @@ const DEFAULT_OLD_DOMAIN = 'calshare.example'
 
 function usage() {
   return [
-    '使い方: node scripts/apply-service-name.mjs --name <slug> --domain <domain> [--dry-run] [--json]',
+    '使い方: node scripts/apply-service-name.mjs --name <slug> --domain <domain> [--keep-worker-name] [--dry-run] [--json]',
     '',
     '  --name <slug>      新しいサービス名（wrangler.jsonc の name / SERVICE_NAME・README.md の見出しに使う。英数字とハイフン推奨）',
+    '  --keep-worker-name wrangler.jsonc の name（Worker 名）は変えない（初回デプロイ後の改名向け。docs/runbooks/rename.md）',
     '  --domain <domain>  新しい本番ドメイン（docs/design.md の仮値 calshare.example・wrangler.jsonc の routes を置き換える）',
     '  --old-name <slug>  置き換え対象の現在値（既定: calshare）',
     '  --old-domain <d>   置き換え対象の現在の仮ドメイン（既定: calshare.example）',
@@ -44,6 +45,7 @@ export function parseArgs(argv) {
   const args = {
     dryRun: false,
     json: false,
+    keepWorkerName: false,
     oldName: DEFAULT_OLD_NAME,
     oldDomain: DEFAULT_OLD_DOMAIN,
     root: '.',
@@ -52,6 +54,7 @@ export function parseArgs(argv) {
     const a = argv[i]
     if (a === '--dry-run') args.dryRun = true
     else if (a === '--json') args.json = true
+    else if (a === '--keep-worker-name') args.keepWorkerName = true
     else if (a === '--name') args.name = argv[++i]
     else if (a === '--domain') args.domain = argv[++i]
     else if (a === '--old-name') args.oldName = argv[++i]
@@ -87,17 +90,23 @@ export function transformDesignDoc(content, { oldDomain, domain }) {
 
 /**
  * wrangler.jsonc の name / vars.SERVICE_NAME / routes 中のドメインを書き換える。
+ * keepWorkerName なら name（Worker 名）は残す。workerNameChanged は name を書き換えたかどうか。
  * JSONC（コメント付き JSON）なので JSON.parse はせず正規表現で局所置換する。
  * @param {string} content
- * @param {{ oldName: string, name: string, oldDomain: string, domain: string }} opts
+ * @param {{ oldName: string, name: string, oldDomain: string, domain: string, keepWorkerName?: boolean }} opts
  */
-export function transformWranglerJsonc(content, { oldName, name, oldDomain, domain }) {
+export function transformWranglerJsonc(
+  content,
+  { oldName, name, oldDomain, domain, keepWorkerName = false },
+) {
   let result = content
   let changed = false
+  let workerNameChanged = false
   const namePattern = new RegExp(`("name"\\s*:\\s*")${escapeRegExp(oldName)}(")`)
-  if (namePattern.test(result)) {
+  if (!keepWorkerName && namePattern.test(result)) {
     result = result.replace(namePattern, `$1${name}$2`)
     changed = true
+    workerNameChanged = true
   }
   const serviceNamePattern = new RegExp(`("SERVICE_NAME"\\s*:\\s*")${escapeRegExp(oldName)}(")`)
   if (serviceNamePattern.test(result)) {
@@ -110,7 +119,7 @@ export function transformWranglerJsonc(content, { oldName, name, oldDomain, doma
     changed = true
   }
   if (!changed) return null
-  return { content: result, lines: diffLines(content, result) }
+  return { content: result, lines: diffLines(content, result), workerNameChanged }
 }
 
 function escapeRegExp(s) {
@@ -151,6 +160,7 @@ const TARGETS = [
  * @param {string} opts.oldName
  * @param {string} opts.oldDomain
  * @param {boolean} opts.dryRun
+ * @param {boolean} [opts.keepWorkerName]
  * @param {(p: string) => Promise<string>} [opts.readFileImpl]
  * @param {(p: string, c: string) => Promise<void>} [opts.writeFileImpl]
  */
@@ -162,6 +172,7 @@ export async function applyServiceName(opts) {
     oldName,
     oldDomain,
     dryRun,
+    keepWorkerName = false,
     readFileImpl = readFile,
     writeFileImpl = writeFile,
   } = opts
@@ -178,7 +189,7 @@ export async function applyServiceName(opts) {
       }
       throw err
     }
-    const changed = target.transform(content, { oldName, name, oldDomain, domain })
+    const changed = target.transform(content, { oldName, name, oldDomain, domain, keepWorkerName })
     if (!changed) {
       results.push({
         file: target.file,
@@ -192,6 +203,9 @@ export async function applyServiceName(opts) {
       file: target.file,
       status: dryRun ? 'planned' : 'written',
       lines: changed.lines,
+      ...(changed.workerNameChanged !== undefined && {
+        workerNameChanged: changed.workerNameChanged,
+      }),
     })
   }
   return results
@@ -206,6 +220,12 @@ export function formatResults(results, { dryRun }) {
     else {
       out.push(`[${dryRun ? 'dry-run' : 'write'}] ${r.file}`)
       for (const l of r.lines) out.push(`  L${l.line}: ${l.before.trim()} -> ${l.after.trim()}`)
+      if (r.workerNameChanged) {
+        out.push(
+          '  注意: Worker 名が変わります。初回デプロイ後なら別の Worker として作られ、RATE_LIMIT_PEPPER も',
+          '  新しい値になります。Worker 名を残すには --keep-worker-name を付けてください（docs/runbooks/rename.md）。',
+        )
+      }
     }
   }
   return out.join('\n')
