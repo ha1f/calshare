@@ -1085,7 +1085,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 - 状態変更 API を叩くテストは `Content-Type: application/json` と `Origin: http://localhost:8787`（`wrangler.jsonc` の `vars.PUBLIC_ORIGIN` と同じ値）を付ける（§9.8）。テストヘルパ `test/integration/helpers/jsonRequest.ts`（§11.7）に集約する。
 - D1 のマイグレーションは `vitest.config.ts` が `readD1Migrations('migrations')` の結果を `miniflare.bindings.TEST_MIGRATIONS` に渡し、`test/integration/setup.ts`（`setupFiles`）の `beforeEach` で `reset()` を呼んで全バインディングのデータを削除した後、`applyD1Migrations(env.DB, env.TEST_MIGRATIONS)` を再適用する（実測: `reset()` は D1 のテーブル定義ごと削除するため、直後の再適用が必須）。各テストファイルに `DELETE FROM` を書かない。テストだけが使うバインディング（`TEST_MIGRATIONS` 等）をグローバルな `Cloudflare.Env` に追記する宣言は `test/integration/env.d.ts` に置く（§11.7）。
 - 時刻と ID は `Clock` / `IdGenerator` のポート（§11.4）を Fake に差し替えて固定する。差し替えは `createApp(deps)` の引数で行い、`exports.default.fetch` 用の既定 app は本物のアダプタを使う。
-- **e2e は時刻を固定する**（§10.3）。ブラウザは Playwright の `page.clock.setFixedTime`、Worker は `.dev.vars` の `E2E_FIXED_NOW` を `buildDeps` が読んで固定時計を配線する（§11.5）。結合テストは `.dev.vars` に依存せず、上記の Fake で固定する。`vitest.config.ts` の `miniflare.bindings` は `RATE_LIMIT_PEPPER` に加え `E2E_FIXED_NOW` も空文字で明示しており、`.dev.vars` にどちらの値があってもこちらが優先される。`E2E_FIXED_NOW` を上書きしていなかった時期は `.dev.vars` の値が `buildDeps` の `clock` を `fakeClock` にすり替え、`scheduled` ハンドラを実時刻の `now` で叩く `test/integration/scheduled/gc.test.ts` の 1 件だけが `.dev.vars` の有無で結果を変えていた（実機確認済み）。`.dev.vars` の有無で結合テストの実行結果が変わらないことを両方の状態で確認済み。wrangler が読み込み時に出す `Using secrets defined in .dev.vars` ログは `vitest.config.ts` の `WRANGLER_LOG=warn`（§11.7）で抑止する。
+- **e2e は時刻を固定する**（§10.3）。ブラウザは Playwright の `page.clock.setFixedTime`、Worker は `playwright.config.ts` の webServer が `wrangler dev --var` で渡す `E2E_FIXED_NOW` を `buildDeps` が読んで固定時計を使う（§11.5）。結合テストは `.dev.vars` に依存せず、上記の Fake で固定する。`vitest.config.ts` の `miniflare.bindings` は `RATE_LIMIT_PEPPER` に加え `E2E_FIXED_NOW` も空文字で明示しており、`.dev.vars` にどちらの値があってもこちらが優先される。`E2E_FIXED_NOW` を上書きしていなかった時期は `.dev.vars` の値が `buildDeps` の `clock` を `fakeClock` にすり替え、`scheduled` ハンドラを実時刻の `now` で叩く `test/integration/scheduled/gc.test.ts` の 1 件だけが `.dev.vars` の有無で結果を変えていた（実機確認済み）。`.dev.vars` の有無で結合テストの実行結果が変わらないことを両方の状態で確認済み。wrangler が読み込み時に出す `Using secrets defined in .dev.vars` ログは `vitest.config.ts` の `WRANGLER_LOG=warn`（§11.7）で抑止する。
 - OGP レンダラは `OgpRenderer` ポートを Fake（`fakeOgpRenderer`。1×1 の PNG をコード内の base64 定数で持ち、呼び出し回数を数える。fixtures は不要）に差し替えてルートを検証する。本物の satori + resvg は `test/integration/ogp/satoriOgpRenderer.test.ts` で「日本語を含む入力から PNG が返る」を検証する。**vitest-pool-workers 上で wasm import が動くことを T10 で確認できたため（satori を `harfbuzzjs` 導入前の `0.32.0` に固定。上記「satori の読み込み方」）、Node 側の別プロジェクトへの切り出しは不要だった**。レンダラは wasm とフォントを引数で受け取る作りにしており、切り出しが必要になった場合も対応できる（§11.5）。
 - 代表例:
   - `POST /api/pages` → D1 に `pages` 1 行（`source` `creator_ip_hash` `creator_device_id` が入る）+ `events` 1 行、R2 に `ics/{id}.ics`、レスポンスに `editToken` と `url`、`Set-Cookie: cs_device`
@@ -1103,7 +1103,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 ### 10.3 e2e シナリオ
 
-基準時刻は §5.6 と同じ **2026-09-16(水) 10:00 JST**（`2026-09-16T01:00:00Z`）に固定する。e2e は `wrangler dev` の実時計とブラウザの `new Date()` で動くので、固定しないと 2026-09-20 を過ぎた時点で 1・3 の年が繰り上がって曜日が変わり、12 のプリフィルは `PAST_EVENT`、11 は 2026-12 以降に 13 ヶ月以内に入ってしまう。ブラウザ側は `test/e2e/fixtures.ts` の共通フィクスチャが各テストの前に `page.clock.setFixedTime(new Date('2026-09-16T01:00:00Z'))` を呼ぶ（全 spec は `@playwright/test` ではなくこのフィクスチャの `test` / `expect` を import する）。Worker 側は `.dev.vars` の `E2E_FIXED_NOW`（ISO8601）を `buildDeps` が読み、`PUBLIC_ORIGIN` のホスト名が `localhost` のときだけ固定時計を配線する（本番では無視して warn ログ。§11.5）。
+基準時刻は §5.6 と同じ **2026-09-16(水) 10:00 JST**（`2026-09-16T01:00:00Z`）に固定する。e2e は `wrangler dev` の実時計とブラウザの `new Date()` で動くので、固定しないと 2026-09-20 を過ぎた時点で 1・3 の年が繰り上がって曜日が変わり、12 のプリフィルは `PAST_EVENT`、11 は 2026-12 以降に 13 ヶ月以内に入ってしまう。ブラウザ側は `test/e2e/fixtures.ts` の共通フィクスチャが各テストの前に `page.clock.setFixedTime(new Date('2026-09-16T01:00:00Z'))` を呼ぶ（全 spec は `@playwright/test` ではなくこのフィクスチャの `test` / `expect` を import する）。Worker 側は webServer が `--var` で渡す `E2E_FIXED_NOW`（ISO8601。値は `test/e2e/fixedNow.ts`）を `buildDeps` が読み、`PUBLIC_ORIGIN` のホスト名が `localhost` のときだけ固定時計を配線する（本番では無視して warn ログ。§11.5）。
 
 1. トップで `9/20 19時 渋谷で飲み会` を入力 → プレビューに 飲み会 / 9月20日(日) 19:00〜20:00 / 渋谷 が出る → 「URLを作る」→ `/done?id=` に遷移し URL とコピーボタンが出る → コピーでクリップボードに URL が入る（`test/e2e/create.spec.ts` の「入力〜プレビュー〜作成〜/done への遷移まで（シナリオ1）」、コピー動作は `test/e2e/done.spec.ts` の「URL・コピー・カレンダーリンク・詳細ページへの遷移・送り直し案内（シナリオ1・2・3）」で固定）
 2. 完成画面の URL へ遷移 → 詳細ページに §6.3 の順序で要素が並ぶ → 「作ってみる」で `/new?ref=detail_cta` に遷移する（`test/e2e/done.spec.ts` の「URL・コピー・カレンダーリンク・詳細ページへの遷移・送り直し案内（シナリオ1・2・3）」で固定）
@@ -1130,22 +1130,23 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 ### 10.4 ローカルでの実行方法
 
 ```bash
-cp .dev.vars.example .dev.vars   # 初回のみ。手元で実時計にしたいときは E2E_FIXED_NOW の行を消す
+cp .dev.vars.example .dev.vars   # 初回のみ。時計は固定しない（e2e だけが webServer の --var で E2E_FIXED_NOW を渡す）
 npx wrangler d1 migrations apply calshare --local   # 初回のみ。wrangler dev はマイグレーションを自動適用しない（§10.5）
-npm run dev               # npm run build && wrangler dev（ローカル D1/R2、.dev.vars 読み込み）
+npm run dev               # seed-local-r2.mjs → npm run build → wrangler dev（ローカル D1/R2、.dev.vars 読み込み）
 npm run build             # node scripts/build-web.mjs（src/web → dist/）
 npm run test:unit         # vitest run --project unit
-npm run test:integration  # vitest run --project integration（vitest-pool-workers）。Static Assets（env.ASSETS.fetch）を
-                           # dist/ から検証するテストがあるため、先に npm run build が必要（確認済み・T1）
+npm run test:integration  # npm run build → vitest run --project integration（vitest-pool-workers）。Static Assets（env.ASSETS.fetch）を
+                           # dist/ から検証するテストがあるため、先にビルドする
 npm run test:scripts      # node --test（scripts/**/*.test.mjs と .claude/skills/**/*.test.mjs）
-npm run test:e2e          # playwright test（webServer で build → wrangler dev を自動起動。E2E_PORT=8791 のように指定すると別ポートで起動し、複数の作業ツリーで同時に走らせられる。
-                           # wrangler dev には --var PUBLIC_ORIGIN:http://localhost:<port> も渡すので、API が返す url は実際のポートと一致する）
+npm run test:e2e          # playwright test（webServer で seed → build → wrangler dev を自動起動。既定のポートは 8788 で、npm run dev の 8787 とは別。
+                           # E2E_PORT=8791 のように指定すると別ポートで起動し、複数の作業ツリーで同時に走らせられる。
+                           # wrangler dev には --var で PUBLIC_ORIGIN:http://localhost:<port> と E2E_FIXED_NOW も渡す）
 npm run test              # unit + integration + scripts
 npm run lint              # wrangler types → eslint . && prettier --check .（型情報付き lint が worker-configuration.d.ts を読む）
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
 ```
 
-`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` は `CF-Connecting-IP` を付けないので全テストが `ip:unknown` の単一バケットに入り、全 spec を 1 回通すだけで作成回数が上限に達する。そのため `test/e2e/fixtures.ts` はテストごとに別の送信元 IP を `CF-Connecting-IP` で名乗る（本番では Cloudflare がこのヘッダを上書きするので偽装には使えない）。この IP はテスト ID だけでなく `test/e2e/fixtures.ts` を読み込む Node プロセスごとに生成する salt からも作るため、同じ `.wrangler/state` に対して `npm run test:e2e` を繰り返し実行しても前回の実行と IP が衝突せず、レート制限のカウンタが実行をまたいで積み上がらない。`.wrangler/state` を作り直したいときは `rm -rf .wrangler/state && npx wrangler d1 migrations apply calshare --local` する（CI は毎回クリーンな環境なので影響しない）。
+`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` は `CF-Connecting-IP` を付けないので全テストが `ip:unknown` の単一バケットに入り、全 spec を 1 回通すだけで作成回数が上限に達する。そのため `test/e2e/fixtures.ts` はテストごとに別の送信元 IP を `CF-Connecting-IP` で名乗る（本番では Cloudflare がこのヘッダを上書きするので偽装には使えない）。この IP はテスト ID だけでなく `test/e2e/fixtures.ts` を読み込む Node プロセスごとに生成する salt からも作るため、同じ `.wrangler/state` に対して `npm run test:e2e` を繰り返し実行しても前回の実行と IP が衝突せず、レート制限のカウンタが実行をまたいで積み上がらない。手動の `npm run dev` は時計を固定しないので時間窓は進むが、同じブラウザで作成を続けると device の日窓の上限に当たる。解除するときは `npx wrangler d1 execute calshare --local --command "DELETE FROM rate_limit_counters"` でカウンタだけを消す。`.wrangler/state` ごと作り直す場合は、migration の適用もやり直す（CI は毎回クリーンな環境なので影響しない）。
 
 ### 10.5 CI（GitHub Actions）
 
@@ -1758,7 +1759,7 @@ export interface Env {
   SERVICE_NAME: string         // vars
   RATE_LIMIT_PEPPER: string    // secret（ローカルは .dev.vars）
   REPORT_WEBHOOK_URL?: string  // secret。無い（または空文字）なら fakeNotifier を使う（§9.4）
-  E2E_FIXED_NOW?: string       // .dev.vars のみ。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
+  E2E_FIXED_NOW?: string       // e2e の webServer が --var で渡す。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
 }
 ```
 

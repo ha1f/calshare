@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ローカルの wrangler dev（`--local`）が使う R2 エミュレーションに OGP 用フォントを投入する。
 // wrangler dev はローカル D1 と違い R2 の内容を自動では用意しないため、
-// playwright.config.ts の webServer.command が wrangler dev の起動前にこれを実行する。
+// npm run dev と playwright.config.ts の webServer.command が、wrangler dev の起動前にこれを実行する。
 //
 // 使い方:
 //   node scripts/seed-local-r2.mjs [--font <path>] [--dry-run] [--json] [--help]

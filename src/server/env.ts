@@ -12,5 +12,5 @@ export interface Env {
   SERVICE_NAME: string // vars
   RATE_LIMIT_PEPPER: string // secret（ローカルは .dev.vars）
   REPORT_WEBHOOK_URL?: string // secret。無い（または空文字）なら fakeNotifier を使う（§9.4）
-  E2E_FIXED_NOW?: string // .dev.vars のみ。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
+  E2E_FIXED_NOW?: string // e2e の webServer が --var で渡す。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
 }
