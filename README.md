@@ -27,8 +27,8 @@ npm run test:e2e      # e2e（上の手順の後で。初回は npx playwright i
 
 初めての人は [docs/onboarding.md](docs/onboarding.md) から読む。手元で動かす手順、テスト、どこに何があるかをまとめてある。
 
-- [docs/architecture.md](docs/architecture.md) — 全体のしくみ。リクエストの流れ、データの置き場所、コードの層
-- [docs/concept.md](docs/concept.md) — なぜ作るのか。原則、画面の流れ、スコープ
+- [docs/architecture.md](docs/architecture.md)：全体のしくみ。リクエストの流れ、データの置き場所、コードの層
+- [docs/concept.md](docs/concept.md)：なぜ作るのか。原則、画面の流れ、スコープ
 
 ほかの文書（書き方の決まり、詳細設計、運用の手順など）の一覧は docs/onboarding.md の末尾にある。
 

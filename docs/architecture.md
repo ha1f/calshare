@@ -28,7 +28,7 @@ Cloudflare の用語を簡単に説明しておく。D1 は SQLite をもとに�
 
 リクエストはまず Static Assets が受ける。`wrangler.jsonc` の `assets` で `dist/` を公開していて、ファイルに一致すればそこで応答が終わる。一致しないパス（`/abc123def456` のようなページ ID や `/api/*`）だけが Worker に届く。Worker は Hono のアプリで、リクエストのたびに依存（D1 や R2 を扱う部品）を組み立て直してからルートに渡す。
 
-静的ファイルの応答は Worker を通らないので、CSP や noindex といったレスポンスヘッダは `src/web/_headers` が付ける。Worker が返す応答のヘッダは `src/server/lib/headers.ts` にあり、両者の値が一致することを単体テストで確かめている。CSP を変えるときは 2 か所とも直す。
+静的ファイルの応答は Worker を通らないので、CSP や noindex といったレスポンスヘッダは `src/web/_headers`（Static Assets が読むヘッダの設定ファイル。ビルドで `dist/` に置かれる）で付ける。Worker が返す応答のヘッダは `src/server/lib/headers.ts` にあり、両者の値が一致することを単体テストで確かめている。CSP を変えるときは 2 か所とも直す。
 
 ## 画面と URL
 
@@ -86,7 +86,7 @@ OGP 画像は作成時には作らない。作成 API の中で生成すると�
 
 スキーマは `migrations/0001_init.sql` の 1 本だけだ。`pages` には `owner_id` や発行者まわりの列も用意してあるが、今は使っていない。有料機能（[docs/concept.md](concept.md) の Phase 3）で使う予定の列だ。
 
-IP アドレスはそのままでは保存しない。`RATE_LIMIT_PEPPER` を鍵にした HMAC にかけ、先頭 32 桁だけを持つ。連投を数えることと、スパムを同じ送信元ごと非表示にすることには、これで足りる。この鍵は本番で一度決めたら変えない。変えると、変更の前後で同じ IP から作られたページが同じ送信元として扱われなくなり、Cookie を消して作り直す相手が一括非表示から漏れる。レート制限と重複通報の判定も、1 日ほどは効きが弱くなる。
+IP アドレスはそのままでは保存しない。`RATE_LIMIT_PEPPER` を鍵にした HMAC にかけ、先頭 32 桁だけを持つ。連投を数えることと、スパムを同じ送信元ごと非表示にすることには、これで足りる。この鍵は本番で一度決めたら変えない。変えると、変更の前後で同じ IP から作られたページが同じ送信元として扱われなくなる。一括非表示は IP ハッシュか端末 ID が同じページをまとめるので、Cookie を消して端末 ID を変えたスパムの送り手を取りこぼす。レート制限と重複通報の判定も、1 日ほどは効きが弱くなる。
 
 手元の `npm run dev` では、wrangler が D1・R2・Cache API を `.wrangler/state` の中に再現する。本番のリソースには触れないので、何を作っても消しても構わない。
 
@@ -117,9 +117,9 @@ src/
 └── web/       ブラウザの画面。画面ごとの main.ts を esbuild で dist/assets/js/ にバンドルする
 ```
 
-`src/core` はブラウザとサーバの両方から import される。npm のパッケージに依存しないので、そのままブラウザのバンドルに入れられるし、Node の上で速く単体テストできる。
+`src/core` はブラウザとサーバの両方から import される。ブラウザのバンドルを小さく保ち、ブラウザとサーバで同じ検証の実装を使えるように、npm のパッケージには依存させていない。Workers 固有の API も使わないので、Node の上で速く単体テストできる。
 
-サーバ側で外の世界に触るものは、`ports` のインターフェースを通す。`src/server/deps.ts` の `buildDeps(env)` が本物のアダプタを詰めた `Deps` を作り、`createApp(deps)` に渡す。ルートの結合テストは代わりに `test/integration/helpers/fakeDeps.ts` の `buildFakeDeps()` を渡す。時計と ID を固定し、D1・R2・レート制限はメモリ版に差し替えるので、ルートのテストでは SQL は走らない。SQL は `test/integration/adapters/` のテストが、手元で動く本物の D1 で確かめている。例外は Static Assets（`env.ASSETS`）と Cache API で、この 2 つはルートから直接使っている。
+サーバ側で外の世界に触るものは、`ports` のインターフェースを通す。`src/server/deps.ts` の `buildDeps(env)` が本物のアダプタを詰めた `Deps` を作り、`createApp(deps)` に渡す。ルートの結合テストは代わりに `test/integration/helpers/fakeDeps.ts` の `buildFakeDeps()` を渡す。時計と ID を固定し、D1・R2・レート制限をメモリ版に差し替えるものだ。一部のテストは D1 のリポジトリだけを本物に戻したり、`exports.default.fetch` で本物の `buildDeps` を通したりしていて、そこでは SQL も走る。SQL そのものの確認は、主に `test/integration/adapters/` のテストが受け持つ。例外は Static Assets（`env.ASSETS`）と Cache API で、この 2 つはルートから直接使っている。
 
 層の依存の向きのうち、ツールで検出しているのは一部だけだ。`src/core` から npm のパッケージを import すると ESLint が止める。`src/core` で DOM や Node の型を使うと tsc が止める。`src/core` から `adapters` を import する、`src/web` から `adapters` を import する、といった向きの違反は検出されないので、レビューで見ている。
 
@@ -127,7 +127,7 @@ src/
 
 詳細ページ・ics・OGP 画像は、Cache API に短時間だけ置いている。編集してもキャッシュを消しにはいかないので、詳細ページと ics は最大 1 分、OGP 画像は最大 5 分、古い内容が見えることがある。期限切れや非表示も同じだけ遅れて反映され、その間はキャッシュに残った詳細ページが 200 で返る。OGP 画像は URL に `?v=版数` が付いているので、編集後に貼り直された URL では新しい画像になる。
 
-本番では、Cache API は `*.workers.dev` のドメインでは効かず、独自ドメインを割り当てた後に初めて効く。手元の `npm run dev` では効くので、編集した直後に詳細ページを開き直しても 1 分ほどは古い内容のままになる。
+本番では、Cache API は `*.workers.dev` のドメインでは効かず、独自ドメインを割り当てた後に初めて効く。手元の `npm run dev` では効く。
 
 `/assets/*` の JS と CSS はファイル名にハッシュを付けず、5 分だけブラウザにキャッシュさせている。デプロイの直後は、新しい HTML と古い JS が 5 分ほど混ざりうる。API の形を変えるときは、古い JS から呼ばれても壊れないようにしておく。
 

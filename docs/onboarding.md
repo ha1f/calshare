@@ -1,6 +1,6 @@
 # はじめて触る人へ
 
-calshare の開発に加わった人が、最初の 1 日で手元で動かし、どこに何があるかをつかむための文書だ。手元で動かすところまでは、この文書だけで進められる。動いたら [docs/architecture.md](architecture.md) で全体のしくみを読む（15 分ほど）。
+calshare の開発に加わった人が、最初の 1 日で手元で動かし、どこに何があるかをつかむための文書だ。手元で動かすところまでは、この文書だけで進められる。動いたら [docs/architecture.md](architecture.md) で全体のしくみを読み（15 分ほど）、そのあとでこの文書の「テスト」から先に戻ってくると分かりやすい。
 
 ## いまの状態
 
@@ -12,7 +12,7 @@ calshare の開発に加わった人が、最初の 1 日で手元で動かし�
 
 ## 手元で動かす
 
-Node は 22 系の、22.13 以上を使う。CI も `.nvmrc` に書いた 22 で動いていて、nvm や fnm なら `.nvmrc` を読んで切り替えてくれる。`.npmrc` の `engine-strict` があるので、依存が求める版に合わない Node では `npm ci` が止まる。22 系でも 22.13 より古いと eslint などの条件に合わない。
+Node は 22 系の 22.13 以上を使う。eslint などの依存が 22.13 以上を求めるためだ。nvm や fnm なら `.nvmrc`（CI も同じ値を使う）を読んで 22 系に切り替えてくれる。`.npmrc` で `engine-strict` を有効にしているので、条件に合わない Node では `npm ci` が止まる。
 
 ```sh
 npm ci
@@ -21,13 +21,13 @@ npx wrangler d1 migrations apply calshare --local
 npm run dev
 ```
 
-`http://localhost:8787` を開けば、作成画面が出る。wrangler は Cloudflare Workers の CLI で、手元での実行も D1 の操作もこれで行う。
+`http://localhost:8787` を開けば、作成画面が出る。wrangler は Cloudflare Workers の CLI で、手元での実行も D1 の操作もこれで行う。D1 は Cloudflare の SQLite をもとにしたデータベース、R2 はファイルを置くオブジェクトストレージで、手元ではどちらも wrangler が `.wrangler/state` の中に作る。本番のリソースには触れないので、何を作っても消しても構わない。
 
 `.dev.vars` は、wrangler が手元の Worker に渡すシークレットのファイルだ。例のファイルには、IP をハッシュにするときの鍵（手元用の適当な値）と、空の通報通知先が入っている。通知先が空の間は、通報しても外には何も送られない。
 
 `wrangler d1 migrations apply` は、手元の D1 にテーブルを作る。適用してよいかを聞かれるので、`y` で進める。wrangler は D1 のマイグレーションを自動では当てないので、初回のほか、`.wrangler/state` を消した後と、`migrations/` に新しいファイルが増えたとき（`git pull` の後や、自分でテーブルを足したとき）にも実行する。これを忘れると、作成を押したところで「エラーが発生しました」と出る。
 
-`npm run dev` は、OGP 画像用のフォントを手元の R2 に入れ、画面をビルドしてから `wrangler dev` を起動する。`src/server` の変更は wrangler が拾って再起動する。`src/web` と、画面から使っている `src/core`（パーサなど）の変更は拾わない。画面側を変えたら、別のターミナルで `npm run build` をやり直し、wrangler のログに「Local server updated and ready」が出てからブラウザを再読み込みする。
+`npm run dev` は、OGP 画像用のフォントを手元の R2 に入れ、画面をビルドしてから `wrangler dev` を起動する。`src/server` の変更は wrangler が拾って再起動する。`src/web` と、画面から使っている `src/core`（パーサなど）の変更は拾わない。画面側を変えたら、別のターミナルで `npm run build` をやり直し、wrangler のログに「Local server updated and ready」が出てから、ブラウザをスーパーリロード（macOS の Chrome なら Cmd+Shift+R）する。`/assets/*` の JS と CSS はブラウザに 5 分キャッシュさせているので、普通の再読み込みでは古いものが残ることがある。DevTools の「Disable cache」を有効にしておいてもよい。
 
 `git pull` や別ブランチへの切り替えの後は、`npm ci` をやり直しておく。`node_modules` が `package-lock.json` より古いと、`Cannot find package 'satori/standalone'` のような、コードと関係のなさそうなエラーで止まる。
 
@@ -41,7 +41,7 @@ npx wrangler d1 execute calshare --local --command "DELETE FROM rate_limit_count
 
 手元の D1 の中身は、同じ形で `--command "SELECT id, status, expires_at FROM pages"` のように見られる。
 
-詳細ページを開いた後に編集すると、1 分ほど古い内容が出る。詳細ページの応答を Cache API とブラウザに 1 分キャッシュしていて、編集してもキャッシュを消さないためで、手元の wrangler でも本番と同じように振る舞う。
+一度開いた詳細ページは、編集してから 1 分ほど古い内容のまま表示される。詳細ページの応答を Cache API とブラウザに 1 分キャッシュしていて、編集してもキャッシュを消さないためだ。手元の wrangler でも同じことが起きる。
 
 Cron は手元では自動で動かない。期限切れの掃除を試すときは、`npm run dev` を動かしたまま `curl http://localhost:8787/cdn-cgi/local/scheduled` を叩くと、scheduled ハンドラが 1 回走って手元の D1 から期限切れのページが消える。自動のテストでは、結合テストの `test/integration/scheduled/gc.test.ts` が scheduled ハンドラを直接呼んで確かめている。
 
@@ -60,7 +60,7 @@ Cron は手元では自動で動かない。期限切れの掃除を試すとき
 
 `npm run test` は unit、結合、scripts をまとめて流す。e2e は時間がかかるので含めていない。
 
-結合テストは `dist/` の静的ファイルも読むので、先にビルドが走るようにしてある。D1・R2・Cache API は workerd の中のローカルの実装で、テストごとに D1 を空にしてマイグレーションを当て直す。テストの中で行を消して回る必要は無い。ルートのテストの多くは `createApp(buildFakeDeps())` の形で、時計と ID を固定したメモリ版のリポジトリを使う。D1 に対する SQL は `test/integration/adapters/` のテストが確かめている。
+結合テストは `dist/` の静的ファイルも読むので、先にビルドが走るようにしてある。D1・R2・Cache API は workerd の中のローカルの実装で、テストごとに D1 を空にしてマイグレーションを当て直す。テストの中で行を消して回る必要は無い。ルートのテストの多くは D1 を使わず、時計と ID を固定したメモリ版で動かしている。D1 に対する SQL は、主に `test/integration/adapters/` のテストが確かめている（しくみは docs/architecture.md の「コードの層」）。
 
 e2e は「手元で動かす」の `.dev.vars` とマイグレーションを済ませた後に流す。初めて流す前に、`npx playwright install chromium` でブラウザを入れておく。e2e は自分で `wrangler dev` を 8788 番で起動するので、`npm run dev` を 8787 で動かしたままでも流せる。ただし、起動のときに `npm run build` で `dist/` を作り直すので、動いている `npm run dev` の画面もその時点の内容に置き換わる。e2e のサーバは `npm run dev` と同じ `.wrangler/state` を使うので、e2e が作ったページや回数制限の行も手元の D1 に残る。複数の作業ツリーで同時に流すときは、`E2E_PORT=8792 npm run test:e2e` のようにポートを分ける。
 
@@ -78,18 +78,18 @@ CI は lint、型検査、unit、scripts、ビルド、結合、`wrangler deploy
 
 API を足すなら、通報の API（`src/server/routes/apiReports.ts`）がちょうどよい見本になる。ハンドラの先頭で `assertSameOriginJsonRequest`（同じオリジンからの JSON か）と `readJsonBody`（本文の大きさと形）を呼ぶ。回数制限をかけるなら、`src/ports/rateLimiter.ts` の `RateLimitScope` と `src/core/config/limits.ts` の `RATE_LIMITS` に種類を足し、`apiReports.ts` の `consumeReportRateLimit` のようにルールを組んで `deps.rateLimiter.consume` を呼ぶ。型は `src/core/api/types.ts` に置き、`src/server/app.ts` にルートを 1 行で登録する。登録の順番には意味があり、ページ ID を受ける `detailRoutes` はいちばん最後に置く。
 
-データの保存の仕方を足すなら、`src/ports/` のインターフェースにメソッドを足し、`src/adapters/d1/`（R2 なら `src/adapters/r2/`）と `src/adapters/memory/` の両方に実装する。テストは `test/integration/adapters/` に置き、`describe.each` で D1 版とメモリ版に同じテストを流す（`pageRepository.test.ts` が見本）。テーブルや列を足すときは、`migrations/` に次の番号の SQL を足す。新しいインターフェースそのものを足すときは、`src/server/deps.ts` の `Deps` と `buildDeps`、`test/integration/helpers/fakeDeps.ts` の `buildFakeDeps` にも足す。
+データの保存の仕方を足すなら、`src/ports/` のインターフェースにメソッドを足し、`src/adapters/d1/`（R2 なら `src/adapters/r2/`）と `src/adapters/memory/` の両方に実装する。テストは `test/integration/adapters/` に置き、D1 版とメモリ版に同じテストを流す。`pageRepository.test.ts` のように共通のテストを関数にまとめて両方の `describe` から呼ぶか、`rateLimiter.test.ts` のように `describe.each` を使う。テーブルや列を足すときは、`migrations/` に次の番号の SQL を足す。新しいインターフェースそのものを足すときは、`src/server/deps.ts` の `Deps` と `buildDeps`、`test/integration/helpers/fakeDeps.ts` の `buildFakeDeps` にも足す。
 
 静的な画面を足すなら、`src/web/pages/` に HTML、`src/web/<画面名>/main.ts` に JS、`src/web/styles/` に CSS を置く。HTML の中のパスは `/assets/...` の絶対パスで書く（`/{id}/edit` のように深いパスでも同じ HTML を返すため）。CSP で自分のオリジンのスクリプトとスタイルしか許していないので、HTML にインラインの `<script>` や `style` 属性は書かない。e2e は CSP 違反があると落ちる。新しいパスは `src/core/config/reservedPaths.ts` に登録する。検索に出したくない画面は、`src/web/_headers` に noindex の行を足し、`test/unit/web/headers.test.ts` の対象にも加える。
 
-`src/core` には npm のパッケージを持ち込まない。ブラウザにもバンドルしているので、依存を足すとその部分を使う画面が重くなる。ブラウザとサーバで同じ検証の実装を使うためでもあり、ESLint がこの import を止める。
+`src/core` には npm のパッケージを持ち込まない。ESLint がこの import を止める。理由は docs/architecture.md の「コードの層」にある。
 
 ブランチは最新の `origin/main` から切り、main 向けに PR を出す。CI の `ci` が通ればマージでき、履歴は squash でまとめている。コミットと PR のタイトルは、`fix: 通報の保存と件数の加算を 1 つの batch にまとめる` のように、`feat` `fix` `docs` `refactor` `chore` などの接頭辞と日本語の本文で書く。コードのコメントも文書も日本語で書く。依存の更新は Dependabot が PR を出す。
 
 ## ほかの文書
 
 - [docs/concept.md](concept.md)：なぜ作るのか。3 つの原則、画面の流れ、何を作って何を作らないか。機能を足したくなったら、まずここに照らす。
-- [docs/architecture.md](architecture.md)：全体のしくみ。この文書の次に読む。
+- [docs/architecture.md](architecture.md)：全体のしくみ。「手元で動かす」が終わったら読む。
 - [docs/guidelines.md](guidelines.md)：どう書くか。コードを書く前に読む。
 - [docs/design.md](design.md)：何を作るかの詳細設計。日時の読み取り規則、URL の設計、セキュリティ、テストの方針などが節ごとにある。頭から読むものではなく、触る領域の節を探して読む。
 - [docs/runbooks/](runbooks/)：運用の手順。公開までの順番は [docs/runbooks/README.md](runbooks/README.md)。
