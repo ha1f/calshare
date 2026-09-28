@@ -303,15 +303,15 @@ test('extractUndecidedItems はセクションが無ければ空配列を返す'
   assert.deepEqual(extractUndecidedItems('# 何か別の文書'), [])
 })
 
-test('buildUndecidedItems は §14.2-1 と §14.2-7 を blocker、それ以外を warn にする', () => {
+test('buildUndecidedItems は §14.2-1 を blocker、それ以外を warn にする', () => {
   const items = buildUndecidedItems([
     { index: 1, title: 'サービス名・ドメイン', detail: '' },
     { index: 3, title: 'ヒューリスティック', detail: '' },
-    { index: 7, title: 'Workers Paid の契約承認', detail: '' },
+    { index: 7, title: 'PAST_EVENT に猶予を設けるか', detail: '' },
   ])
   assert.equal(items.find((i) => i.key === 'undecided:1').status, 'blocker')
   assert.equal(items.find((i) => i.key === 'undecided:3').status, 'warn')
-  assert.equal(items.find((i) => i.key === 'undecided:7').status, 'blocker')
+  assert.equal(items.find((i) => i.key === 'undecided:7').status, 'warn')
 })
 
 // --- computeVerdict / buildReport -------------------------------------------

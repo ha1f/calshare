@@ -26,11 +26,13 @@ Node 22 以降の `node --test` は位置引数を glob として扱い、ディ
 
 1. **サービス名とドメインを決める**（[naming.md](naming.md)、H1）。候補一覧と商標検索の
    手順から絞り込み、レジストラでドメインを取得する。
-2. **Cloudflare アカウント作成 + Workers Paid（$5/月）契約**（H2。OGP 画像生成に必要。
-   design.md §1.2）。
+2. **Cloudflare アカウント作成**（H2）。Workers Free で始める。Workers Paid（$5/月）の契約は
+   OGP 画像生成を有効にするときに行う（[provisioning.md](provisioning.md) の「有料プランへ
+   移って OGP 画像生成を有効にする」節、design.md §1.2）。
 3. **API トークンの発行と GitHub Secrets 登録**（[cloudflare-api-token.md](cloudflare-api-token.md)、H5）。
 4. **`Provision Cloudflare resources` を実行**し、出てきた PR（`chore/provision-ids`）を
-   レビューしてマージする（[provisioning.md](provisioning.md)、H4）。
+   レビューしてマージする（[provisioning.md](provisioning.md)、H4）。OGP 画像生成は既定で
+   無効なので、この時点ではフォント配置（`with_font`）は不要。
 5. **初回デプロイを承認する**: `gh variable set PUBLIC_DOMAIN` → `gh variable set
    DEPLOY_ENABLED --body true`（[deploy.md](deploy.md)、H9）。次の手順 6 のゾーンがまだ
    `active` になっていない場合、`PUBLIC_DOMAIN` は一旦 `<worker名>.<account>.workers.dev`
@@ -43,13 +45,16 @@ Node 22 以降の `node --test` は位置引数を glob として扱い、ディ
    先に変数を更新しないと切り替わるまでの間 403 になる）。`/api/*` の WAF レート制限（H13）は
    この実行に含まれて自動作成される。
 7. **（任意）通報通知の Webhook を発行**し `REPORT_WEBHOOK_URL` を登録する（H7）。
-8. **フォントのライセンス同梱を確認する**（[fonts.md](fonts.md)、H8）。取得・サブセット化・
-   R2 配置自体は自動。
-9. **利用規約・プライバシーポリシー・通報ポリシーの値を決めて承認する**
+8. **利用規約・プライバシーポリシー・通報ポリシーの値を決めて承認する**
    （[legal.md](legal.md)、H10）。
-10. **LINE 実機で最終確認する**（[line-device-test.md](line-device-test.md)、H14）。
-11. 公開後は **通報対応**（[moderation.md](moderation.md)、H11）と
+9. **LINE 実機で最終確認する**（[line-device-test.md](line-device-test.md)、H14）。
+10. 公開後は **通報対応**（[moderation.md](moderation.md)、H11）と
     **使用量の監視**（[usage.md](usage.md)、H12）が継続的な運用作業として残る。
+11. **（任意）OGP 画像生成を有効にする**: Workers Paid（$5/月）を契約し、
+    `Provision Cloudflare resources` を `with_font=true` で実行してフォントを配置し、
+    `wrangler.jsonc` の `OGP_RENDERING` を `"true"` にして deploy する
+    （[provisioning.md](provisioning.md)「有料プランへ移って OGP 画像生成を有効にする」、
+    [fonts.md](fonts.md)、H8）。
 
 ## runbook 一覧
 
@@ -61,7 +66,7 @@ Node 22 以降の `node --test` は位置引数を glob として扱い、ディ
 | [provisioning.md](provisioning.md) | H2〜H8, H13 | Cloudflare リソース作成とシークレット登録の全体像 |
 | [custom-domain.md](custom-domain.md) | H3 | 独自ドメインの割り当てと WAF レート制限 |
 | [deploy.md](deploy.md) | H9 | 本番デプロイと公開承認 |
-| [fonts.md](fonts.md) | H8 | OGP 用フォントの取得・サブセット化・配置 |
+| [fonts.md](fonts.md) | H8 | OGP 用フォントの取得・サブセット化・配置（OGP 画像生成を有効にするときのみ） |
 | [legal.md](legal.md) | H10 | 規約類の値決定と承認手順 |
 | [moderation.md](moderation.md) | H11 | 通報対応（非表示・解除・一括非表示） |
 | [usage.md](usage.md) | H12 | Cloudflare 使用量の定期監視としきい値超過時の対応 |

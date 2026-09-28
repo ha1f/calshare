@@ -45,9 +45,10 @@ const OPTIONAL_GH_SECRETS = [
 const GH_VARIABLES_TO_CHECK = ['DEPLOY_ENABLED', 'PUBLIC_DOMAIN']
 const WRANGLER_PLACEHOLDER_DATABASE_ID = '00000000-0000-0000-0000-000000000000'
 // design.md §14.2 の項目のうち、公開判断そのものをブロックするもの（設計書の番号に対応）。
-// 3〜6・8・9 は運用しながら調整できるチューニング項目なので、要確認止まりで公開はブロックしない。
+// 1（サービス名・ドメイン、H1）以外は運用しながら調整できるチューニング項目なので、
+// 要確認止まりで公開はブロックしない。
 // 設計書の §14.2 の番号立てを変えたときは、ここも合わせて見直す。
-const UNDECIDED_ITEM_BLOCKING_INDEXES = new Set([1, 7])
+const UNDECIDED_ITEM_BLOCKING_INDEXES = new Set([1])
 const PLACEHOLDER_KEYWORD_PATTERN = /TBD|未定|準備中|検討中|未実施|未確認|記入|YYYY-MM-DD|xxxx/i
 // 値の全体が半角/全角の括弧・山括弧で囲まれているだけなら、記入例や「オーナーが記入」のような
 // プレースホルダとみなす（"（オーナーが記入。例: 2026-10-01）" のような docs/legal の雛形を検出するため）

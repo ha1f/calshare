@@ -10,13 +10,13 @@
 
 | 領域 | 選定 | 一言 |
 |---|---|---|
-| ホスティング / ランタイム | Cloudflare Workers（**Paid $5/月**） | R2 の egress 無料。OGP 生成の CPU 時間のために Paid が前提 |
+| ホスティング / ランタイム | Cloudflare Workers（**Free で開始**） | R2 の egress 無料。OGP 画像生成は既定で無効にし、有効にするときだけ Paid（$5/月）が要る（§1.2） |
 | 静的配信 | Workers Static Assets | 作成・完成・履歴・編集画面は静的 HTML + クライアント JS |
 | フレームワーク | Hono（`hono/jsx` で SSR） | 詳細ページだけ SSR。ルートは Hono サブアプリ単位で分割 |
 | DB | Cloudflare D1（SQLite） | `pages` / `events` / `reports` / `rate_limit_counters` |
 | オブジェクトストレージ | Cloudflare R2 | ics 実体・OGP 画像・OGP 用フォント |
 | エッジキャッシュ | Cache API（`caches.default`） | 詳細ページ・ics・OGP の前段。カスタムドメイン配下でのみ有効 |
-| OGP 画像生成 | satori（`satori/standalone` エントリ）+ yoga の wasm + `@resvg/resvg-wasm` | 初回 GET 時に遅延生成 → R2 保存。失敗時は静的フォールバック PNG。wasm の初期化は初回 render 時（§2.5） |
+| OGP 画像生成 | satori（`satori/standalone` エントリ）+ yoga の wasm + `@resvg/resvg-wasm` | `OGP_RENDERING` が既定で無効なため実行しない。有効なときだけ初回 GET 時に遅延生成 → R2 保存。失敗時は静的フォールバック PNG。wasm の初期化は初回 render 時（§2.5） |
 | クライアント JS | バニラ TypeScript（esbuild） | `core/` をそのままブラウザに同梱してライブプレビュー |
 | 静的ページのヘッダ | Static Assets の `_headers` ファイル | 静的ページは Worker を通らないので CSP 等はここで付ける（§9.1。pool-workers・`wrangler dev` の両方で動作確認済み〈T1〉、§10.2） |
 | テスト | Vitest（unit）/ `@cloudflare/vitest-pool-workers`（integration）/ Playwright（e2e） | 3 層すべて足場 PR で疎通させる |
@@ -46,22 +46,34 @@
 
 ### 1.2 コストとの整合（concept §08〜§09 との突き合わせ）
 
-**Workers Paid（$5/月）を前提にする。** これは「無料枠で回す」方針からの唯一かつ意図的な逸脱で、理由は CPU 時間の上限（次の 1 点目）。concept §09 の「Phase 1 は変動費がほぼゼロ…無料枠のまま放置できる」とは固定費 $5/月の分だけ食い違うので、Paid 契約の承認（H2）を §14.2 の未決事項に明示し、承認後に concept §09 へ「Phase 1 の固定費は Workers Paid $5/月のみ（OGP 生成のため）」を追記する。
+**Workers Free で始める。** 設計時点では OGP 生成のために Workers Paid（$5/月）を前提にしていたが、
+生成を既定で無効にする（`OGP_RENDERING`、§2.5）ことで、Phase 1 の開始時点では固定費ゼロの Free の
+まま運用できる。有料プランへの移行は、OGP 画像生成を有効にすると決めたときにオーナーが判断する
+（docs/runbooks/provisioning.md「有料プランへ移って OGP 画像生成を有効にする」）。
 
-- Workers Free の CPU 時間上限は **1 リクエストあたり 10ms**。satori + resvg のラスタライズは 100〜300ms 級なので Free では完走せず、超過は例外ではなく isolate の強制終了（エラー 1102）になるため `try/catch` のフォールバックも効かない。OGP 画像は認知獲得の主経路（concept §03）なので、これを諦める選択肢はない。
-- Worker のサイズ上限は Free / Paid とも uncompressed 64 MiB（圧縮後サイズの上限は無い。2026-09-27 に Limits ページで確認）。resvg の wasm + satori + yoga を含めても余裕があり、サイズは Paid を選ぶ理由にならない。`wrangler deploy --dry-run` の出力サイズは推移の記録として PR に残す（docs/guidelines.md §8.1）。
+- Workers Free の CPU 時間上限は **1 リクエストあたり 10ms**（Cron も同じ）。satori + resvg の生成は
+  手元の計測で 20〜100ms かかり（§14.1）、Free では完走しない。超過は例外ではなく isolate の強制
+  終了（エラー 1102）になるため `try/catch` のフォールバックも効かない。これが `OGP_RENDERING` を
+  既定で無効にする理由で、生成のコードとテストは有効化に備えて残す。
+- Workers Free のその他の上限（2026-09-29 に Limits ページで確認）: リクエスト数 10 万/日、外部
+  サブリクエスト 50/リクエスト、Cloudflare 内部サービスへの呼び出し 1,000/リクエスト、Cron Trigger
+  5 個、Worker サイズ 64 MiB（uncompressed。圧縮後サイズの上限は無い。Free / Paid 共通）、起動 1 秒。
+  `wrangler deploy --dry-run` の出力サイズは推移の記録として PR に残す（docs/guidelines.md §8.1）。
+  OGP 生成以外のリクエスト（詳細ページ SSR・作成 API・GC の Cron）がこの 10ms に収まるかは個別に
+  計測していない。H12 の使用量監視で異常が無いかを見る。
+- D1 Free（2026-09-29 に Pricing ページで確認）: 読み取り 500 万行/日、書き込み 10 万行/日、ストレージ
+  5GB。上限に達するとクエリが失敗する（課金ではない）。
 
-**Paid の込み枠に対する試算（月 10 万ページ作成・詳細ページ月 100 万 PV の想定）**
+**Free の込み枠に対する概算（月 10 万ページ作成・詳細ページ月 100 万 PV の想定を日割り）**
 
-| リソース | Paid の込み枠 | 想定消費 | 判定 |
+| リソース | Free の込み枠（日次） | 想定消費（日次） | 判定 |
 |---|---|---|---|
-| Worker リクエスト | 1,000 万/月 | 作成 10 万 + 詳細 PV 100 万 + OGP/ics 取得 数十万 ≒ 150 万 | 余裕 |
-| CPU 時間 | 3,000 万 CPU-ms/月 | OGP 生成 10 万件 × 150〜300ms = 1,500〜3,000 万 CPU-ms（satori が呼び出しごとに行うフォントのパース分は未計上。要実測、§2.5）。詳細 SSR 100 万 × 3ms = 300 万 | **上限近傍**。超過分は $0.02/100 万 CPU-ms で月数十円。Cache API により再訪分は CPU を消費しない |
-| D1 書き込み | 5,000 万行/月 | 作成 1 件 = `pages` 1 + `events` 1 + インデックス更新 4（`pages` 3 本 + `events` 1 本）+ レート制限カウンタ UPSERT 3 ≒ 9〜12 行。月 10 万件で 120 万行 | 余裕（Free でも 10 万行/日に収まる） |
-| D1 読み取り | 250 億行/月 | Cache API のミス時のみ D1 を読む | 余裕 |
-| R2 | 10GB / Class A 100 万 / Class B 1,000 万 | 同時保持 1〜2GB、書き込みは作成・編集回数に比例 | 余裕。egress は常に無料 |
+| Worker リクエスト | 10 万/日 | 作成 約 3,300 + 詳細 PV 約 33,000 + OGP/ics 取得 数千 ≒ 4 万強 | 余裕 |
+| D1 書き込み | 10 万行/日 | 作成 1 件 = `pages` 1 + `events` 1 + インデックス更新 4 + レート制限カウンタ UPSERT 3 ≒ 9〜12 行。約 3,300 件/日で 3〜4 万行 | 余裕 |
+| D1 読み取り | 500 万行/日 | Cache API のミス時のみ D1 を読む | 余裕 |
+| D1 ストレージ | 5GB | 1 ページ数 KB、同時保持 1〜2GB | 余裕 |
 
-補足として、**OGP 画像の取得回数は PV ではなくクローラのカード生成回数に比例する**。LINE・X・Slack は URL ごとに 1 回フェッチしてプラットフォーム側でキャッシュするため、concept §09 の「月 100 万 PV 分」は上限側の見積りであり、実際の画像フェッチは数千〜数万回に収まる。これが OGP を Worker 経由で配信しても実害が出ない根拠になる。
+補足として、**OGP 画像の取得回数は PV ではなくクローラのカード生成回数に比例する**。LINE・X・Slack は URL ごとに 1 回フェッチしてプラットフォーム側でキャッシュするため、concept §09 の「月 100 万 PV 分」は上限側の見積りであり、実際の画像フェッチは数千〜数万回に収まる。`/{id}/ogp.png` は `OGP_RENDERING` が無効でも共通画像を返すためだけに Worker を経由する（§2.5）。
 
 **Cache API の前提**: `caches.default` は workers.dev サブドメインでは動作せず、カスタムドメイン（Cloudflare ゾーン）配下でのみ機能する。ドメイン取得（§13）が済むまではキャッシュが効かないだけで、動作は変わらない。また `cache.delete()` は実行したデータセンターのキャッシュしか消さないので、編集時の即時 purge には頼らず、短い TTL で吸収する（§2.4）。
 
@@ -199,7 +211,15 @@ export async function withEdgeCache(
 
 ### 2.5 OGP 画像の生成方式: 遅延生成 + R2 + フォールバック
 
-作成 API の中で OGP を同期生成しない。`/:id/ogp.png` への最初の GET（多くは LINE や X のクローラ）でオンデマンド生成し R2 に保存する。
+**`OGP_RENDERING` の設定（既定で無効、§1.2）**: Workers Free の CPU 時間上限（1 リクエスト 10ms）では、
+satori + resvg の生成（手元の計測で 20〜100ms）が完走しない。そこで既定では生成せず、詳細ページの
+`og:image` と `/:id/ogp.png` はどちらも静的な共通画像（`dist/assets/img/ogp-fallback.png`）を返すだけに
+し、D1・R2 を読まずレンダラも呼ばない。設定は `wrangler.jsonc` の `vars.OGP_RENDERING`（文字列 `'true'`
+で有効）に持ち、`src/server/deps.ts` の `buildDeps` が `Deps.config.ogpRendering`（boolean）に変換する。
+有効にしたときの挙動は以下の遅延生成の経路そのままで、コードとテストは無効な間も残す。手元で試すとき
+は `.dev.vars` に `OGP_RENDERING=true` を足す（`vars` より `.dev.vars` が優先される）。
+
+以下は `OGP_RENDERING` が有効なときの経路。作成 API の中で OGP を同期生成しない。`/:id/ogp.png` への最初の GET（多くは LINE や X のクローラ）でオンデマンド生成し R2 に保存する。
 
 ```typescript
 // server/routes/ogp.ts の要旨
@@ -788,7 +808,7 @@ export const ruleBasedInterpreter: TextInterpreter = {
 11. 期限表示「このページは M/D まで表示されます」。`M/D` は `expires_at` の 1ms 前が属する JST 暦日（`expires_at` は JST 0 時ちょうどのことがあり、そのまま暦日に変換すると実際に見えなくなる日を指してしまうため）。`version > 1` なら続けて「最終更新: M/D HH:mm」（`formatDateLabel` と同じ 0 埋め）。その下に小さく「カレンダーに追加した後の変更は自動では反映されません」（免責の常設位置はここ）
 12. 「不適切なページを報告」リンク（`/{id}/report`。小さくフッター相当）
 
-`<head>`: `<meta name="robots" content="noindex, nofollow">`、`og:title`（タイトル）、`og:description`（日時 + 場所の 1 行）、`og:image`（`https://{PUBLIC_ORIGIN}/{id}/ogp.png?v={version}`。version を含めるのは SNS 側の画像キャッシュを編集後に更新させるため、§2.4）、`og:url`、`twitter:card=summary_large_image`。絶対 URL は必ず `config.publicOrigin` から組み立て、`request.url` や `Host` ヘッダは使わない（§9.9）。
+`<head>`: `<meta name="robots" content="noindex, nofollow">`、`og:title`（タイトル）、`og:description`（日時 + 場所の 1 行）、`og:image`、`og:url`、`twitter:card=summary_large_image`。`og:image` は `OGP_RENDERING` が有効なら `https://{PUBLIC_ORIGIN}/{id}/ogp.png?v={version}`（version を含めるのは SNS 側の画像キャッシュを編集後に更新させるため、§2.4）、無効（既定）なら `https://{PUBLIC_ORIGIN}/assets/img/ogp-fallback.png` になる（§2.5）。絶対 URL は必ず `config.publicOrigin` から組み立て、`request.url` や `Host` ヘッダは使わない（§9.9）。
 
 `status = 'hidden'` のページは 404 と同じ「このページは表示できません」を返す（存在を区別させない）。期限切れで GC 前のページも同様に 404 扱い（`isServable`、§4.1）。
 
@@ -1592,6 +1612,7 @@ export interface Deps {
     publicHost: string         // new URL(env.PUBLIC_ORIGIN).host。ics の UID に使う（§7.2）
     serviceName: string        // env.SERVICE_NAME
     ratePepper: string         // env.RATE_LIMIT_PEPPER ?? ''（未設定なら空文字。§9.3）
+    ogpRendering: boolean      // env.OGP_RENDERING === 'true'。既定は無効（§1.2・§2.5）
   }
 }
 /** Env → Deps。ogpRenderer は本物のアダプタが無いため Fake のまま。notifier は REPORT_WEBHOOK_URL があるときだけ webhookNotifier、無ければ fakeNotifier（§9.4） */
@@ -1746,7 +1767,12 @@ T1 が置く設定ファイルと足場コードの確定値。後続 PR はこ�
     }
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "calshare" }],
-  "vars": { "PUBLIC_ORIGIN": "http://localhost:8787", "SERVICE_NAME": "calshare" },
+  // OGP_RENDERING は既定 false。Workers Free の CPU 時間上限のため（§1.2・§2.5）
+  "vars": {
+    "PUBLIC_ORIGIN": "http://localhost:8787",
+    "SERVICE_NAME": "calshare",
+    "OGP_RENDERING": "false"
+  },
   // .wasm は既定の CompiledWasm ルールで import できる（server/deps.ts が動的 import で使う）。
   // .otf は既定ルールに無いため、test/integration/ogp/satoriOgpRenderer.test.ts が
   // フィクスチャフォントを import するために追加する（本番コードは R2 からフォントを読むので対象外）
@@ -1773,6 +1799,7 @@ export interface Env {
   ASSETS: Fetcher
   PUBLIC_ORIGIN: string        // vars
   SERVICE_NAME: string         // vars
+  OGP_RENDERING: string        // vars。'true' のときだけ OGP 画像を生成する（既定は生成しない。§2.5）
   RATE_LIMIT_PEPPER?: string   // secret（ローカルは .dev.vars）。無い（または空文字）なら作成・通報 API は 503（§9.3）
   REPORT_WEBHOOK_URL?: string  // secret。無い（または空文字）なら fakeNotifier を使う（§9.4）
   E2E_FIXED_NOW?: string       // e2e の webServer が --var で渡す。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
@@ -1801,7 +1828,7 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 | `ogpRenderer` | `createSatoriOgpRenderer({ loadWasm, loadFont })`（wasm と R2 のフォントを読み込む関数を受け取り、初回 render 時に遅延実行する。§2.5） | T10 |
 | `notifier` | `REPORT_WEBHOOK_URL` があれば `webhookNotifier`、無ければ `fakeNotifier` | — |
 | `logger` | `consoleLogger` | — |
-| `config` | `publicOrigin` = `new URL(PUBLIC_ORIGIN).origin`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER ?? ''` | — |
+| `config` | `publicOrigin` = `new URL(PUBLIC_ORIGIN).origin`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER ?? ''`、`ogpRendering` = `OGP_RENDERING === 'true'` | — |
 
 `src/server/index.ts` は `export default { fetch: (req, env, ctx) => createApp(buildDeps(env)).fetch(req, env, ctx), scheduled: (_controller, env, ctx) => ctx.waitUntil(runGc(buildDeps(env))) }`（`scheduled` は T13 で追加済み）。`buildDeps` はリクエストごとに呼んでよい（アダプタの生成は軽い。wasm やフォントのメモ化はモジュールスコープで行う、§2.5）。
 
@@ -2080,13 +2107,13 @@ H1〜H14 の運用手順は docs/runbooks/README.md にまとめてある。各�
 | # | 作業 | なぜ人間が必要か | 自動化（準備済みの土台 / オーナーに残る最小の作業） | ブロックするタスク |
 |---|---|---|---|---|
 | H1 | サービス名と独自ドメインの決定・取得 | ブランディング判断（concept §10）であり支払いを伴う契約行為。`PUBLIC_ORIGIN`・ics の UID ドメイン・OGP のサービス名表記に使う | 土台: `docs/runbooks/naming.md`（候補17件の比較・ドメイン確認・J-PlatPat 手順）、`scripts/check-domain.mjs`、`docs/runbooks/rename.md` + `scripts/apply-service-name.mjs`（反映を自動化）。残る作業: 候補の絞り込み、商標検索、ドメインの購入（本人認証・支払い）、`apply-service-name.mjs` の実行と PR マージ | T19（本番デプロイ）。開発中は `calshare.example` の仮値で進める |
-| H2 | Cloudflare アカウント作成と **Workers Paid（$5/月）** の契約 | 決済情報の入力はレジストラ・アカウント登録と同様に本人認証を伴う契約行為 | 土台: concept.md §09 への「Phase 1 の固定費は Workers Paid $5/月のみ」の追記は反映済み。`docs/runbooks/provisioning.md` が契約後の手順を全部引き継ぐ。残る作業: アカウント作成と Paid プランへの契約そのもの（1 回） | T19 |
+| H2 | Cloudflare アカウント作成（**Workers Free で開始**） | アカウント登録はレジストラ登録と同様に本人認証を伴う契約行為 | 土台: `docs/runbooks/provisioning.md` が契約後の手順を全部引き継ぐ。OGP 画像生成を有効にするときの Workers Paid（$5/月）契約の手順も同 runbook の「有料プランへ移って OGP 画像生成を有効にする」節にまとめてある。残る作業: アカウント作成そのもの（1 回）。Paid 契約は OGP 画像生成を有効にすると決めたときだけ行う | T19 |
 | H3 | ドメインの DNS を Cloudflare に移管（ゾーン作成）し Worker にカスタムドメインを割り当てる | レジストラ側のネームサーバー変更は本人認証が要る。Cache API はカスタムドメイン配下でのみ効く（§1.2）。`*.workers.dev` を閉じるのは §9.9 | 土台: `scripts/cf/ensure-zone.mjs`（ゾーン作成）・`scripts/cf/ensure-waf-rate-limit.mjs`（H13 も同時に自動実行）・`scripts/cf/write-wrangler-domain.mjs`（`routes`・`workers_dev: false` を書き換える PR を自動作成）、`.github/workflows/provision.yml` の `zone_and_waf` ジョブ、`docs/runbooks/custom-domain.md`。残る作業: レジストラでのネームサーバー設定、ゾーンが `active` になるまでの再実行、自動作成された PR のレビューとマージ | T19 |
 | H4 | `wrangler login` と D1 データベース・R2 バケットの本番作成、`wrangler.jsonc` のプレースホルダ `database_id`（§11.7）の置換 | 課金主体のリソース発行は運用者の承認の下で行う | 土台: `scripts/cf/ensure-resources.mjs`（作成 or 流用し `wrangler.jsonc` を書き換える PR を自動作成）、`.github/workflows/provision.yml` の `resources` ジョブ。残る作業: 自動作成された PR（`chore/provision-ids`）のレビューとマージ、初回のみ「Allow GitHub Actions to create and approve pull requests」の設定 | T19 |
 | H5 | Cloudflare API トークン（Workers / D1 / R2 の編集権限）の発行と GitHub Secrets（`CLOUDFLARE_API_TOKEN` `CLOUDFLARE_ACCOUNT_ID`）への登録 | トークン発行はダッシュボード操作で本人認証が要り、最小権限スコープの選定はオーナー権限が必要 | 土台: `docs/runbooks/cloudflare-api-token.md`（権限テンプレート）、`scripts/cf/set-github-secrets.sh`（対話的に 1 回登録）、`scripts/cf/check-token.mjs`（`provision.yml` の `preflight` が実行のたびに自動検証）。残る作業: トークンの発行そのもの、`set-github-secrets.sh` の実行（1 回） | T19 |
 | H6 | `RATE_LIMIT_PEPPER` の生成と `wrangler secret put` | シークレットの生成・登録は権限分離のため人間の承認下で行う | 土台: `scripts/cf/ensure-secret.mjs`。`deploy.yml` が初回デプロイで `wrangler deploy --secrets-file` によりコードと同時に登録し、`provision.yml` の `secrets` ジョブが再実行時に登録済みであることを確認する。残る作業: なし（完全自動化。H9 のデプロイ承認に含まれる） | T19（ローカルは `.dev.vars` で任意の値） |
 | H7 | Discord または Slack の通報通知チャンネル作成と Incoming Webhook URL の発行、`REPORT_WEBHOOK_URL` の登録 | 通知先ワークスペースの管理権限が要る | 土台: `scripts/cf/ensure-secret.mjs --force`（`provision.yml` の `secrets` ジョブと `deploy.yml` の両方から登録できる）。残る作業: Webhook URL の発行そのもの（管理者権限操作）と GitHub Secrets への登録（1 回）。任意だが、未設定のまま公開すると通報が誰にも届かないので公開前の登録を推奨 | —（任意。T12 は Fake で完結） |
-| H8 | OGP 用フォント（Noto Sans JP、SIL OFL）のライセンス確認と、サブセットフォントの本番 R2 への配置 | ライセンス遵守の責任は人間が持つ | 土台: `scripts/fonts/{download-noto-sans-jp,generate-jis-level1}.mjs` + `scripts/fonts/subset.sh`、`.github/workflows/provision.yml` の `font` ジョブ（取得・サブセット化・R2 配置と fonttools のインストールまで自動）、`docs/runbooks/fonts.md`、`docs/licenses/noto-sans-jp.md`（ライセンス審査記録）。`font` ジョブは著作権表示入りの `OFL.txt` も R2 の `fonts/` に置く。サブセットは JIS 第 1 水準のみで確定（§2.5、`docs/licenses/noto-sans-jp.md`。第 2 水準の字は OGP 上で空白になる制限を受け入れる）。残る作業: `docs/licenses/noto-sans-jp.md` の審査記録を読んで承認する（異論があれば第 2 水準の追加を Issue #9 で依頼する） | T19（ローカルは `scripts/seed-local-r2.mjs`） |
+| H8 | OGP 用フォント（Noto Sans JP、SIL OFL）のライセンス確認と、サブセットフォントの本番 R2 への配置 | ライセンス遵守の責任は人間が持つ | 土台: `scripts/fonts/{download-noto-sans-jp,generate-jis-level1}.mjs` + `scripts/fonts/subset.sh`、`.github/workflows/provision.yml` の `font` ジョブ（`with_font` 入力。既定 false で、OGP 画像生成を有効にするときに true で実行する。取得・サブセット化・R2 配置と fonttools のインストールまで自動）、`docs/runbooks/fonts.md`、`docs/licenses/noto-sans-jp.md`（ライセンス審査記録）。`font` ジョブは著作権表示入りの `OFL.txt` も R2 の `fonts/` に置く。サブセットは JIS 第 1 水準のみで確定（§2.5、`docs/licenses/noto-sans-jp.md`。第 2 水準の字は OGP 上で空白になる制限を受け入れる）。残る作業: OGP 画像生成を有効にすると決めたときに `with_font=true` で provision を実行し、`docs/licenses/noto-sans-jp.md` の審査記録を読んで承認する（異論があれば第 2 水準の追加を Issue #9 で依頼する） | —（OGP 画像生成を有効にするときだけ必要。既定では未実施） |
 | H9 | 初回の本番デプロイ承認と公開判断 | 公開はプロダクトオーナーの意思決定そのもの | 土台: `.github/workflows/deploy.yml` の `gate` ジョブ（`DEPLOY_ENABLED` の確認のみ）、`docs/runbooks/deploy.md`。承認後は build・マイグレーション・デプロイ・`RATE_LIMIT_PEPPER` 登録まで全自動。残る作業: `PUBLIC_DOMAIN` の設定と `DEPLOY_ENABLED=true` にする決定（1 回の変数設定 2 つ） | — |
 | H10 | 利用規約・プライバシーポリシー・通報ポリシーの文言承認と `/` への掲載 | 法的文言の責任は運用者本人に帰属する | 土台: `docs/legal/{terms,privacy,report-policy}.md`（実装仕様に基づくドラフト）、`scripts/legal/apply-legal-values.mjs`（施行日・運営者・管轄裁判所を一括反映）、`scripts/legal/checkLegalDocs.mjs --strict`（掲載可否の機械検査）、`docs/runbooks/legal.md`。残る作業: 施行日・運営者表記・管轄裁判所の決定、`.claude/skills/legal-review` の指摘を読んだ上での内容承認（掲載 HTML 化は実装 PR 側の作業） | — |
 | H11 | 通報の一次対応（通知を見て `status='hidden'` にする。スパム波は同一送信元を一括非表示）の運用 | 自動非表示を持たない設計（§9.4）なので、通報 1 件ごとの継続的な人間の判断が要る | 土台: `.github/workflows/moderation.yml`（`hide` / `unhide` / `hide-by-creator` を 1 回の実行で処理し、対象件数・id 一覧を Issue に記録）、`scripts/cf/moderation-sql.mjs`、`docs/runbooks/moderation.md`、`.claude/skills/moderation-triage`（判定の下書き）。残る作業: 通報ごとの hide / unhide / 維持の判断そのもの（設計上、自動化しない） | — |
@@ -2106,7 +2133,7 @@ H1〜H14 の運用手順は docs/runbooks/README.md にまとめてある。各�
 | Workers の起動時間制限（要検証） | satori の既定エントリ（asm.js 版 yoga）はグローバルスコープの評価が 1 秒を超えてデプロイが失敗しうる。`wrangler deploy --dry-run` では検出できない | `satori/standalone` + wasm import + 遅延 init（§2.5）。T19 の初回デプロイで確認 |
 | vitest-pool-workers での wasm import → 確認済み（T10、§10.2） | `.wasm` の静的 import・`init()`/`initWasm()`・satori + resvg-wasm による PNG 生成のすべてが pool-workers 上で動くことを `test/integration/ogp/satoriOgpRenderer.test.ts` で確認した。Node 側への切り出しは不要だった | 対応不要。satori のバージョンは `harfbuzzjs`（fs 前提の wasm 読み込みで Workers 非対応）が入る前の `0.32.0` に固定する必要があった（上記「satori の読み込み方」） |
 | `_headers` ファイルの対応 → 確認済み（T1、§10.2） | wrangler のバージョンによっては Static Assets で `_headers` が効かない懸念だったが、pool-workers・`wrangler dev` のいずれでも効くことを確認した | 対応不要。効かなくなった場合の代替は `run_worker_first` で Worker を通す案（§2.2、§14.3） |
-| CPU-ms が Paid の込み枠上限近傍 | 月 10 万作成規模で 1,500〜3,000 万 CPU-ms | 超過分は月数十円。H12 の監視ルール |
+| OGP 画像生成を有効にした場合の CPU-ms（Paid） | 月 10 万作成規模で 1,500〜3,000 万 CPU-ms（Paid の込み枠 3,000 万 CPU-ms/月の近傍）。既定（`OGP_RENDERING` 無効）では発生しない | 有効にする場合は H12 の監視ルールで確認する。超過分は月数十円 |
 | 日時パースの精度 | 「8 割当たる」は仮説。特に T2（1〜7 時は午後）は `7時集合` を壊す | 外れたケースを §5.6 の表に足す運用。T2 は実データで外れが多ければリテラル解釈に戻す（定数 1 つで切替できるよう `PM_HEURISTIC_MAX_HOUR = 7` を `limits.ts` に置く） |
 | 場所抽出のストップリスト | 未知のパターンで誤検出しうる（例: `車で移動` → 場所 = 車） | タップ編集で空にすれば「使わない」になる（§6.1）。外れたケースをストップリストとテスト表に足す継続メンテ |
 | `9/20 19時 渋谷` の解釈 | タイトル扱いにしたため、場所のつもりのユーザーは 1 タップ要る | プレビューの「場所にする」で 1 操作。実データで場所意図が多ければ規則 L3 を場所側に倒す |
@@ -2132,11 +2159,10 @@ H1〜H14 の運用手順は docs/runbooks/README.md にまとめてある。各�
 4. **レート制限の初期閾値**（§9.3）。CGNAT を考慮して IP 側を緩めにした仮置き。リリース後のログで調整する。
 5. **Google カレンダーリンクの `details` にメモの URL をそのまま載せるか**。本設計は載せる（受け手が自分でクリックする経路のため）。ics と揃えて `WIDE_URL_PATTERN` で「[リンク]」に置換する選択もある。
 6. **`/new` と `/` の使い分け**。本設計は同内容の 2 パス（プリフィルリンクは `/new`、素のランディングは `/`）。`/` に説明コンテンツを厚くして `/new` を入力専用にするかは Phase 2 のテンプレページ設計と一緒に決める。
-7. **Workers Paid（$5/月）の契約承認**（H2）。concept §09 の「無料枠のまま放置できる」から固定費 $5/月だけ逸脱する。承認後に concept を追記する。
-8. **`PAST_EVENT` に猶予を設けるか**。本設計は作成時 `end < now` を厳密に拒否する。「終了直後の記録用途」を許すなら `end < now - 24 時間` のように緩める。緩めると「作成直後に過去のページ」が増えるので、実データで要望が出てから判断する。
-9. **「LINEで送る」の共有 URL に `?openExternalBrowser=1` を付けるか**。付けると詳細ページごと外部ブラウザで開き ics の問題を根本から避けられるが、共有 URL が長くなり、H14 の実機確認が前提になる。本設計は付けない。
-10. **PATCH で R2 の ics が古い版のまま残りうる**。`PATCH /api/pages/:id` は D1 の更新と R2 への ics 上書きを別々に行うため、(a) R2 への `putIcs` が失敗した場合、(b) 同一ページへの並行 PATCH が到着順と異なる順で R2 に書き込んだ場合に、D1 の `version` と R2 の ics の `SEQUENCE` がずれたまま残ることがある。`GET /:id.ics` の自己修復（§2.3）は R2 に ics が存在しない場合にのみ再生成するため、この状態は自己修復されない。対応するなら、`GET /:id.ics` で R2 の `SEQUENCE` と `version - 1` を比較し、不一致なら再生成する案がある。
-11. **`PATCH /api/pages/:id` にレート制限を設けるか**。編集トークンを持つ作成者本人しか叩けないため第三者による増幅は無いが、自作ページへの連打で R2 と D1 の書き込みを消費できる。設けるなら `RateLimitScope` に `update` を追加し、device 単位の閾値を決める（§9.3）。
+7. **`PAST_EVENT` に猶予を設けるか**。本設計は作成時 `end < now` を厳密に拒否する。「終了直後の記録用途」を許すなら `end < now - 24 時間` のように緩める。緩めると「作成直後に過去のページ」が増えるので、実データで要望が出てから判断する。
+8. **「LINEで送る」の共有 URL に `?openExternalBrowser=1` を付けるか**。付けると詳細ページごと外部ブラウザで開き ics の問題を根本から避けられるが、共有 URL が長くなり、H14 の実機確認が前提になる。本設計は付けない。
+9. **PATCH で R2 の ics が古い版のまま残りうる**。`PATCH /api/pages/:id` は D1 の更新と R2 への ics 上書きを別々に行うため、(a) R2 への `putIcs` が失敗した場合、(b) 同一ページへの並行 PATCH が到着順と異なる順で R2 に書き込んだ場合に、D1 の `version` と R2 の ics の `SEQUENCE` がずれたまま残ることがある。`GET /:id.ics` の自己修復（§2.3）は R2 に ics が存在しない場合にのみ再生成するため、この状態は自己修復されない。対応するなら、`GET /:id.ics` で R2 の `SEQUENCE` と `version - 1` を比較し、不一致なら再生成する案がある。
+10. **`PATCH /api/pages/:id` にレート制限を設けるか**。編集トークンを持つ作成者本人しか叩けないため第三者による増幅は無いが、自作ページへの連打で R2 と D1 の書き込みを消費できる。設けるなら `RateLimitScope` に `update` を追加し、device 単位の閾値を決める（§9.3）。
 
 ### 14.3 レビュー指摘のうち採らなかったもの
 
@@ -2145,7 +2171,7 @@ H1〜H14 の運用手順は docs/runbooks/README.md にまとめてある。各�
 | 指摘 | 判断 | 理由 |
 |---|---|---|
 | 開放端「19:00〜」を `EventFields.hasExplicitEnd` で表現する | 採らない（表示を「19:00〜20:00」に統一） | 型・DB・表示の 3 箇所に分岐が増える。既定 60 分をそのまま見せる方が、受け手がカレンダーに入る内容と画面で一致する（§5.5 T1） |
-| `PAST_EVENT` を `end < now - 猶予` に緩める | 未決事項に載せた（§14.2-8） | 猶予の長さは実データが無いと決められない。作成時は厳密、更新時は日時不変なら通す、で当面の矛盾は解消している |
+| `PAST_EVENT` を `end < now - 猶予` に緩める | 未決事項に載せた（§14.2-7） | 猶予の長さは実データが無いと決められない。作成時は厳密、更新時は日時不変なら通す、で当面の矛盾は解消している |
 | ics の R2 キーを version 付きと安定キーの両方で書く | 安定キーのみにした | ics は作成・編集時に同期生成するので version 付きキーの用途が無い。書き込み回数と GC の削除対象を増やさない |
 | 絵文字を satori の `graphemeImages` で描く | 採らない（除去する） | 絵文字画像の外部取得が要り、OGP 生成の依存先が増える。Phase 1 は詳細ページで正しく見えれば足りる |
 | Workers の Rate Limiting バインディングを D1 の前段に置く | 採らない（§9.3 に判断を残す） | colo 単位で非グローバルなため日次上限に使えない。D1 の check-before-write で書き込み増幅は抑えられる。WAF のルール（H13）を保険にする |

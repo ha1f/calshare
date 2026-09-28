@@ -73,10 +73,12 @@ GitHub の Actions タブ → `deploy` ワークフロー → `Run workflow` か
 ### 初回デプロイで確認すること
 
 - H1（サービス名の決定。独自ドメインは workers.dev で先行公開する場合は未取得のままでよい）・
-  H2〜H5・H8（Cloudflare 契約、D1/R2 作成、API トークン発行、フォントの配置）が完了していること。
-  `RATE_LIMIT_PEPPER`（H6）と、GitHub Secret `REPORT_WEBHOOK_URL` を設定済みなら
-  `REPORT_WEBHOOK_URL`（H7、任意）の Worker シークレットへの登録は、どちらも `wrangler deploy` と
-  同時に自動登録されるため事前の準備は不要。
+  H2〜H5（Cloudflare アカウント作成、D1/R2 作成、API トークン発行）が完了していること。
+  `OGP_RENDERING` は既定で無効なので、H8（フォントの配置）は初回デプロイの前提ではない
+  （OGP 画像生成を有効にするときだけ必要。docs/runbooks/provisioning.md「有料プランへ移って
+  OGP 画像生成を有効にする」）。`RATE_LIMIT_PEPPER`（H6）と、GitHub Secret `REPORT_WEBHOOK_URL`
+  を設定済みなら `REPORT_WEBHOOK_URL`（H7、任意）の Worker シークレットへの登録は、どちらも
+  `wrangler deploy` と同時に自動登録されるため事前の準備は不要。
 - デプロイ後、`npx wrangler secret list` で `RATE_LIMIT_PEPPER`（と、設定したなら
   `REPORT_WEBHOOK_URL`）が登録されていることを確認する（下記「要検証」）。
 - デプロイ後、design.md §14.1 が挙げる「Workers の起動時間制限（グローバルスコープの評価 1 秒）」で失敗していないか

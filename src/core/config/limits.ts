@@ -34,6 +34,8 @@ export const OGP_CACHE_MAX_AGE_SECONDS = 300
 export const OGP_FAILURE_CACHE_SECONDS = 300
 export const OGP_IMAGE_WIDTH = 1200
 export const OGP_IMAGE_HEIGHT = 630
+/** OGP 生成を止めている間・生成に失敗したときに返す共通画像（Static Assets 配信、§2.5） */
+export const OGP_FALLBACK_IMAGE_PATH = '/assets/img/ogp-fallback.png'
 export const DEVICE_COOKIE_NAME = 'cs_device'
 export const DEVICE_COOKIE_MAX_AGE_SECONDS = 400 * 24 * 60 * 60
 export const RATE_LIMITS = {

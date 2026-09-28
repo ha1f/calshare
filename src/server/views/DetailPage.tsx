@@ -1,5 +1,5 @@
 import type { JSX } from 'hono/jsx/jsx-runtime'
-import { CHANGE_BANNER_HOURS } from '../../core/config/limits'
+import { CHANGE_BANNER_HOURS, OGP_FALLBACK_IMAGE_PATH } from '../../core/config/limits'
 import { buildGoogleCalendarUrl } from '../../core/google/buildGoogleCalendarUrl'
 import { formatDateLabel, toJstParts } from '../../core/time/jst'
 import { sameDateTime } from '../../core/validate/validateEventFields'
@@ -33,8 +33,11 @@ function snapshotAsEventFields(snapshot: ChangeSnapshot): EventFields {
   }
 }
 
-function buildOgImageUrl(publicOrigin: string, pageId: string, version: number): string {
-  const url = new URL(`/${pageId}/ogp.png`, publicOrigin)
+/** 生成を止めている間は静的な共通画像を指す。Static Assets が直接返すので Worker を起動しない（§2.5） */
+function buildOgImageUrl(config: Deps['config'], pageId: string, version: number): string {
+  if (!config.ogpRendering) return new URL(OGP_FALLBACK_IMAGE_PATH, config.publicOrigin).toString()
+
+  const url = new URL(`/${pageId}/ogp.png`, config.publicOrigin)
   url.searchParams.set('v', String(version))
   return url.toString()
 }
@@ -87,10 +90,7 @@ export function DetailPage({ page, config, now }: DetailPageProps): JSX.Element 
     <>
       <meta property="og:title" content={event.title} />
       <meta property="og:description" content={location ? `${dateLabel} ${location}` : dateLabel} />
-      <meta
-        property="og:image"
-        content={buildOgImageUrl(config.publicOrigin, page.id, page.version)}
-      />
+      <meta property="og:image" content={buildOgImageUrl(config, page.id, page.version)} />
       <meta property="og:url" content={detailUrl} />
       <meta name="twitter:card" content="summary_large_image" />
     </>

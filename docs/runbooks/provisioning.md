@@ -9,7 +9,7 @@ design.md §13 の H2〜H8・H13 のうち、Cloudflare 側のリソース作成
 ## 全体の流れ
 
 ```
-1. (人) Cloudflare アカウント作成 + Workers Paid 契約                      … H2
+1. (人) Cloudflare アカウント作成（Workers Free のままでよい）             … H2
 2. (人) API トークン発行                                                   … H5
    docs/runbooks/cloudflare-api-token.md
 3. (人) scripts/cf/set-github-secrets.sh を 1 回実行
@@ -23,7 +23,7 @@ design.md §13 の H2〜H8・H13 のうち、Cloudflare 側のリソース作成
                 必要は無い）                                                   … H6 / H7
    → zone_and_waf（domain 指定時）: ゾーン作成、WAF レート制限ルール作成、
                 ゾーンが active なら routes の PR を自動作成                 … H3 / H13
-   → font（with_font=true）: フォントサブセットを R2 に配置                   … H8 のアップロード
+   → font（with_font=true。既定は false）: フォントサブセットを R2 に配置     … H8 のアップロード
 5. (人) resources が出した PR (chore/provision-ids) をレビューしてマージ
 6. (人) 初回 wrangler deploy（deploy.yml で DEPLOY_ENABLED を true にする。docs/runbooks/deploy.md）
    → wrangler deploy と同時に RATE_LIMIT_PEPPER が自動で登録される（H6 完了）
@@ -34,12 +34,15 @@ design.md §13 の H2〜H8・H13 のうち、Cloudflare 側のリソース作成
 ```
 
 手順 4 と 7・9 は同じ workflow（`provision.yml`）の再実行で、`domain` 入力を後から埋めるだけでよい。
-`with_font` は既定で true。`wrangler.jsonc` または `scripts/fonts/download-noto-sans-jp.mjs`・
-`scripts/fonts/subset.sh` が無ければ `font` ジョブは自動でスキップされる。
+`with_font` は既定で false（OGP 画像生成は既定で無効で、フォントが要らないため）。true にしても
+`wrangler.jsonc` または `scripts/fonts/download-noto-sans-jp.mjs`・`scripts/fonts/subset.sh` が
+無ければ `font` ジョブは自動でスキップされる。
 
 ## オーナーが行う最小の作業
 
-1. Cloudflare アカウント作成 + Workers Paid（$5/月）契約（H2）。
+1. Cloudflare アカウント作成（H2）。Workers Free のままでよい。Workers Paid（$5/月）の契約は
+   OGP 画像生成を有効にすると決めたときに行う（下記「有料プランへ移って OGP 画像生成を有効に
+   する」）。
 2. API トークン発行（H5）: `docs/runbooks/cloudflare-api-token.md` の手順どおり。
 3. `scripts/cf/set-github-secrets.sh` を 1 回実行する:
    ```sh
@@ -50,7 +53,8 @@ design.md §13 の H2〜H8・H13 のうち、Cloudflare 側のリソース作成
    `CLOUDFLARE_API_TOKEN=xxxx CLOUDFLARE_ACCOUNT_ID=xxxx scripts/cf/set-github-secrets.sh`
    （`REPORT_WEBHOOK_URL` は任意）
 4. GitHub の Actions タブから `Provision Cloudflare resources` を Run workflow する。
-   ドメイン未定なら `domain` は空のまま、`with_font` は既定の true のままでよい。
+   ドメイン未定なら `domain` は空のまま、OGP 画像生成をまだ有効にしないなら `with_font` は
+   既定の false のままでよい。
 5. `resources` ジョブが `wrangler.jsonc` を書き換える PR（`chore/provision-ids`）を作ったら
    内容を確認してマージする。
    - 初回のみ: リポジトリの **Settings → Actions → General → Workflow permissions** で
@@ -74,22 +78,28 @@ design.md §13 の H2〜H8・H13 のうち、Cloudflare 側のリソース作成
 ゾーン作成、WAF レート制限ルールの作成、`routes` の設定、フォントの R2 アップロード）は
 provision / deploy の各 workflow が行う。
 
-## Workers Paid 契約が要る根拠
+## Workers Free で始める理由と OGP 画像生成の扱い
 
-design.md §1.2 のとおり、OGP 画像生成（satori + resvg）は 1 リクエストあたり 100〜300ms 級の
-CPU 時間を要し、Workers Free の上限（1 リクエスト 10ms）を超える。超過は例外ではなく isolate の
-強制終了（エラー 1102）になるため、フォールバックも効かない。OGP は認知獲得の主経路
-（concept §03）なので、Paid 契約（$5/月）を Phase 1 の唯一の固定費として受け入れる
-（concept §09 の「無料枠のまま放置できる」からの意図的な逸脱。§14.2 の未決事項 7）。
+design.md §1.2 のとおり、OGP 画像生成（satori + resvg）は 1 リクエストあたり手元の計測で
+20〜100ms の CPU 時間を要し、Workers Free の上限（1 リクエスト 10ms）を超える。超過は例外では
+なく isolate の強制終了（エラー 1102）になるため、フォールバックも効かない。そこで
+`OGP_RENDERING`（`wrangler.jsonc` の `vars`）は既定で無効にし、詳細ページと `/:id/ogp.png` は
+どちらも静的な共通画像を返す（design §2.5）。D1・R2 の作成自体は Paid 限定機能ではないため、
+provisioning は Free のままでも一通り進められる。Paid 契約が要るのは OGP 画像生成を有効にする
+ときだけで、有効にしないままなら Phase 1 は固定費ゼロで運用できる。
 
-## Paid 契約前に provision を実行した場合に何が起きるか
+## 有料プランへ移って OGP 画像生成を有効にする
 
-- `scripts/cf/check-token.mjs` と `ensure-resources.mjs`（D1・R2 の作成）は、プランに関わらず
-  成功する（D1・R2 の作成自体は Paid 限定機能ではない）。
-- ただし、その状態で Worker を本番デプロイして OGP 生成が呼ばれると、Free プランの CPU 時間
-  上限（10ms）を超えて isolate が強制終了し、OGP 画像が生成できない（design §1.2）。
-- つまり provisioning は Paid 契約前でも進められるが、実際にサービスとして動かす前には
-  Paid への契約が必須。手順としては H2 を最初に済ませてから H9（初回デプロイ）に進むこと。
+1. Cloudflare の管理画面で Workers Paid（$5/月）を契約する（H2）。
+2. `Provision Cloudflare resources` を `with_font=true` で実行し、`font` ジョブに
+   Noto Sans JP のサブセットフォントを本番 R2 に配置させる（H8。`docs/runbooks/fonts.md`）。
+3. `wrangler.jsonc` の `vars.OGP_RENDERING` を `"true"` に変更する PR を作りマージする。
+4. `main` へのマージで `deploy.yml` が動き、新しい設定で本番デプロイされる
+   （`DEPLOY_ENABLED` が `true` になっている前提。`docs/runbooks/deploy.md`）。
+
+手順は順不同でも進められる（例えば先に `with_font=true` でフォントだけ配置しておいてもよい）が、
+`OGP_RENDERING=true` を先にデプロイして Paid 契約がまだの場合、OGP 生成のリクエストで isolate が
+強制終了する（design §1.2）。Paid 契約を先に済ませてから `OGP_RENDERING` を有効にすること。
 
 ## RATE_LIMIT_PEPPER 登録のタイミングについて
 

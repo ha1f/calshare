@@ -38,6 +38,7 @@ export function buildFakeDeps(overrides: Partial<Deps> = {}): Deps {
       publicHost: new URL(TEST_ORIGIN).host,
       serviceName: 'calshare',
       ratePepper: 'test-pepper',
+      ogpRendering: true, // wrangler.jsonc の既定（無効）とは逆にし、生成する側の結合テストを素の呼び出しで書けるようにする
     },
     ...overrides,
   }
