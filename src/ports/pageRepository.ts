@@ -54,7 +54,10 @@ export interface PageRepository {
   findById(id: string): Promise<PageRecord | null>
   /** version+1 で更新する。楽観ロックは持たず最後の保存が勝つ（§6.5）。status / report_count は触らない */
   update(id: string, patch: PagePatch): Promise<'ok' | 'not_found'>
-  /** 同一送信元（ip_hash または device_id が一致）の active なページ数。通報通知に載せる（§9.4） */
+  /**
+   * 同一送信元（ip_hash または device_id が一致）の active なページ数。通報通知に載せる（§9.4）。
+   * creatorIpHash が UNKNOWN_IP_HASH のときは device_id の一致だけで数える
+   */
   countActiveByCreator(creatorIpHash: string, creatorDeviceId: string): Promise<number>
   listExpired(before: Date, limit: number): Promise<string[]>
   /** D1_MAX_BIND_PARAMS 件ずつに分割して db.batch() に載せる。101 件以上でも動く */

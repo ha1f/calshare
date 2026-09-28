@@ -5,7 +5,8 @@ import { fakeClock } from '../../../src/adapters/clock/fakeClock'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { createD1ReportRepository } from '../../../src/adapters/d1/d1ReportRepository'
 import { createFakeNotifier } from '../../../src/adapters/notifier/fakeNotifier'
-import { RATE_LIMITS, REPORT_DEDUPE_HOURS } from '../../../src/core/config/limits'
+import { RATE_LIMITS, REPORT_DEDUPE_HOURS, UNKNOWN_IP_HASH } from '../../../src/core/config/limits'
+import type { CreatePageRequest, CreatePageResponse } from '../../../src/core/api/types'
 import type { NewPageInput, PageRecord, PageRepository } from '../../../src/ports/pageRepository'
 import { createApp } from '../../../src/server/app'
 import { buildFakeDeps } from '../helpers/fakeDeps'
@@ -135,6 +136,48 @@ describe('POST /api/pages/:id/reports', () => {
     await fetchAndDrain(app, postReport('page00000001', validBody()))
 
     expect(notifier.calls[0]?.activePagesFromSameCreator).toBe(3)
+  })
+
+  it('CF-Connecting-IP 無しで作られたページどうしは、device_id が違えば同一送信元として数えない', async () => {
+    const notifier = createFakeNotifier()
+    const deps = buildFakeDeps({
+      pages: createD1PageRepository(env.DB),
+      reports: createD1ReportRepository(env.DB),
+      notifier,
+    })
+    const app = createApp(deps)
+    const createBody: CreatePageRequest = {
+      rawText: '9/20 19時 渋谷で飲み会',
+      fields: {
+        title: '飲み会',
+        location: '渋谷',
+        memo: null,
+        start: '2026-09-20T10:00:00.000Z',
+        end: '2026-09-20T11:00:00.000Z',
+        isAllDay: false,
+      },
+      source: 'direct',
+    }
+    // Cookie も付けないので、呼ぶたびに別の device_id で作られる
+    const createPage = async () => {
+      const res = await fetchAndDrain(
+        app,
+        jsonRequest('/api/pages', { method: 'POST', body: createBody }),
+      )
+      expect(res.status).toBe(200)
+      return (await res.json<CreatePageResponse>()).id
+    }
+    const reportedPageId = await createPage()
+    const otherPageId = await createPage()
+    const reportedPage = await deps.pages.findById(reportedPageId)
+    const otherPage = await deps.pages.findById(otherPageId)
+    expect(reportedPage?.creatorIpHash).toBe(UNKNOWN_IP_HASH)
+    expect(otherPage?.creatorIpHash).toBe(UNKNOWN_IP_HASH)
+    expect(otherPage?.creatorDeviceId).not.toBe(reportedPage?.creatorDeviceId)
+
+    await fetchAndDrain(app, postReport(reportedPageId, validBody()))
+
+    expect(notifier.calls[0]?.activePagesFromSameCreator).toBe(1)
   })
 
   it('reason が列挙値に無ければ 400 INVALID_REQUEST', async () => {

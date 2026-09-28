@@ -1,5 +1,5 @@
 import { requireDefined } from '../../core/assert'
-import { D1_MAX_BIND_PARAMS } from '../../core/config/limits'
+import { D1_MAX_BIND_PARAMS, UNKNOWN_IP_HASH } from '../../core/config/limits'
 import type { ChangeSnapshot, CreateSource, Jsonified } from '../../core/types'
 import { InvariantViolation } from '../../ports/pageRepository'
 import type {
@@ -279,7 +279,8 @@ export function createD1PageRepository(db: D1Database): PageRepository {
         .prepare(
           `SELECT COUNT(*) as count FROM pages WHERE status = 'active' AND (creator_ip_hash = ? OR creator_device_id = ?)`,
         )
-        .bind(creatorIpHash, creatorDeviceId)
+        // NULL との = は真にならない（NULL になる）ので、UNKNOWN_IP_HASH のときは device_id の一致だけが残る
+        .bind(creatorIpHash === UNKNOWN_IP_HASH ? null : creatorIpHash, creatorDeviceId)
         .first<{ count: number }>()
       return row?.count ?? 0
     },

@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
-import { D1_MAX_BIND_PARAMS } from '../../../src/core/config/limits'
+import { D1_MAX_BIND_PARAMS, UNKNOWN_IP_HASH } from '../../../src/core/config/limits'
 import type { ChangeSnapshot, EventFields } from '../../../src/core/types'
 import { createD1PageRepository } from '../../../src/adapters/d1/d1PageRepository'
 import { createD1ReportRepository } from '../../../src/adapters/d1/d1ReportRepository'
@@ -347,6 +347,30 @@ function runPageRepositoryTests(
 
     const count = await repo.countActiveByCreator('ip-shared', 'device-shared')
     expect(count).toBe(3)
+  })
+
+  it('countActiveByCreator: ip_hash が UNKNOWN_IP_HASH なら IP では一致させず device_id だけで数える', async () => {
+    const repo = createRepo()
+    await repo.create(
+      buildInput({
+        id: 'page-u1',
+        creatorIpHash: UNKNOWN_IP_HASH,
+        creatorDeviceId: 'device-reported',
+      }),
+    )
+    await repo.create(
+      buildInput({ id: 'page-u2', creatorIpHash: 'ip-other', creatorDeviceId: 'device-reported' }),
+    )
+    await repo.create(
+      buildInput({
+        id: 'page-u3',
+        creatorIpHash: UNKNOWN_IP_HASH,
+        creatorDeviceId: 'device-unrelated',
+      }),
+    )
+
+    const count = await repo.countActiveByCreator(UNKNOWN_IP_HASH, 'device-reported')
+    expect(count).toBe(2)
   })
 
   it('listExpired: expires_at が before より前のものだけを、古い順に limit 件まで返す', async () => {
