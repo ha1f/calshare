@@ -9,7 +9,7 @@ import { E2E_FIXED_NOW } from './fixedNow'
 // 限り実行のたびに同じ IP のレート制限カウンタが積み上がる（tsconfig.web.json は types: [] なので node:crypto は使えない）
 const PROCESS_SALT = crypto.randomUUID()
 
-// wrangler dev は CF-Connecting-IP を付けないので、全テストが同じ送信元としてレート制限を共有し、
+// wrangler dev では全テストが同じループバックのアドレスから来るので、同じ送信元としてレート制限を共有し、
 // 固定時刻では時間窓も進まない。テストごとに別の送信元 IP を名乗って避ける（本番では Cloudflare が上書きする）
 function ipForTest(testId: string): string {
   let hash = 2166136261

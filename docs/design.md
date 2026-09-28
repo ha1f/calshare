@@ -85,7 +85,7 @@
 
 ### 2.1 最大の設計判断: パーサをブラウザにもそのまま送る
 
-`src/core/` 配下は外部依存ゼロの TypeScript にし、Node・Workers・ブラウザのどこでも動かす。これを esbuild で小さなバンドルにして作成画面のライブプレビューに使う。「サーバがどう解釈するか」と「プレビューが示す解釈」が同一実装になり、パーサの単体テストがそのままプレビューの正しさの保証になる。
+`src/core/` 配下は外部依存ゼロの TypeScript にし、Node・Workers・ブラウザのどこでも動かす。これを esbuild で小さなバンドルにして作成画面のライブプレビューに使う。パーサはブラウザでだけ動き、サーバは受け取った項目を同じ `core` の検証関数で確かめるだけで、原文を解釈し直さない（§2.3）。プレビューに出た解釈がそのまま保存されるので、パーサの単体テストがそのままプレビューの正しさの保証になる。
 
 プレビューはパーサを直接呼ばず `TextInterpreter`（§5.9）経由で呼ぶ。Phase 1 の実装はルールベースのみで通信を発生させない。Phase 2 で LLM を足すときは「ルールで日時が取れなかったときだけ `POST /api/interpret` を呼ぶ」合成実装に差し替えるだけで、プレビューの UI と作成 API は変わらない。
 
@@ -988,7 +988,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 - **閾値の根拠**: 日本の携帯回線（docomo・au・SoftBank）は CGNAT で多数のユーザーが同一 IPv4 を共有する。主要導線が LINE（モバイル）なので、IP 側を厳しくするとイベント当日の集団利用で正規ユーザーが 429 を踏む。**device バケットを主、IP バケットは緩めの二次防御**にする。リリース後に 429 のログ（`exceeded` のバケット種別、§9.6）で IP 側に弾かれた比率を見て調整する（§14.2）。
 - `ip_hash` の算出（`server/lib/ipHash.ts`）: `HMAC-SHA256(RATE_LIMIT_PEPPER, 正規化した IP)` の hex 先頭 32 文字。**IPv6 は /64 プレフィックスに丸めてから**ハッシュする（`IPV6_BUCKET_PREFIX_BITS = 64`、`limits.ts`）。IPv4 はそのまま。IPv4-mapped IPv6（`::ffff:1.2.3.4`）は IPv4 として扱う。丸める理由: 家庭回線でも /64 が割り当てられ、プライバシー拡張やVPS で下位 64 bit を 1 リクエストごとに変えられるため、アドレス単位では IP バケットが無限に新規になる。生 IP は保存もログもしない。
-- `CF-Connecting-IP` が無いとき（`wrangler dev`・CI）は `ip:unknown` の単一バケットにフォールバックし、本番（`PUBLIC_ORIGIN` が `localhost` でない）で無い場合は warn ログを出す。
+- `CF-Connecting-IP` が無いとき（ヘッダを付けずに Worker を直接呼ぶ結合テストなど）は `ip:unknown` の単一バケットにフォールバックし、本番（`PUBLIC_ORIGIN` が `localhost` でない）で無い場合は warn ログを出す。
 - `device_id` は `cs_device` Cookie（`HttpOnly; Secure; SameSite=Lax; Max-Age=34560000`（400 日）; Path=/）。値は **`crypto.randomUUID()` が返す UUID 文字列**（`server/lib/deviceCookie.ts` の `readDeviceId` はこの形式以外を null にして再発行させる）。①は静的アセットなので Cookie はサーバから発行できない。**`POST /api/pages` が Cookie 無しで来たら発行し、その ID をそのリクエストのバケットに使う**。Cookie 削除で device バケットは新しくなるが、IP バケットは独立して効くので回避にならない。
 - 実装は D1 `rate_limit_counters` への固定窓カウンタ。窓の開始は時間窓なら時、日窓なら日（UTC）で切り捨てる。**`consume` はまず SELECT で各ルールの現在値を読み、1 つでも上限以上なら書かずに `allowed = false` を返す。全て未満のときだけ `INSERT ... ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count` を `db.batch()` で行う。** 超過後もリクエストごとに 3 行書くと、429 の連打が D1 の書き込み枠を消費する増幅攻撃になる（§4.3 と同じ構図）ため。読み取りは 250 億行/月の枠で余裕がある。SELECT と書き込みの間は非アトミックなので、同時に来た複数リクエストが全員 SELECT を通過してから書くことがありうる。**書き込みは `RETURNING` で更新後の値を受け取り、上限を超えていれば `allowed = false` にする**（書き込み自体は取り消さない）。これにより超過幅は同時実行数で頭打ちになる。
 - レート制限は Content-Type / Origin 検査と JSON の形式検証の後に置く（§5.7 の順序）。
@@ -1146,7 +1146,7 @@ npm run lint              # wrangler types → eslint . && prettier --check .（
 npm run typecheck         # wrangler types → tsc -p tsconfig.{core,server,web}.json を順に
 ```
 
-`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` は `CF-Connecting-IP` を付けないので全テストが `ip:unknown` の単一バケットに入り、全 spec を 1 回通すだけで作成回数が上限に達する。そのため `test/e2e/fixtures.ts` はテストごとに別の送信元 IP を `CF-Connecting-IP` で名乗る（本番では Cloudflare がこのヘッダを上書きするので偽装には使えない）。この IP はテスト ID だけでなく `test/e2e/fixtures.ts` を読み込む Node プロセスごとに生成する salt からも作るため、同じ `.wrangler/state` に対して `npm run test:e2e` を繰り返し実行しても前回の実行と IP が衝突せず、レート制限のカウンタが実行をまたいで積み上がらない。手動の `npm run dev` は時計を固定しないので時間窓は進むが、同じブラウザで作成を続けると device の日窓の上限に当たる。解除するときは `npx wrangler d1 execute calshare --local --command "DELETE FROM rate_limit_counters"` でカウンタだけを消す。`.wrangler/state` ごと作り直す場合は、migration の適用もやり直す（CI は毎回クリーンな環境なので影響しない）。
+`E2E_FIXED_NOW` で時計を固定すると `rate_limit_counters` の時間窓が実時間では進まない。`wrangler dev` は `CF-Connecting-IP` に接続元のループバックのアドレス（`::1` など）を入れるので、全テストが同じ IP のバケットに入り、全 spec を 1 回通すだけで作成回数が上限に達する。そのため `test/e2e/fixtures.ts` はテストごとに別の送信元 IP を `CF-Connecting-IP` で名乗る（本番では Cloudflare がこのヘッダを上書きするので偽装には使えない）。この IP はテスト ID だけでなく `test/e2e/fixtures.ts` を読み込む Node プロセスごとに生成する salt からも作るため、同じ `.wrangler/state` に対して `npm run test:e2e` を繰り返し実行しても前回の実行と IP が衝突せず、レート制限のカウンタが実行をまたいで積み上がらない。手動の `npm run dev` は時計を固定しないので時間窓は進むが、同じブラウザで作成を続けると device の日窓の上限に当たる。解除するときは `npx wrangler d1 execute calshare --local --command "DELETE FROM rate_limit_counters"` でカウンタだけを消す。`.wrangler/state` ごと作り直す場合は、migration の適用もやり直す（CI は毎回クリーンな環境なので影響しない）。
 
 ### 10.5 CI（GitHub Actions）
 

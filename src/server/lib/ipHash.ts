@@ -8,7 +8,7 @@ const IPV6_GROUP_BITS = 16
 /**
  * CF-Connecting-IP の値から HMAC-SHA256（hex 先頭 32 文字）の決定的なハッシュを作る（§9.3）。
  * 生 IP は保存もログもしないため、この戻り値だけが creator_ip_hash やレート制限のバケットキーに使われる。
- * IP が取れないとき（wrangler dev・CI）や空白のみのときは 'unknown' を返す。
+ * IP が取れないとき（ヘッダを付けずに Worker を直接呼ぶ結合テストなど）や空白のみのときは 'unknown' を返す。
  */
 export async function ipHash(rawIp: string | null, pepper: string): Promise<string> {
   const ip = rawIp?.trim()

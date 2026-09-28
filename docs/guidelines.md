@@ -428,7 +428,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 
 ### 9.1 原則
 
-- `src/core` は外部依存ゼロ。ブラウザに同梱してライブプレビューに使うため、バンドルサイズと「サーバとプレビューが同じ実装」を守る（docs/design.md §2.1）。ESLint と `tsconfig.core.json` の `types: []` で機械的に保証する。
+- `src/core` は外部依存ゼロ。ブラウザに同梱してライブプレビューに使うため、バンドルサイズと、ブラウザとサーバが同じ検証・整形の実装を使うことを守る（docs/design.md §2.1）。npm パッケージの import は ESLint が、DOM と Node の型は `tsconfig.core.json` の `lib` と `types: []` が検出する。`src/core` から `ports` や `adapters` への相対 import は検出されないので、レビューで見る。
 - `src/server` `src/adapters` への依存追加は、`wrangler deploy --dry-run` の出力サイズを PR に前後で書く。上限は uncompressed 64 MiB（Free / Paid 同じ。圧縮後サイズの上限は無い）[^workers-limits]で、resvg + satori を含めても余裕はあるが、推移を記録して増分の理由を説明できるようにする。
 - `src/web` への依存追加は原則しない。必要なら esbuild の出力サイズを前後で比べる。
 - 依存を足すときは license-review スキルで判定し、`docs/licenses/` に記録する。
