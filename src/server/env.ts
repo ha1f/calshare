@@ -10,7 +10,7 @@ export interface Env {
   ASSETS: Fetcher
   PUBLIC_ORIGIN: string // vars
   SERVICE_NAME: string // vars
-  RATE_LIMIT_PEPPER: string // secret（ローカルは .dev.vars）
+  RATE_LIMIT_PEPPER?: string // secret（ローカルは .dev.vars）。無い（または空文字）なら作成・通報 API は 503（§9.3）
   REPORT_WEBHOOK_URL?: string // secret。無い（または空文字）なら fakeNotifier を使う（§9.4）
   E2E_FIXED_NOW?: string // e2e の webServer が --var で渡す。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
 }

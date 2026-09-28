@@ -683,6 +683,7 @@ export function parseEventText(input: string, ctx: ParseContext): ParsedEvent
 | `BEYOND_MAX_LEAD_TIME` | 400 | `start` > `now + 13 ヶ月` | 「作成できるのは13ヶ月先までです」 |
 | `TOO_MANY_URLS` | 400 | `title + location + memo` に含まれる URL（`URL_PATTERN`、§5.2）の総数 > `MAX_MEMO_URLS`（3） | 「リンクは3つまでです」 |
 | `RATE_LIMITED` | 429 | §9.3 | 「しばらく時間をおいてから試してください」 |
+| `INTERNAL` | 500 / 503 | 500: 想定外の例外。503: `RATE_LIMIT_PEPPER` が未設定のときの作成・通報（§9.3） | 「エラーが発生しました。しばらくしてからやり直してください」 |
 
 `PAST_EVENT` を更新時に「日時を変更した場合のみ」にする理由: 保持期限は「終了 + 7 日」なので、イベント終了後もページは 7 日間生きている。その間のメモ修正まで拒否する理由は無い。`validateEventFields` は `mode: 'create' | 'update'` と更新時の `previous: EventFields` を受け取り、この分岐を純粋関数の中に閉じる（§11.5）。作成時の猶予（終了直後の記録用途）は設けない。設けるかどうかは §14.2 の未決事項に載せる。
 
@@ -987,7 +988,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 | `report` | `ip:{ip_hash}` | 1 日 | 30 |
 
 - **閾値の根拠**: 日本の携帯回線（docomo・au・SoftBank）は CGNAT で多数のユーザーが同一 IPv4 を共有する。主要導線が LINE（モバイル）なので、IP 側を厳しくするとイベント当日の集団利用で正規ユーザーが 429 を踏む。**device バケットを主、IP バケットは緩めの二次防御**にする。リリース後に 429 のログ（`exceeded` のバケット種別、§9.6）で IP 側に弾かれた比率を見て調整する（§14.2）。
-- `ip_hash` の算出（`server/lib/ipHash.ts`）: `HMAC-SHA256(RATE_LIMIT_PEPPER, 正規化した IP)` の hex 先頭 32 文字。**IPv6 は /64 プレフィックスに丸めてから**ハッシュする（`IPV6_BUCKET_PREFIX_BITS = 64`、`limits.ts`）。IPv4 はそのまま。IPv4-mapped IPv6（`::ffff:1.2.3.4`）は IPv4 として扱う。丸める理由: 家庭回線でも /64 が割り当てられ、プライバシー拡張やVPS で下位 64 bit を 1 リクエストごとに変えられるため、アドレス単位では IP バケットが無限に新規になる。生 IP は保存もログもしない。
+- `ip_hash` の算出（`server/lib/ipHash.ts`）: `HMAC-SHA256(RATE_LIMIT_PEPPER, 正規化した IP)` の hex 先頭 32 文字。**IPv6 は /64 プレフィックスに丸めてから**ハッシュする（`IPV6_BUCKET_PREFIX_BITS = 64`、`limits.ts`）。IPv4 はそのまま。IPv4-mapped IPv6（`::ffff:1.2.3.4`）は IPv4 として扱う。丸める理由: 家庭回線でも /64 が割り当てられ、プライバシー拡張やVPS で下位 64 bit を 1 リクエストごとに変えられるため、アドレス単位では IP バケットが無限に新規になる。生 IP は保存もログもしない。`RATE_LIMIT_PEPPER` が空のときは HMAC を計算せず 503 `INTERNAL` を返す（`server/middleware/rateLimit.ts` の `resolveIpHash`）。secret が無いまま公開されたとき、原因をこのステータスで区別できるようにするため。
 - `CF-Connecting-IP` が無いとき（ヘッダを付けずに Worker を直接呼ぶ結合テストなど）は `ip_hash` を `'unknown'`（`UNKNOWN_IP_HASH`、`limits.ts`）にして `ip:unknown` の単一バケットにフォールバックし、本番（`PUBLIC_ORIGIN` が `localhost` でない）で無い場合は warn ログを出す。`'unknown'` は送信元を区別しない値なので、同一送信元の判定（§9.4）では IP の一致に使わない。
 - `device_id` は `cs_device` Cookie（`HttpOnly; Secure; SameSite=Lax; Max-Age=34560000`（400 日）; Path=/）。値は **`crypto.randomUUID()` が返す UUID 文字列**（`server/lib/deviceCookie.ts` の `readDeviceId` はこの形式以外を null にして再発行させる）。①は静的アセットなので Cookie はサーバから発行できない。**`POST /api/pages` が Cookie 無しで来たら発行し、その ID をそのリクエストのバケットに使う**。Cookie 削除で device バケットは新しくなるが、IP バケットは独立して効くので回避にならない。
 - 実装は D1 `rate_limit_counters` への固定窓カウンタ。窓の開始は時間窓なら時、日窓なら日（UTC）で切り捨てる。**`consume` はまず SELECT で各ルールの現在値を読み、1 つでも上限以上なら書かずに `allowed = false` を返す。全て未満のときだけ `INSERT ... ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count` を `db.batch()` で行う。** 超過後もリクエストごとに 3 行書くと、429 の連打が D1 の書き込み枠を消費する増幅攻撃になる（§4.3 と同じ構図）ため。読み取りは 250 億行/月の枠で余裕がある。SELECT と書き込みの間は非アトミックなので、同時に来た複数リクエストが全員 SELECT を通過してから書くことがありうる。**書き込みは `RETURNING` で更新後の値を受け取り、上限を超えていれば `allowed = false` にする**（書き込み自体は取り消さない）。これにより超過幅は同時実行数で頭打ちになる。
@@ -1590,7 +1591,7 @@ export interface Deps {
     publicOrigin: string       // new URL(env.PUBLIC_ORIGIN).origin
     publicHost: string         // new URL(env.PUBLIC_ORIGIN).host。ics の UID に使う（§7.2）
     serviceName: string        // env.SERVICE_NAME
-    ratePepper: string         // env.RATE_LIMIT_PEPPER
+    ratePepper: string         // env.RATE_LIMIT_PEPPER ?? ''（未設定なら空文字。§9.3）
   }
 }
 /** Env → Deps。ogpRenderer は本物のアダプタが無いため Fake のまま。notifier は REPORT_WEBHOOK_URL があるときだけ webhookNotifier、無ければ fakeNotifier（§9.4） */
@@ -1772,7 +1773,7 @@ export interface Env {
   ASSETS: Fetcher
   PUBLIC_ORIGIN: string        // vars
   SERVICE_NAME: string         // vars
-  RATE_LIMIT_PEPPER: string    // secret（ローカルは .dev.vars）
+  RATE_LIMIT_PEPPER?: string   // secret（ローカルは .dev.vars）。無い（または空文字）なら作成・通報 API は 503（§9.3）
   REPORT_WEBHOOK_URL?: string  // secret。無い（または空文字）なら fakeNotifier を使う（§9.4）
   E2E_FIXED_NOW?: string       // e2e の webServer が --var で渡す。ISO8601。PUBLIC_ORIGIN のホスト名が localhost のときだけ有効（§10.3）
 }
@@ -1800,7 +1801,7 @@ E2E_FIXED_NOW=2026-09-16T01:00:00Z
 | `ogpRenderer` | `createSatoriOgpRenderer({ loadWasm, loadFont })`（wasm と R2 のフォントを読み込む関数を受け取り、初回 render 時に遅延実行する。§2.5） | T10 |
 | `notifier` | `REPORT_WEBHOOK_URL` があれば `webhookNotifier`、無ければ `fakeNotifier` | — |
 | `logger` | `consoleLogger` | — |
-| `config` | `publicOrigin` = `new URL(PUBLIC_ORIGIN).origin`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER` | — |
+| `config` | `publicOrigin` = `new URL(PUBLIC_ORIGIN).origin`、`publicHost` = `new URL(PUBLIC_ORIGIN).host`、`serviceName` = `SERVICE_NAME`、`ratePepper` = `RATE_LIMIT_PEPPER ?? ''` | — |
 
 `src/server/index.ts` は `export default { fetch: (req, env, ctx) => createApp(buildDeps(env)).fetch(req, env, ctx), scheduled: (_controller, env, ctx) => ctx.waitUntil(runGc(buildDeps(env))) }`（`scheduled` は T13 で追加済み）。`buildDeps` はリクエストごとに呼んでよい（アダプタの生成は軽い。wasm やフォントのメモ化はモジュールスコープで行う、§2.5）。
 

@@ -13,9 +13,9 @@ import type { Deps } from '../deps'
 import type { Env } from '../env'
 import { apiRequestError, validationApiError } from '../lib/errors'
 import { buildDetailUrl } from '../lib/ics'
-import { ipHash } from '../lib/ipHash'
 import { isServable } from '../lib/pageAccess'
 import { readJsonBody } from '../middleware/jsonBody'
+import { resolveIpHash } from '../middleware/rateLimit'
 import { assertSameOriginJsonRequest } from '../middleware/sameOrigin'
 
 const REPORT_REASONS: ReportReason[] = ['spam', 'personal_info', 'inappropriate', 'other']
@@ -85,13 +85,9 @@ export function apiReportsRoutes(deps: Deps): Hono<{ Bindings: Env }> {
       throw validationApiError('INPUT_TOO_LONG')
     }
 
-    // (3) レート制限（§9.3）。本番で IP が取れなければ warn（middleware/rateLimit.ts の
-    // resolveRequestIdentity と同じ判定）
-    const rawIp = c.req.raw.headers.get('CF-Connecting-IP')
-    if (!rawIp && new URL(deps.config.publicOrigin).hostname !== 'localhost') {
-      deps.logger.warn('ip_unknown', {})
-    }
-    const reporterIpHash = await ipHash(rawIp, deps.config.ratePepper)
+    // (3) レート制限（§9.3）。resolveIpHash はページ検索より先に走るため、pepper が無ければ
+    // 存在しないページへの通報も (4) の 404 ではなく 503 になる
+    const reporterIpHash = await resolveIpHash(c.req.raw, deps)
     const now = deps.clock.now()
     await consumeReportRateLimit(deps, reporterIpHash, now)
 

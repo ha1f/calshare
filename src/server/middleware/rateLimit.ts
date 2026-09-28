@@ -13,6 +13,21 @@ export interface RequestIdentity {
 }
 
 /**
+ * リクエストから ip_hash を求める（§9.3）。`RATE_LIMIT_PEPPER` が空なら HMAC を計算せず
+ * 503 `INTERNAL` を投げる。secret が無いまま公開されたとき、原因をこのステータスで見分けられるようにするため
+ */
+export async function resolveIpHash(request: Request, deps: Deps): Promise<string> {
+  const rawIp = request.headers.get('CF-Connecting-IP')
+  if (!rawIp && new URL(deps.config.publicOrigin).hostname !== 'localhost') {
+    deps.logger.warn('ip_unknown', {})
+  }
+  if (!deps.config.ratePepper) {
+    throw apiRequestError(503, 'INTERNAL', 'service unavailable')
+  }
+  return ipHash(rawIp, deps.config.ratePepper)
+}
+
+/**
  * リクエストから ip_hash と device_id を求める（§9.3）。`cs_device` Cookie が無ければ
  * `deps.ids.generateUuid()` で新しい device_id を発行する（発行した ID は呼び出し側が Set-Cookie で返す）
  */
@@ -20,11 +35,7 @@ export async function resolveRequestIdentity(
   request: Request,
   deps: Deps,
 ): Promise<RequestIdentity> {
-  const rawIp = request.headers.get('CF-Connecting-IP')
-  if (!rawIp && new URL(deps.config.publicOrigin).hostname !== 'localhost') {
-    deps.logger.warn('ip_unknown', {})
-  }
-  const hash = await ipHash(rawIp, deps.config.ratePepper)
+  const hash = await resolveIpHash(request, deps)
 
   const existingDeviceId = readDeviceId(request)
   if (existingDeviceId !== null) {

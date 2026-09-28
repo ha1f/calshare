@@ -101,6 +101,9 @@ GitHub の Actions タブ → `deploy` ワークフロー → `Run workflow` か
   止まっているかを見る。`deploy` が灰色（skipped）なら `DEPLOY_ENABLED` が `true` になっていない。
 - `npm ci` / `npm run build` で失敗する場合はコード側（他 PR）の問題。ログのエラーメッセージを
   該当 PR にそのまま貼る。
+- 公開後に作成と通報だけが 503 になるなら、Worker に `RATE_LIMIT_PEPPER` が無い（design.md §9.3）。
+  `npx wrangler secret list` で確かめる。同じ `deploy` workflow を `Run workflow` で再実行すると
+  登録される。
 - `wrangler d1 migrations apply` で失敗する場合、`CLOUDFLARE_API_TOKEN` の権限不足か、
   D1 データベース `calshare`（`wrangler.jsonc` の `database_id`）が本番に存在しない（H4 未完了）
   可能性が高い。

@@ -367,6 +367,24 @@ describe('POST /api/pages', () => {
     expect(createSpy).not.toHaveBeenCalled()
   })
 
+  it('RATE_LIMIT_PEPPER が空なら 503 になり、D1・R2・レート制限カウンタのいずれも進まず、logger.error が 1 回呼ばれる（§9.3）', async () => {
+    const deps = buildFakeDeps({ config: { ...buildFakeDeps().config, ratePepper: '' } })
+    const errorSpy = vi.spyOn(deps.logger, 'error')
+    const consumeSpy = vi.spyOn(deps.rateLimiter, 'consume')
+    const createSpy = vi.spyOn(deps.pages, 'create')
+    const putIcsSpy = vi.spyOn(deps.storage, 'putIcs')
+    const app = createApp(deps)
+
+    const res = await app.fetch(postPages(createBody()))
+
+    expect(res.status).toBe(503)
+    expect(await errorCode(res)).toBe('INTERNAL')
+    expect(consumeSpy).not.toHaveBeenCalled()
+    expect(createSpy).not.toHaveBeenCalled()
+    expect(putIcsSpy).not.toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledOnce()
+  })
+
   describe('ID 衝突時の再採番（§4.2）', () => {
     it('1 回目の生成 ID が既存と衝突しても、再採番した ID で作成できる', async () => {
       const deps = buildFakeDeps()
