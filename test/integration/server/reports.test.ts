@@ -362,6 +362,31 @@ describe('POST /api/pages/:id/reports', () => {
     expect(notifier.calls).toHaveLength(0)
   })
 
+  it('RATE_LIMIT_PEPPER が空なら 503 になり、reports に保存されず、logger.error が 1 回呼ばれる。同じ deps の GET /:id は 200 のまま（§9.3）', async () => {
+    const deps = buildFakeDeps({
+      pages: createD1PageRepository(env.DB),
+      reports: createD1ReportRepository(env.DB),
+      config: { ...buildFakeDeps().config, ratePepper: '' },
+    })
+    const errorSpy = vi.spyOn(deps.logger, 'error')
+    await deps.pages.create(pageInput())
+    const app = createApp(deps)
+
+    const res = await fetchAndDrain(app, postReport('page00000001', validBody()))
+
+    expect(res.status).toBe(503)
+    expect(await errorCode(res)).toBe('INTERNAL')
+    const rows = await env.DB.prepare('SELECT * FROM reports WHERE page_id = ?')
+      .bind('page00000001')
+      .all()
+    expect(rows.results).toHaveLength(0)
+    expect(errorSpy).toHaveBeenCalledOnce()
+
+    // ip_hash を使うのは作成・通報だけなので、同じ pepper 空の deps でも詳細ページの閲覧は止まらない
+    const detailRes = await fetchAndDrain(app, new Request(`${TEST_ORIGIN}/page00000001`))
+    expect(detailRes.status).toBe(200)
+  })
+
   it('存在しないページへの通報は 404', async () => {
     const deps = buildFakeDeps()
     const app = createApp(deps)

@@ -34,7 +34,7 @@ export interface Deps {
     publicOrigin: string // env.PUBLIC_ORIGIN
     publicHost: string // new URL(env.PUBLIC_ORIGIN).host。ics の UID に使う（§7.2）
     serviceName: string // env.SERVICE_NAME
-    ratePepper: string // env.RATE_LIMIT_PEPPER
+    ratePepper: string // env.RATE_LIMIT_PEPPER。未設定なら空文字
   }
 }
 
@@ -97,7 +97,7 @@ export function buildDeps(env: Env): Deps {
       publicOrigin: publicOriginUrl.origin,
       publicHost: publicOriginUrl.host,
       serviceName: env.SERVICE_NAME,
-      ratePepper: env.RATE_LIMIT_PEPPER,
+      ratePepper: env.RATE_LIMIT_PEPPER ?? '',
     },
   }
 }

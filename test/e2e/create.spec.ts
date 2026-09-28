@@ -32,6 +32,24 @@ test('入力〜プレビュー〜作成〜/done への遷移まで（シナリ�
   await page.waitForURL(DONE_URL_PATTERN)
 })
 
+test('作成 API が 503 を返すと汎用のエラー文言が表示される', async ({ page }) => {
+  await page.route('**/api/pages', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'INTERNAL', message: 'service unavailable' }),
+    }),
+  )
+
+  await page.goto('/')
+  await page.locator('#input').fill('9/20 19時 渋谷で飲み会')
+  await page.getByRole('button', { name: 'URLを作る' }).click()
+
+  await expect(page.locator('#error-message')).toHaveText(
+    'エラーが発生しました。しばらくしてからやり直してください',
+  )
+})
+
 test('日時を手動修正すると入力欄を変えても上書きされず、自動に戻すで戻る（シナリオ4前半）', async ({
   page,
 }) => {

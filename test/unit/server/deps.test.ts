@@ -86,4 +86,11 @@ describe('buildDeps / buildClock', () => {
     expect(deps.config.publicOrigin).toBe('http://localhost:8787')
     expect(deps.config.publicHost).toBe('localhost:8787')
   })
+
+  it('RATE_LIMIT_PEPPER が無ければ config.ratePepper は空文字になる', () => {
+    const env = testEnv({})
+    delete env.RATE_LIMIT_PEPPER
+
+    expect(buildDeps(env).config.ratePepper).toBe('')
+  })
 })
