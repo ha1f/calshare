@@ -4,6 +4,9 @@
 
 OGP 画像生成（design.md §2.5）で使う Noto Sans JP のサブセットフォントを、
 取得 → サブセット化 → R2 配置まで自動化し、オーナーに残る作業をライセンス確認だけにする。
+OGP 画像生成は既定で無効（`OGP_RENDERING`、design.md §1.2）なので、この作業は生成を有効にすると
+決めたときだけ必要になる（docs/runbooks/provisioning.md「有料プランへ移って OGP 画像生成を
+有効にする」）。
 
 ## SIL OFL 1.1 の要点（オーナーが確認する範囲）
 
@@ -41,7 +44,8 @@ Noto Sans JP は SIL Open Font License 1.1（`.claude/tmp/fonts/LICENSE.txt` に
    `pyftsubset` を PATH に通したうえで上記 2 スクリプトを引数なしで順に呼び、生成した OTF と
    `test/fixtures/fonts/OFL.txt`（著作権表示付きのライセンス本文）を、本番 R2 の
    `fonts/NotoSansJP-Regular.subset.otf` と `fonts/OFL.txt` に配置する
-   （`with_font` 入力が既定 true。`scripts/fonts/` 一式が無い間は自動でスキップ）。
+   （`with_font` 入力を true にしたときだけ実行する。既定は false。`scripts/fonts/` 一式が
+   無い間は true にしても自動でスキップ）。
 
 **第 1 水準漢字の一覧をファイルにコミットしない理由**: `generate-jis-level1.mjs` は区点から
 EUC-JP 変換で一覧を導出する純粋関数で、ネットワークも乱数も使わないため実行するたびに
@@ -52,8 +56,8 @@ EUC-JP 変換で一覧を導出する純粋関数で、ネットワークも乱�
 
 ## オーナーが行う最小の作業
 
-1. GitHub Actions で `Provision Cloudflare resources` を実行する（`with_font` は既定 true の
-   ままでよい）。手順は `docs/runbooks/provisioning.md` を参照。
+1. GitHub Actions で `Provision Cloudflare resources` を `with_font=true` で実行する
+   （既定は false）。手順は `docs/runbooks/provisioning.md` を参照。
 2. `font` ジョブの Step Summary で、フォントと `fonts/OFL.txt` の両方の配置が完了したことを確認する。
 3. `docs/licenses/noto-sans-jp.md` の審査記録を読み、確定として再承認する。
 

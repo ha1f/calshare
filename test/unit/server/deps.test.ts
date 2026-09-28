@@ -12,6 +12,7 @@ function testEnv(overrides: Partial<Env>): Env {
     ASSETS: {},
     PUBLIC_ORIGIN: 'http://localhost:8787',
     SERVICE_NAME: 'calshare',
+    OGP_RENDERING: 'false',
     RATE_LIMIT_PEPPER: 'test-pepper',
     ...overrides,
   } as unknown as Env
@@ -93,4 +94,17 @@ describe('buildDeps / buildClock', () => {
 
     expect(buildDeps(env).config.ratePepper).toBe('')
   })
+
+  it('OGP_RENDERING が "true" なら config.ogpRendering は true になる', () => {
+    const deps = buildDeps(testEnv({ OGP_RENDERING: 'true' }))
+    expect(deps.config.ogpRendering).toBe(true)
+  })
+
+  it.each(['false', 'TRUE', '1', ''])(
+    'OGP_RENDERING が %s なら config.ogpRendering は false になる',
+    (value) => {
+      const deps = buildDeps(testEnv({ OGP_RENDERING: value }))
+      expect(deps.config.ogpRendering).toBe(false)
+    },
+  )
 })

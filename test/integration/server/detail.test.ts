@@ -209,6 +209,23 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
     expect(text).toContain('<meta name="robots" content="noindex, nofollow"/>')
   })
 
+  it('OGP_RENDERING が無効なら og:image は共通の静的画像を指す（§2.5）', async () => {
+    const { deps, repo } = buildDetailDeps({
+      config: { ...buildFakeDeps().config, ogpRendering: false },
+    })
+    const id = pageId(26)
+    await createPage(repo, id)
+
+    const { text } = await get(deps, `/${id}`)
+
+    expect(text).toContain(
+      `<meta property="og:image" content="${TEST_ORIGIN}/assets/img/ogp-fallback.png"/>`,
+    )
+    expect(text).not.toContain('ogp.png')
+    // og:title・og:description は生成の有無に関わらず変わらない
+    expect(text).toContain('<meta property="og:title" content="飲み会"/>')
+  })
+
   it('OGP の絶対 URL は publicOrigin 由来（request.url や Host ヘッダではない、§9.9）', async () => {
     const { repo } = buildDetailDeps()
     const id = pageId(18)
@@ -218,10 +235,9 @@ describe('GET /:id（詳細ページ、§6.3）', () => {
       pages: repo,
       clock: fakeClock(NOW),
       config: {
+        ...buildFakeDeps().config,
         publicOrigin: otherOrigin,
         publicHost: new URL(otherOrigin).host,
-        serviceName: 'calshare',
-        ratePepper: 'test-pepper',
       },
     })
 

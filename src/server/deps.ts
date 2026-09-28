@@ -35,6 +35,7 @@ export interface Deps {
     publicHost: string // new URL(env.PUBLIC_ORIGIN).host。ics の UID に使う（§7.2）
     serviceName: string // env.SERVICE_NAME
     ratePepper: string // env.RATE_LIMIT_PEPPER。未設定なら空文字
+    ogpRendering: boolean // env.OGP_RENDERING === 'true'。既定は無効（Workers Free の CPU 時間上限のため。§2.5）
   }
 }
 
@@ -98,6 +99,7 @@ export function buildDeps(env: Env): Deps {
       publicHost: publicOriginUrl.host,
       serviceName: env.SERVICE_NAME,
       ratePepper: env.RATE_LIMIT_PEPPER ?? '',
+      ogpRendering: env.OGP_RENDERING === 'true',
     },
   }
 }

@@ -158,7 +158,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 - `main` は `src/server/index.ts`。Worker 本体は wrangler がバンドルする。esbuild は `src/web` のみ。
 - `workers_dev: true` は独自ドメイン取得までの暫定。ドメインが有効になると provision.yml が `routes` 追加と `workers_dev: false` の PR を作る（docs/runbooks/custom-domain.md）。手で変えない。workers.dev は個人・趣味用途の位置づけで、本番トラフィックを受ける先ではない[^workers-dev]。
 - `observability.enabled: true`。`head_sampling_rate` は既定（100%）のまま。ログ課金が気になる規模になったら、エラー系を落とさないフィルタ設計と併せて検討する[^workers-logs]。
-- `vars` は非秘密の設定（`PUBLIC_ORIGIN` `SERVICE_NAME`）だけ。秘密は §4.7。
+- `vars` は非秘密の設定（`PUBLIC_ORIGIN` `SERVICE_NAME` `OGP_RENDERING`）だけ。秘密は §4.7。
 - `wrangler types` が生成する `worker-configuration.d.ts` はコミットせず、`npm run typecheck` の先頭で毎回生成する。`@cloudflare/workers-types` は入れない（docs/design.md §11.7）。認証不要でローカルの設定から生成できるため、CI で再生成しても hermetic さは保てる。
 
 ### 4.2 Static Assets

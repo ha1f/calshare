@@ -1,6 +1,10 @@
 import { Hono } from 'hono'
 import { toOgpInput } from '../../adapters/ogp/satoriOgpRenderer'
-import { OGP_CACHE_MAX_AGE_SECONDS, OGP_FAILURE_CACHE_SECONDS } from '../../core/config/limits'
+import {
+  OGP_CACHE_MAX_AGE_SECONDS,
+  OGP_FAILURE_CACHE_SECONDS,
+  OGP_FALLBACK_IMAGE_PATH,
+} from '../../core/config/limits'
 import { PAGE_ID_PATTERN } from '../../core/id/crockford'
 import type { Deps } from '../deps'
 import type { Env } from '../env'
@@ -10,7 +14,6 @@ import { X_ROBOTS_TAG } from '../lib/headers'
 import { isServable } from '../lib/pageAccess'
 
 const OGP_PATH_SUFFIX = '/ogp.png'
-const FALLBACK_ASSET_PATH = '/assets/img/ogp-fallback.png'
 
 function pngResponse(png: Uint8Array): Response {
   return new Response(png, {
@@ -20,7 +23,7 @@ function pngResponse(png: Uint8Array): Response {
 
 /** wasm 例外・フォント取得失敗・非公開ページのいずれでもカードが壊れないフォールバック（§2.5） */
 async function fallbackResponse(env: Env, requestUrl: string): Promise<Response> {
-  const response = await fetchAsset(env.ASSETS, new URL(FALLBACK_ASSET_PATH, requestUrl))
+  const response = await fetchAsset(env.ASSETS, new URL(OGP_FALLBACK_IMAGE_PATH, requestUrl))
   response.headers.set('X-Robots-Tag', X_ROBOTS_TAG)
   return response
 }
@@ -29,6 +32,14 @@ export function ogpRoutes(deps: Deps): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
 
   app.get(`/:id{${PAGE_ID_PATTERN}}${OGP_PATH_SUFFIX}`, async (c) => {
+    // 生成を止めている間は、共有済みの古い URL からのアクセス向けに共通画像だけを返す。
+    // D1・R2 を読まずレンダラも呼ばないので、Workers Free の CPU 時間上限でも完走する（§2.5）
+    if (!deps.config.ogpRendering) {
+      const response = await fallbackResponse(c.env, c.req.url)
+      response.headers.set('Cache-Control', `public, max-age=${OGP_CACHE_MAX_AGE_SECONDS}`)
+      return response
+    }
+
     const id = c.req.param('id')
     // og:image は `?v={version}` を付けて SNS 側のキャッシュを更新させる（§2.4）。キャッシュキーは
     // 検証済みの id と v だけから組み直し、それ以外のクエリで無限にキーを増やされないようにする

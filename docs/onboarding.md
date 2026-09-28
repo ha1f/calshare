@@ -25,6 +25,8 @@ npm run dev
 
 `.dev.vars` は、wrangler が手元の Worker に渡すシークレットのファイルだ。例のファイルには、IP をハッシュにするときの鍵（手元用の適当な値）と、空の通報通知先が入っている。通知先が空の間は、通報しても外には何も送られない。
 
+OGP 画像の生成は既定で無効にしている（Workers Free の CPU 時間上限のため。docs/architecture.md）。手元で生成を試すときは、`.dev.vars` に `OGP_RENDERING=true` を足す（`.dev.vars` は `wrangler.jsonc` の `vars` より優先される）。
+
 `wrangler d1 migrations apply` は、手元の D1 にテーブルを作る。適用してよいかを聞かれるので、`y` で進める。wrangler は D1 のマイグレーションを自動では当てないので、初回のほか、`.wrangler/state` を消した後と、`migrations/` に新しいファイルが増えたとき（`git pull` の後や、自分でテーブルを足したとき）にも実行する。これを忘れると、作成を押したところで「エラーが発生しました」と出る。
 
 `npm run dev` は、OGP 画像用のフォントを手元の R2 に入れ、画面をビルドしてから `wrangler dev` を起動する。`src/server` の変更は wrangler が拾って再起動する。`src/web` と、画面から使っている `src/core`（パーサなど）の変更は拾わない。画面側を変えたら、別のターミナルで `npm run build` をやり直し、wrangler のログに「Local server updated and ready」が出てから、ブラウザをスーパーリロード（macOS の Chrome なら Cmd+Shift+R）する。`/assets/*` の JS と CSS はブラウザに 5 分キャッシュさせているので、普通の再読み込みでは古いものが残ることがある。DevTools の「Disable cache」を有効にしておいてもよい。

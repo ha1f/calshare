@@ -8,10 +8,10 @@ on:
         required: false
         type: string
       with_font:
-        description: 'Noto Sans JP のサブセットフォントを R2 に配置する'
+        description: 'Noto Sans JP のサブセットフォントを R2 に配置する（OGP_RENDERING を有効にするときだけ要る）'
         required: false
         type: boolean
-        default: true
+        default: false
 
 # 同時に走らせると D1/R2 の作成やゾーンの作成が競合しうるので直列化する。
 concurrency:

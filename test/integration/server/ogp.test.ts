@@ -75,6 +75,30 @@ function withFindByIdCounter(inner: PageRepository): {
   return { pages, calls: () => calls }
 }
 
+/**
+ * OGP_RENDERING が無効なときに R2（ObjectStorage）が一切呼ばれないことを確かめるための記録用 storage。
+ * ルート側の try/catch や waitUntil の .catch() に飲み込まれると呼び出し自体を見逃すため、
+ * 例外を投げるのではなく呼ばれたメソッド名を記録して空配列であることを検証する
+ */
+function recordingStorage(): Deps['storage'] & { calls: string[] } {
+  const calls: string[] = []
+  const record = (method: string) => async (): Promise<never> => {
+    calls.push(method)
+    throw new Error(`unexpected call: ${method}`)
+  }
+  return {
+    calls,
+    putIcs: record('putIcs'),
+    getIcs: record('getIcs'),
+    putOgpImage: record('putOgpImage'),
+    getOgpImage: record('getOgpImage'),
+    putOgpFailureMarker: record('putOgpFailureMarker'),
+    getOgpFailureMarker: record('getOgpFailureMarker'),
+    getFont: record('getFont'),
+    deleteAllForPage: record('deleteAllForPage'),
+  }
+}
+
 function countingRenderer(): OgpRenderer & { calls: OgpInput[] } {
   const calls: OgpInput[] = []
   return {
@@ -318,5 +342,35 @@ describe('GET /:id/ogp.png（OGP 画像、§2.5）', () => {
         data: expect.objectContaining({ pageId: id }) as Record<string, unknown>,
       },
     ])
+  })
+})
+
+describe('GET /:id/ogp.png（OGP_RENDERING が無効なとき、§2.5）', () => {
+  it('D1・R2 を読まずレンダラも呼ばずに共通画像を返す', async () => {
+    const inner = createD1PageRepository(env.DB)
+    const { pages, calls } = withFindByIdCounter(inner)
+    const renderer = countingRenderer()
+    const storage = recordingStorage()
+    const deps = buildFakeDeps({
+      pages,
+      clock: fakeClock(NOW),
+      storage,
+      ogpRenderer: renderer,
+      config: { ...buildFakeDeps().config, ogpRendering: false },
+    })
+    const id = pageId(12)
+    await createPage(inner, id)
+
+    const res = await get(deps, `/${id}/ogp.png`)
+    const assetRes = await env.ASSETS.fetch(new URL('/assets/img/ogp-fallback.png', TEST_ORIGIN))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/png')
+    expect(res.headers.get('Cache-Control')).toBe(`public, max-age=${OGP_CACHE_MAX_AGE_SECONDS}`)
+    expect(res.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+    expect(await res.arrayBuffer()).toEqual(await assetRes.arrayBuffer())
+    expect(calls()).toBe(0)
+    expect(renderer.calls).toHaveLength(0)
+    expect(storage.calls).toEqual([])
   })
 })
