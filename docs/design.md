@@ -1042,7 +1042,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 | | UA 文字列と、UA から求めた分類（LINE / iOS / Android 等） |
 | | パース結果の分類（`issues`）と入力文字数 |
 
-UA の分類とパース結果の分類は Phase 1 では残さない。UA の判定はクライアント側の表示の切り替え（§6.6）にしか使わず、パースはブラウザで行うので API は結果の `fields` しか受け取らない。どちらかを残すようにするときは、docs/legal/privacy.md の「取得する情報」のアクセスログの項も同じ PR で直す。
+UA の分類とパース結果の分類は Phase 1 では残さない。UA の判定はクライアント側の表示の切り替え（§6.6・§7.3）にしか使わず、パースはブラウザで行うので API は結果の `fields` しか受け取らない。どちらかを残すようにするときは、docs/legal/privacy.md の「取得する情報」のアクセスログの項も同じ PR で直す。
 
 ログは `console.log(JSON.stringify({...}))` の構造化ログにする。`Logger` ポートの実装は `adapters/logger/consoleLogger.ts`（T1）の 1 つで、`Deps.logger` にはこれを配線する。`consoleLogger` は `error` フィールドに `Error` インスタンスを受け取ったら `{ name, message }`（message は 200 文字で切り詰め）に正規化し、それ以外の値は捨てる。呼び出し側が例外を渡しても入力内容がログに混ざらないようにするため。`src/server/lib/logger.ts`（T18）はポートの実装ではなく、リクエスト単位の文脈（ルート名・メソッド・ステータス・所要時間・pageId）を `Logger` に載せる薄いヘルパで、`middleware/requestLog.ts` から使う。Cloudflare のエッジが取得するプラットフォームレベルのログは Cloudflare 側の基盤機能であり、ここでの方針は「アプリケーションが自ら生成するログ」に限る。ルートが catch していない例外は Hono の既定の errorHandler が `console.error(err)` で生の Error（スタックトレース込み）を出してしまうため、`app.ts` に `app.onError` を登録して `logUnhandledError`（`src/server/lib/logger.ts`）経由の構造化ログに一本化する（T18）。`app.onError` は `/api/*` なら JSON、それ以外は `text/plain` の 500 を返す。どのルートにも一致しなかったリクエストは `app.notFound`（`src/server/lib/notFound.tsx`）が同じ基準でパスを 3 通りに分け、`/api/*` は JSON、`.ics` は `text/plain`、それ以外は `NotFound` ビューの HTML を返す。
 
