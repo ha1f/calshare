@@ -18,14 +18,15 @@ design.md §13 の H2〜H8・H13 のうち、Cloudflare 側のリソース作成
    → preflight: トークン検証、domain 入力の検証
    → resources: D1 / R2 を作成 or 流用、wrangler.jsonc に反映する PR を自動作成 … H4
    → secrets:   RATE_LIMIT_PEPPER を Worker デプロイ済みなら登録、REPORT_WEBHOOK_URL を登録
-                （Worker 未デプロイの間はスキップ。初回デプロイ後は deploy workflow 自身が
-                同じ処理を行うため、H9 の後にもう一度 provision を実行する必要は無い）  … H6 / H7
+                （Worker 未デプロイの間はスキップ。初回デプロイでは deploy workflow が
+                wrangler deploy と同時に登録するため、H9 の後にもう一度 provision を実行する
+                必要は無い）                                                   … H6 / H7
    → zone_and_waf（domain 指定時）: ゾーン作成、WAF レート制限ルール作成、
                 ゾーンが active なら routes の PR を自動作成                 … H3 / H13
    → font（with_font=true）: フォントサブセットを R2 に配置                   … H8 のアップロード
 5. (人) resources が出した PR (chore/provision-ids) をレビューしてマージ
 6. (人) 初回 wrangler deploy（deploy.yml で DEPLOY_ENABLED を true にする。docs/runbooks/deploy.md）
-   → デプロイ直後に RATE_LIMIT_PEPPER が自動で登録される（H6 完了）
+   → wrangler deploy と同時に RATE_LIMIT_PEPPER が自動で登録される（H6 完了）
 7. (人) ドメインが決まったら --domain 付きで provision を再実行             … H3（ゾーン作成）
 8. (人) レジストラでネームサーバーを変更                                    … H3
 9. (人) ゾーンが active になるまで手順 7 を繰り返す。active になった回に
@@ -59,8 +60,8 @@ design.md §13 の H2〜H8・H13 のうち、Cloudflare 側のリソース作成
      （GitHub の仕様）。必須チェックを設定している場合は、PR を一度 close → reopen するか
      空コミットを push してから CI を走らせる。
 6. 初回デプロイ（H9。`docs/runbooks/deploy.md` の手順で `DEPLOY_ENABLED` を `true` にする）。
-   `RATE_LIMIT_PEPPER` は deploy workflow がデプロイ直後に自動で登録するので、これ以上の
-   作業は不要（H6 完了）。
+   `RATE_LIMIT_PEPPER` は deploy workflow が `wrangler deploy` と同時に自動で登録するので、
+   これ以上の作業は不要（H6 完了）。
 7. ドメイン決定後: `Provision Cloudflare resources` を `domain` 付きで実行し、
    `zone_and_waf` ジョブが出すネームサーバーをレジストラに設定する（H3。手順は
    `docs/runbooks/custom-domain.md`）。ゾーンが `active` になるまで同じ `domain` で
@@ -94,13 +95,20 @@ CPU 時間を要し、Workers Free の上限（1 リクエスト 10ms）を超�
 
 `secrets` ジョブは、Cloudflare API で Worker（`calshare`）がデプロイ済みかを確認してから
 `RATE_LIMIT_PEPPER` を登録する（`scripts/cf/ensure-secret.mjs --require-deployed`）。
-未デプロイの間は登録せず、理由を step summary に出して正常終了する。
+未デプロイの間は登録せず、理由を step summary に出して正常終了する。Worker が無い状態で
+`wrangler secret put` を実行すると、wrangler が中身の無い Worker を作ってしまうため。
 
-初回デプロイ時に `RATE_LIMIT_PEPPER` が無いまま公開されると HMAC 鍵が無い状態で動いてしまう
-ため、この登録は `deploy.yml` の `wrangler deploy` 直後にも同じ処理で行う。したがって、
-provision の再実行を待たずに初回デプロイの中で `RATE_LIMIT_PEPPER` が登録される
-（`docs/runbooks/deploy.md`）。provision の `secrets` ジョブは、その後の再実行で
-（例えばドメイン確定時に手順 7 を実行したとき）既に登録済みであることを確認するだけになる。
+`RATE_LIMIT_PEPPER` が無いまま公開されると、HMAC 鍵が無いため作成と通報の API が 500 になる。
+そのため初回デプロイでは、`deploy.yml` が `RATE_LIMIT_PEPPER` を生成し、
+`wrangler deploy --secrets-file` でコードと同時に登録する（`docs/runbooks/deploy.md`）。
+provision の再実行を待たずに初回デプロイの中で登録が終わり、pepper の無いバージョンが
+公開される時間は無い。provision の `secrets` ジョブは、その後の再実行で（例えばドメイン確定時に
+手順 7 を実行したとき）既に登録済みであることを確認するだけになる。
+
+provision の `secrets` ジョブが先に `RATE_LIMIT_PEPPER` を登録している場合（Worker を手動で
+デプロイした後に provision を実行した場合など）も、deploy workflow は登録済みの値を
+`wrangler secret list` で見つけて変えない。一度登録した値は、どちらの workflow も上書きしない
+（`--force` を付けない）。
 
 ## 判断が必要な事項
 

@@ -130,8 +130,9 @@ jobs:
 
   # (3) RATE_LIMIT_PEPPER を生成して Worker のシークレットに登録し、
   #     REPORT_WEBHOOK_URL が GitHub Secrets にあれば同様に登録する。
-  #     Worker が一度もデプロイされていない場合はスキップする（deploy.yml が同じ処理を
-  #     デプロイ直後に行うため、ここでは既に登録済みであることの確認になる）。
+  #     Worker が一度もデプロイされていない場合はスキップする（その状態で wrangler secret put すると
+  #     中身の無い Worker が作られる。初回は deploy.yml が wrangler deploy と同時に登録するので、
+  #     ここでは既に登録済みであることの確認になる）。
   secrets:
     needs: resources
     runs-on: ubuntu-latest
@@ -156,18 +157,11 @@ jobs:
         if: steps.scaffold.outputs.present == 'true'
         run: npm ci
 
-      # wrangler.jsonc の name は apply-service-name.mjs でサービス名とともに変わるため、
-      # ここで固定値にすると改名後は常にスキップになる（docs/runbooks/rename.md）。
       - name: Worker 名を決める
         id: worker-name
         if: steps.scaffold.outputs.present == 'true'
         run: |
-          name=$(node -e "
-            const text = require('node:fs').readFileSync('wrangler.jsonc', 'utf8');
-            const m = text.match(/\"name\"\s*:\s*\"([^\"]+)\"/);
-            if (!m) { console.error('wrangler.jsonc に \"name\" が見つかりません'); process.exit(1); }
-            console.log(m[1]);
-          ")
+          name=$(node scripts/cf/worker-name.mjs)
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "Worker 名: $name" | tee -a "$GITHUB_STEP_SUMMARY"
 

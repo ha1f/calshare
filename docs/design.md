@@ -1048,7 +1048,7 @@ OGP 画像は `og:image` の URL に `?v={version}` を含める（§6.3）の�
 
 ### 9.7 シークレット
 
-`RATE_LIMIT_PEPPER`（HMAC 鍵）、`REPORT_WEBHOOK_URL`、`CLOUDFLARE_API_TOKEN`（CI 用）は `wrangler secret put` / GitHub Secrets で登録し、コードにもリポジトリにも書かない。ローカルは `.dev.vars`（T1 で `.gitignore` に入れる。雛形は `.dev.vars.example`、§11.7）。
+`RATE_LIMIT_PEPPER`（HMAC 鍵）、`REPORT_WEBHOOK_URL`、`CLOUDFLARE_API_TOKEN`（CI 用）は Worker の secret（`wrangler deploy --secrets-file` または `wrangler secret put`。どちらも `scripts/cf/ensure-secret.mjs` 経由）/ GitHub Secrets で登録し、コードにもリポジトリにも書かない。ローカルは `.dev.vars`（T1 で `.gitignore` に入れる。雛形は `.dev.vars.example`、§11.7）。
 
 ### 9.8 CORS / CSRF
 
@@ -1164,11 +1164,15 @@ deploy.yml（push main / 手動実行。運用基盤の PR で作成済み。§1
   gate ジョブ: リポジトリ変数 DEPLOY_ENABLED が true でなければここで終了する（H9 の公開承認そのもの）
   deploy ジョブ: 変数 PUBLIC_DOMAIN が未設定なら失敗させて止める（sameOrigin の検証が本番 Origin
     と一致しなくなるため。マイグレーション適用より前に確認する）
-    → npm ci → npm run build → `npx wrangler d1 migrations apply calshare --remote`
-    → `npx wrangler deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN"`
-    → デプロイ直後に RATE_LIMIT_PEPPER が未登録なら生成して登録する（H6 をここで完結させる。§13）
-    → GitHub Secret REPORT_WEBHOOK_URL があれば同じ値で Worker のシークレットに登録する
-      （H7、任意。§13）
+    → npm ci → npm run build → wrangler.jsonc の name から Worker 名を決める
+    → デプロイと同時に登録する secrets を決め、RUNNER_TEMP の JSON に書き出す。RATE_LIMIT_PEPPER が
+      未登録なら生成し（H6 をここで完結させる。§13）、GitHub Secret REPORT_WEBHOOK_URL があれば
+      同じ値にする（H7、任意。§13）。一覧を取れず Worker がまだ無いとも確認できなければ、既存の値を
+      上書きしないよう何もせず失敗する
+    → `npx wrangler d1 migrations apply calshare --remote`
+    → `npx wrangler deploy --var "PUBLIC_ORIGIN:https://$PUBLIC_DOMAIN" --secrets-file <上の JSON>`
+      （書き出したものが無ければ --secrets-file は付けない）。secrets は新しいバージョンと同時に
+      有効になり、RATE_LIMIT_PEPPER の無いバージョンが公開される時間を作らない（§9.3）
   サードパーティ action は使わない（GitHub 公式の actions/checkout・actions/setup-node のみ。バージョンは
   Dependabot が追従するためここには書かない。wrangler は npm ci 済みの node_modules から
   `npx wrangler` で都度呼ぶ）。
@@ -2068,7 +2072,7 @@ H1〜H14 の運用手順は docs/runbooks/README.md にまとめてある。各�
 | H3 | ドメインの DNS を Cloudflare に移管（ゾーン作成）し Worker にカスタムドメインを割り当てる | レジストラ側のネームサーバー変更は本人認証が要る。Cache API はカスタムドメイン配下でのみ効く（§1.2）。`*.workers.dev` を閉じるのは §9.9 | 土台: `scripts/cf/ensure-zone.mjs`（ゾーン作成）・`scripts/cf/ensure-waf-rate-limit.mjs`（H13 も同時に自動実行）・`scripts/cf/write-wrangler-domain.mjs`（`routes`・`workers_dev: false` を書き換える PR を自動作成）、`.github/workflows/provision.yml` の `zone_and_waf` ジョブ、`docs/runbooks/custom-domain.md`。残る作業: レジストラでのネームサーバー設定、ゾーンが `active` になるまでの再実行、自動作成された PR のレビューとマージ | T19 |
 | H4 | `wrangler login` と D1 データベース・R2 バケットの本番作成、`wrangler.jsonc` のプレースホルダ `database_id`（§11.7）の置換 | 課金主体のリソース発行は運用者の承認の下で行う | 土台: `scripts/cf/ensure-resources.mjs`（作成 or 流用し `wrangler.jsonc` を書き換える PR を自動作成）、`.github/workflows/provision.yml` の `resources` ジョブ。残る作業: 自動作成された PR（`chore/provision-ids`）のレビューとマージ、初回のみ「Allow GitHub Actions to create and approve pull requests」の設定 | T19 |
 | H5 | Cloudflare API トークン（Workers / D1 / R2 の編集権限）の発行と GitHub Secrets（`CLOUDFLARE_API_TOKEN` `CLOUDFLARE_ACCOUNT_ID`）への登録 | トークン発行はダッシュボード操作で本人認証が要り、最小権限スコープの選定はオーナー権限が必要 | 土台: `docs/runbooks/cloudflare-api-token.md`（権限テンプレート）、`scripts/cf/set-github-secrets.sh`（対話的に 1 回登録）、`scripts/cf/check-token.mjs`（`provision.yml` の `preflight` が実行のたびに自動検証）。残る作業: トークンの発行そのもの、`set-github-secrets.sh` の実行（1 回） | T19 |
-| H6 | `RATE_LIMIT_PEPPER` の生成と `wrangler secret put` | シークレットの生成・登録は権限分離のため人間の承認下で行う | 土台: `scripts/cf/ensure-secret.mjs`。`deploy.yml` が初回デプロイ直後に自動登録し、`provision.yml` の `secrets` ジョブが再実行時に登録済みであることを確認する。残る作業: なし（完全自動化。H9 のデプロイ承認に含まれる） | T19（ローカルは `.dev.vars` で任意の値） |
+| H6 | `RATE_LIMIT_PEPPER` の生成と `wrangler secret put` | シークレットの生成・登録は権限分離のため人間の承認下で行う | 土台: `scripts/cf/ensure-secret.mjs`。`deploy.yml` が初回デプロイで `wrangler deploy --secrets-file` によりコードと同時に登録し、`provision.yml` の `secrets` ジョブが再実行時に登録済みであることを確認する。残る作業: なし（完全自動化。H9 のデプロイ承認に含まれる） | T19（ローカルは `.dev.vars` で任意の値） |
 | H7 | Discord または Slack の通報通知チャンネル作成と Incoming Webhook URL の発行、`REPORT_WEBHOOK_URL` の登録 | 通知先ワークスペースの管理権限が要る | 土台: `scripts/cf/ensure-secret.mjs --force`（`provision.yml` の `secrets` ジョブと `deploy.yml` の両方から登録できる）。残る作業: Webhook URL の発行そのもの（管理者権限操作）と GitHub Secrets への登録（1 回）。任意だが、未設定のまま公開すると通報が誰にも届かないので公開前の登録を推奨 | —（任意。T12 は Fake で完結） |
 | H8 | OGP 用フォント（Noto Sans JP、SIL OFL）のライセンス確認と、サブセットフォントの本番 R2 への配置 | ライセンス遵守の責任は人間が持つ | 土台: `scripts/fonts/{download-noto-sans-jp,generate-jis-level1}.mjs` + `scripts/fonts/subset.sh`、`.github/workflows/provision.yml` の `font` ジョブ（取得・サブセット化・R2 配置と fonttools のインストールまで自動）、`docs/runbooks/fonts.md`、`docs/licenses/noto-sans-jp.md`（ライセンス審査記録）。`font` ジョブは著作権表示入りの `OFL.txt` も R2 の `fonts/` に置く。サブセットは JIS 第 1 水準のみで確定（§2.5、`docs/licenses/noto-sans-jp.md`。第 2 水準の字は OGP 上で空白になる制限を受け入れる）。残る作業: `docs/licenses/noto-sans-jp.md` の審査記録を読んで承認する（異論があれば第 2 水準の追加を Issue #9 で依頼する） | T19（ローカルは `scripts/seed-local-r2.mjs`） |
 | H9 | 初回の本番デプロイ承認と公開判断 | 公開はプロダクトオーナーの意思決定そのもの | 土台: `.github/workflows/deploy.yml` の `gate` ジョブ（`DEPLOY_ENABLED` の確認のみ）、`docs/runbooks/deploy.md`。承認後は build・マイグレーション・デプロイ・`RATE_LIMIT_PEPPER` 登録まで全自動。残る作業: `PUBLIC_DOMAIN` の設定と `DEPLOY_ENABLED=true` にする決定（1 回の変数設定 2 つ） | — |

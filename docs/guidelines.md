@@ -198,7 +198,10 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 
 - ログは `Logger` ポート経由の構造化ログ（イベント名 + フィールド）。`console.log` を直接呼ばない。生 IP・編集トークン・入力本文はログに出さない（docs/design.md §9.6）。
 - `error` フィールドは `consoleLogger` が `{ name, message }` に正規化し、message は `MAX_LOG_ERROR_MESSAGE_LENGTH` で切る。
-- secrets（`RATE_LIMIT_PEPPER` `REPORT_WEBHOOK_URL`）は Worker 単位の secret として `scripts/cf/ensure-secret.mjs`（内部で `wrangler secret put` 相当）で登録する。`vars` や `wrangler.jsonc` に書かない。ローカルは `.dev.vars`（gitignore）[^workers-secrets]。
+- secrets（`RATE_LIMIT_PEPPER` `REPORT_WEBHOOK_URL`）は Worker 単位の secret として `scripts/cf/ensure-secret.mjs` で登録する。`vars` や `wrangler.jsonc` に書かない。ローカルは `.dev.vars`（gitignore）[^workers-secrets]。
+  - deploy.yml は値を JSON に書き出し、`wrangler deploy --secrets-file` で新しいバージョンと同時に登録する。デプロイと別に `wrangler secret put` すると、その間は secret の無いバージョンが動く（`RATE_LIMIT_PEPPER` が無いと作成と通報が 500 になる）。`--secrets-file` に含めなかった登録済みの secret は引き継がれる[^workers-secrets]。
+  - provision.yml は Worker がデプロイ済みのときだけ `wrangler secret put` で登録する。まだ無い Worker に対して実行すると、wrangler が中身の無い Worker を作る。
+  - `wrangler.jsonc` の `secrets.required` は使わない。定義すると `wrangler dev` が `.dev.vars` から `secrets.required` に挙げたキーしか読まなくなり、任意の `REPORT_WEBHOOK_URL` をローカルで試せなくなる[^workers-secrets]。
 - Secrets Store（アカウント横断）は使わない。Worker が 1 つしか無い。
 - Workers Static Assets のパス、D1・R2 のバインディング名は `wrangler.jsonc` と `src/server/env.ts` の `Env` で一致させる。`Env` を手書きにしているのは secret の optional 性（`?`）を表すため。
 
@@ -397,6 +400,7 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 - ci.yml には `concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }` と job の `timeout-minutes`（e2e の 15 分を含めて 30 分程度）を置く。deploy / moderation / provision は状態を壊さないため `cancel-in-progress: false` を維持する。
 - `wrangler deploy --dry-run --outdir dist-worker` を毎 PR で流し、バンドルが組めることを確かめ、出力サイズの推移を記録する（上限の検出が目的ではない。上限は §9.1）。起動時間制限（トップレベルの評価 1 秒[^workers-limits]）は dry-run では検出できないので、重い初期化は遅延させる設計（docs/design.md §2.5）を守る。
 - ワークフローの `run:` に `inputs` や `vars` を直接展開しない。`env` 経由で受け取り、検証してから使う（moderation.yml・provision.yml の注記）。
+- `run:` でコマンドの結果を `| tee -a "$GITHUB_STEP_SUMMARY"` のようにパイプへ流すワークフローは、`defaults.run.shell: bash` を明示する。`shell` を省略したときの既定は `bash -e {0}` で pipefail が無く、パイプの手前のコマンドが失敗しても step が成功扱いになる。明示すると `bash --noprofile --norc -eo pipefail {0}` で動く（deploy.yml・provision.yml）[^gha-shell]。
 
 ### 8.2 Dependabot
 
@@ -572,7 +576,8 @@ base（`tsconfig.json`）を `tsconfig.core.json` / `tsconfig.server.json` / `ts
 [^d1-limits]: https://developers.cloudflare.com/d1/platform/limits/
 [^d1-read-replication]: https://developers.cloudflare.com/d1/best-practices/read-replication/
 [^cron]: https://developers.cloudflare.com/workers/configuration/cron-triggers/
-[^workers-secrets]: https://developers.cloudflare.com/workers/configuration/secrets/
+[^gha-shell]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax （`defaults.run.shell` と `jobs.<job_id>.steps[*].shell` の表。2026-09-28 確認）
+[^workers-secrets]: https://developers.cloudflare.com/workers/configuration/secrets/ （2026-09-28 確認。`--secrets-file` の「Secrets not included in the file are preserved from the previous version」と、`secrets.required` の「only the keys listed in `secrets.required` are loaded from `.dev.vars` or `.env`」）
 [^esbuild-target]: https://esbuild.github.io/api/#target
 [^esbuild-splitting]: https://esbuild.github.io/api/#code-splitting
 [^esbuild-metafile]: https://esbuild.github.io/api/#metafile
