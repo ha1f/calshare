@@ -2,6 +2,8 @@
 // Worker のシークレットが登録済みかどうかを判定し、無ければ生成して登録する。
 // RATE_LIMIT_PEPPER・REPORT_WEBHOOK_URL の登録に使い、
 // docs/runbooks/{provisioning,deploy}.md から呼ばれる。
+// --secrets-file を付けると `wrangler secret put` の代わりに JSON ファイルへ書き出し、
+// `wrangler deploy --secrets-file` で新しいバージョンと同時に登録させる。
 //
 // 登録済み判定は `wrangler secret list --format json` の標準出力を JSON.parse して行い、
 // grep には頼らない。判定できない場合（配列でない・list コマンド自体が失敗する）は、
@@ -13,12 +15,17 @@
 // 差し替えて判定ロジックだけを検証する。
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { pathToFileURL } from 'node:url'
-import { createCfApi, readCfEnv } from './lib/cfApi.mjs'
+import { CfApiError, createCfApi, readCfEnv } from './lib/cfApi.mjs'
+
+// Workers API が「スクリプトが無い」ときに返すエラーコード。wrangler の secret list も同じ値で判定する
+const WORKER_NOT_FOUND_CODE = 10007
 
 const USAGE = `使い方: node scripts/cf/ensure-secret.mjs --name <SECRET_NAME> [--value <値>]
-       [--require-deployed --worker-name <name>] [--dry-run] [--json] [--help]
+       [--require-deployed --worker-name <name>] [--secrets-file <path> --worker-name <name>]
+       [--dry-run] [--json] [--help]
 
 Worker のシークレット <SECRET_NAME> が登録済みかを \`wrangler secret list --format json\` の
 出力で判定し、未登録なら登録する（既定はランダムな 32 バイトを base64 で生成。--value を
@@ -33,12 +40,18 @@ Worker のシークレット <SECRET_NAME> が登録済みかを \`wrangler secr
   --require-deployed      先に Cloudflare API で Worker がデプロイ済みかを確認し、
                           未デプロイならシークレット登録をスキップして正常終了する
                           （--worker-name とあわせて指定する。初回デプロイ前の provision 実行向け）
-  --worker-name <name>    --require-deployed と併用する Worker 名
-  --dry-run               登録判定までを行い、実際の \`wrangler secret put\` は実行しない
+  --secrets-file <path>   \`wrangler secret put\` の代わりに、値を <path> の JSON に書き足す
+                          （\`wrangler deploy --secrets-file <path>\` に渡し、デプロイと同時に登録する。
+                          deploy workflow 向け）。一覧を取れないときは Cloudflare API で Worker の
+                          有無を確かめ、まだ無いと確認できたときだけ未登録として扱う
+                          （--worker-name とあわせて指定する）
+  --worker-name <name>    --require-deployed・--secrets-file と併用する Worker 名
+  --dry-run               登録判定までを行い、実際の登録（\`wrangler secret put\`、--secrets-file への
+                          書き出し）は行わない
   --json                  結果を JSON で出力する
   --help                  このヘルプを表示する
 
-必要な環境変数（--require-deployed 指定時）: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID`
+必要な環境変数（--require-deployed・--secrets-file 指定時）: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID`
 
 export function generateSecretValue() {
   return randomBytes(32).toString('base64')
@@ -95,6 +108,51 @@ export async function isWorkerDeployed({ api, scriptName }) {
   return (list.result ?? []).some((s) => s.id === scriptName)
 }
 
+/**
+ * Worker がまだ作られていないことを Cloudflare API で確かめる。`wrangler secret list` と同じ
+ * エンドポイントが「スクリプトが無い」で失敗したときだけ true を返し、それ以外の失敗は投げる。
+ * @param {{ api: ReturnType<typeof createCfApi>, scriptName: string }} deps
+ */
+export async function isWorkerAbsent({ api, scriptName }) {
+  try {
+    await api.get(`/accounts/${api.accountId}/workers/scripts/${scriptName}/secrets`)
+    return false
+  } catch (e) {
+    if (e instanceof CfApiError && e.errors.some((err) => err.code === WORKER_NOT_FOUND_CODE)) {
+      return true
+    }
+    throw e
+  }
+}
+
+/**
+ * 登録済みシークレットの一覧を返す。一覧を取れず、Worker がまだ無いと確認できたときだけ空配列を返す。
+ * 取れない理由が Worker の不在だと確認できなければ一覧の失敗をそのまま投げる（未登録と誤って
+ * 判定すると、新しい値が `wrangler deploy --secrets-file` で既存の値を上書きするため）。
+ * @param {{ listSecrets: () => Promise<unknown>, isWorkerAbsent: () => Promise<boolean> }} deps
+ */
+export async function listSecretsOrEmptyIfWorkerAbsent({ listSecrets, isWorkerAbsent }) {
+  try {
+    return await listSecrets()
+  } catch (listError) {
+    if (await isWorkerAbsent()) return []
+    throw listError
+  }
+}
+
+/**
+ * `wrangler deploy --secrets-file` に渡す JSON に 1 件書き足す。値を含むので所有者だけが読める
+ * パーミッションで作る。
+ * @param {string} path
+ * @param {string} name
+ * @param {string} value
+ */
+export function addSecretToFile(path, name, value) {
+  const secrets = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
+  secrets[name] = value
+  writeFileSync(path, JSON.stringify(secrets), { mode: 0o600 })
+}
+
 function wranglerListSecrets() {
   const out = execFileSync('npx', ['wrangler', 'secret', 'list', '--format', 'json'], {
     encoding: 'utf8',
@@ -106,8 +164,11 @@ function wranglerPutSecret(name, value) {
   execFileSync('npx', ['wrangler', 'secret', 'put', name], { input: value, encoding: 'utf8' })
 }
 
-function formatText(result) {
+function formatText(result, secretsFile) {
   if (result.action === 'skipped') return `スキップしました: ${result.reason}`
+  if (secretsFile && (result.action === 'created' || result.action === 'updated')) {
+    return `${result.name} を ${secretsFile} に書き出しました（wrangler deploy --secrets-file で登録されます）。`
+  }
   return {
     unchanged: `${result.name} は既に登録済みです。`,
     created: `${result.name} を新規生成して登録しました。`,
@@ -126,6 +187,7 @@ async function main() {
       force: { type: 'boolean', default: false },
       'require-deployed': { type: 'boolean', default: false },
       'worker-name': { type: 'string' },
+      'secrets-file': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
       help: { type: 'boolean', default: false },
@@ -148,11 +210,21 @@ async function main() {
     process.exitCode = 1
     return
   }
+  const secretsFile = values['secrets-file']
+  if (secretsFile && !values['worker-name']) {
+    console.error('--secrets-file には --worker-name の指定も必要です。\n')
+    console.error(USAGE)
+    process.exitCode = 1
+    return
+  }
 
   try {
-    if (values['require-deployed']) {
+    const cfApi = () => {
       const { token, accountId } = readCfEnv()
-      const api = createCfApi({ token, accountId })
+      return createCfApi({ token, accountId })
+    }
+    if (values['require-deployed']) {
+      const api = cfApi()
       const deployed = await isWorkerDeployed({ api, scriptName: values['worker-name'] })
       if (!deployed) {
         const result = {
@@ -165,15 +237,33 @@ async function main() {
       }
     }
 
+    // Worker が無いと wrangler secret list がエラーを出すので、ログを読む人向けにその理由を添える
+    const checkWorkerAbsent = async () => {
+      const absent = await isWorkerAbsent({ api: cfApi(), scriptName: values['worker-name'] })
+      if (absent) {
+        console.error(
+          `Worker '${values['worker-name']}' はまだ無いため、登録済みのシークレットは無いものとして扱います。`,
+        )
+      }
+      return absent
+    }
     const result = await ensureSecret({
       name: values.name,
       value: values.value,
       dryRun: values['dry-run'],
       force: values.force,
-      listSecrets: async () => wranglerListSecrets(),
-      putSecret: async (value) => wranglerPutSecret(values.name, value),
+      listSecrets: secretsFile
+        ? () =>
+            listSecretsOrEmptyIfWorkerAbsent({
+              listSecrets: async () => wranglerListSecrets(),
+              isWorkerAbsent: checkWorkerAbsent,
+            })
+        : async () => wranglerListSecrets(),
+      putSecret: secretsFile
+        ? async (value) => addSecretToFile(secretsFile, values.name, value)
+        : async (value) => wranglerPutSecret(values.name, value),
     })
-    console.log(values.json ? JSON.stringify(result, null, 2) : formatText(result))
+    console.log(values.json ? JSON.stringify(result, null, 2) : formatText(result, secretsFile))
   } catch (e) {
     console.error(e.message)
     process.exitCode = 1
