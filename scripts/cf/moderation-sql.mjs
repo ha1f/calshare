@@ -149,7 +149,7 @@ function printUsage() {
 
   --action <hide|unhide|hide-by-creator>  操作の種類
   --page-id <id>                          対象ページ ID（hide / unhide / lookup で使用）
-  --creator-ip-hash <hash>                送信元の ip_hash（hide-by-creator で使用）
+  --creator-ip-hash <hash>                送信元の ip_hash（hide-by-creator で使用。unknown なら device_id だけで絞る）
   --creator-device-id <id>                送信元の device_id（hide-by-creator で使用）
   --lookup                                page_id から creator_ip_hash / creator_device_id を引く SELECT を出す
   --extract-field <field>                 標準入力の wrangler --json 出力から指定フィールドの値だけを出す
