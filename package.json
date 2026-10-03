@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@resvg/resvg-wasm": "2.6.2",
-    "hono": "^4.13.0",
+    "hono": "^4.13.11",
     "satori": "0.32.0"
   },
   "devDependencies": {
@@ -32,9 +32,9 @@
     "eslint": "^10.11.0",
     "prettier": "^3.9.9",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.70.1",
+    "typescript-eslint": "^8.71.0",
     "vitest": "^4.1.0",
-    "wrangler": "^4.136.3"
+    "wrangler": "^4.144.0"
   },
   "overrides": {
     "sharp": "^0.35.4"
